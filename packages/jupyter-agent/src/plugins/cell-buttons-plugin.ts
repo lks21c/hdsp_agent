@@ -1,27 +1,25 @@
 /**
  * Cell Buttons Plugin
  * Injects E, F, ? action buttons into notebook cells
+ * Communicates with sidebar panel instead of Chrome extension
  */
 
-import { JupyterFrontEndPlugin, JupyterFrontEnd } from '@jupyterlab/application';
-import { INotebookTracker, NotebookPanel } from '@jupyterlab/notebook';
+import { INotebookTracker } from '@jupyterlab/notebook';
 import { Cell } from '@jupyterlab/cells';
-import { CellAction, ICellActionEvent, AgentEvent } from '../types';
-import { AgentEventEmitter } from '../utils/events';
-import { CellService } from '../services/CellService';
+import { CellAction } from '../types';
 
 /**
  * Cell Buttons Plugin
  */
-export const cellButtonsPlugin: JupyterFrontEndPlugin<void> = {
+export const cellButtonsPlugin = {
   id: '@jupyter-agent/cell-buttons',
   autoStart: true,
   requires: [INotebookTracker],
-  activate: (app: JupyterFrontEnd, notebookTracker: INotebookTracker) => {
+  activate: (app: any, notebookTracker: INotebookTracker) => {
     console.log('[CellButtonsPlugin] Activated');
 
-    // Initialize CellService singleton
-    CellService.getInstance();
+    // Store app reference globally for later use
+    (window as any).jupyterapp = app;
 
     // Handle new notebooks
     notebookTracker.widgetAdded.connect((sender, panel) => {
@@ -52,7 +50,7 @@ export const cellButtonsPlugin: JupyterFrontEndPlugin<void> = {
 /**
  * Observe a notebook for cell changes and inject buttons
  */
-function observeNotebook(panel: NotebookPanel): void {
+function observeNotebook(panel: any): void {
   const notebook = panel.content;
 
   // Initial injection
@@ -77,7 +75,7 @@ function observeNotebook(panel: NotebookPanel): void {
 /**
  * Inject buttons into all cells in a notebook
  */
-function injectButtonsIntoAllCells(notebook: any, panel: NotebookPanel): void {
+function injectButtonsIntoAllCells(notebook: any, panel: any): void {
   for (let i = 0; i < notebook.widgets.length; i++) {
     const cell = notebook.widgets[i];
     injectButtonsIntoCell(cell, panel);
@@ -87,13 +85,13 @@ function injectButtonsIntoAllCells(notebook: any, panel: NotebookPanel): void {
 /**
  * Inject buttons into a single cell
  */
-function injectButtonsIntoCell(cell: Cell, panel: NotebookPanel): void {
+function injectButtonsIntoCell(cell: Cell, panel: any): void {
   // Only inject into code cells
   if (cell.model.type !== 'code') {
     return;
   }
 
-  const promptNode = cell.inputArea?.promptNode;
+  const promptNode = (cell.inputArea as any)?.promptNode;
   if (!promptNode) {
     return;
   }
@@ -161,14 +159,42 @@ function handleCellAction(action: CellAction, cell: Cell): void {
     // For custom prompt, show dialog
     showCustomPromptDialog(cell);
   } else {
-    // For explain/fix, emit event directly
-    const event: ICellActionEvent = {
-      type: action,
-      cellId: cell.model.id,
-      cellContent: cellContent
-    };
+    // For explain/fix, send to sidebar panel
+    sendToSidebarPanel(action, cellContent);
+  }
+}
 
-    AgentEventEmitter.emit(AgentEvent.CELL_ACTION, event);
+/**
+ * Send cell action to sidebar panel
+ */
+function sendToSidebarPanel(action: CellAction, cellContent: string): void {
+  const agentPanel = (window as any)._jupyterAgentPanel;
+
+  if (!agentPanel) {
+    console.error('[CellButtonsPlugin] Agent panel not found. Make sure sidebar plugin is loaded.');
+    return;
+  }
+
+  // Activate the sidebar panel
+  const app = (window as any).jupyterapp;
+  if (app) {
+    app.shell.activateById(agentPanel.id);
+  }
+
+  // Create action message
+  let message = '';
+  switch (action) {
+    case CellAction.EXPLAIN:
+      message = `Explain this code:\n\n\`\`\`\n${cellContent}\n\`\`\``;
+      break;
+    case CellAction.FIX:
+      message = `Fix any errors in this code:\n\n\`\`\`\n${cellContent}\n\`\`\``;
+      break;
+  }
+
+  // Send message to panel
+  if (agentPanel.addCellActionMessage) {
+    agentPanel.addCellActionMessage(action, cellContent, message);
   }
 }
 
@@ -238,13 +264,8 @@ function showCustomPromptDialog(cell: Cell): void {
   submitBtn.onclick = () => {
     const prompt = textarea.value.trim();
     if (prompt) {
-      const event: ICellActionEvent = {
-        type: CellAction.CUSTOM_PROMPT,
-        cellId: cell.model.id,
-        cellContent: cellContent,
-        customPrompt: prompt
-      };
-      AgentEventEmitter.emit(AgentEvent.CELL_ACTION, event);
+      const message = `${prompt}\n\n\`\`\`\n${cellContent}\n\`\`\``;
+      sendToSidebarPanel(CellAction.CUSTOM_PROMPT, message);
       document.body.removeChild(overlay);
     }
   };

@@ -17,7 +17,7 @@ def _jupyter_server_extension_points():
         'module': 'jupyter_agent'
     }]
 
-def _load_jupyter_server_extension(server_app):
+def load_jupyter_server_extension(server_app):
     """Load the Jupyter Server extension"""
     from .handlers import setup_handlers
 

@@ -1,12 +1,13 @@
-[build-system]
-requires = ["hatchling>=1.5.0", "jupyterlab>=4.0.0,<5", "hatch-nodejs-version"]
-build-backend = "hatchling.build"
-
-[project]
-name = "jupyter_agent"
+[tool.poetry]
+name = "jupyter-agent"
+version = "0.1.0"
+description = "AI-powered code assistance for JupyterLab with cell-level actions"
+authors = ["Your Name <your.email@example.com>"]
+license = "MIT"
 readme = "README.md"
-license = { file = "LICENSE" }
-requires-python = ">=3.8"
+homepage = "https://github.com/yourusername/jupyter-agent"
+repository = "https://github.com/yourusername/jupyter-agent.git"
+keywords = ["jupyter", "jupyterlab", "jupyterlab-extension", "ai", "llm", "code-assistant"]
 classifiers = [
     "Framework :: Jupyter",
     "Framework :: Jupyter :: JupyterLab",
@@ -20,68 +21,92 @@ classifiers = [
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
 ]
-dependencies = [
-    "jupyter_server>=2.0.0,<3",
-    "aiohttp>=3.8.0",
+packages = [
+    { include = "jupyter_agent" }
 ]
-dynamic = ["version", "description", "authors", "urls", "keywords"]
-
-[project.optional-dependencies]
-dev = [
-    "pytest",
-    "pytest-asyncio",
-    "black",
-    "isort",
-    "flake8",
+include = [
+    "jupyter_agent/labextension/**/*",
+    "jupyter_agent/etc/**/*",
+    "install.json",
 ]
 
-[tool.hatch.version]
-source = "nodejs"
+[tool.poetry.dependencies]
+python = "^3.8.1"
+jupyter-server = "^2.0.0"
+aiohttp = "^3.8.0"
+overrides = "^7.7.0"
 
-[tool.hatch.metadata.hooks.nodejs]
-fields = ["description", "authors", "urls"]
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.0.0"
+pytest-asyncio = "^0.21.0"
+black = "^23.0.0"
+isort = "^5.12.0"
+flake8 = "^6.0.0"
+jupyterlab = "^4.0.0"
 
-[tool.hatch.build.targets.sdist]
-artifacts = ["jupyter_agent/labextension"]
-exclude = [".github", "binder"]
+[tool.poetry.group.build.dependencies]
+hatch-jupyter-builder = "^0.8.3"
+jupyter-packaging = "^0.12.3"
 
-[tool.hatch.build.targets.wheel.shared-data]
-"jupyter_agent/labextension" = "share/jupyter/labextensions/@jupyter-agent/extension"
-"install.json" = "share/jupyter/labextensions/@jupyter-agent/extension/install.json"
+[build-system]
+requires = ["poetry-core>=1.0.0", "jupyter-packaging>=0.12.3"]
+build-backend = "poetry.core.masonry.api"
 
-[tool.hatch.build.hooks.version]
-path = "jupyter_agent/_version.py"
+[tool.poetry.scripts]
+# Add any CLI scripts here if needed
 
-[tool.hatch.build.hooks.jupyter-builder]
-dependencies = ["hatch-jupyter-builder>=0.5"]
-build-function = "hatch_jupyter_builder.npm_builder"
+
+# Black configuration
+[tool.black]
+line-length = 88
+target-version = ['py38', 'py39', 'py310', 'py311']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+  | node_modules
+  | jupyter_agent/labextension
+)/
+'''
+
+# isort configuration
+[tool.isort]
+profile = "black"
+line_length = 88
+skip_gitignore = true
+extend_skip_glob = ["jupyter_agent/labextension/*"]
+
+# pytest configuration
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+
+# JupyterLab extension build configuration
+[tool.jupyter-packaging.options]
+skip-if-exists = ["jupyter_agent/labextension/static/style.js"]
 ensured-targets = [
     "jupyter_agent/labextension/static/style.js",
     "jupyter_agent/labextension/package.json",
 ]
-skip-if-exists = ["jupyter_agent/labextension/static/style.js"]
 
-[tool.hatch.build.hooks.jupyter-builder.build-kwargs]
+[tool.jupyter-packaging.builder]
+factory = "jupyter_packaging.npm_builder"
+
+[tool.jupyter-packaging.build-args]
 build_cmd = "build:prod"
-npm = ["jlpm"]
-
-[tool.hatch.build.hooks.jupyter-builder.editable-build-kwargs]
-build_cmd = "install:extension"
 npm = ["jlpm"]
 source_dir = "src"
 build_dir = "jupyter_agent/labextension"
-
-[tool.jupyter-releaser.options]
-version_cmd = "hatch version"
-
-[tool.jupyter-releaser.hooks]
-before-build-npm = [
-    "python -m pip install 'jupyterlab>=4.0.0,<5'",
-    "jlpm",
-    "jlpm build:prod"
-]
-before-build-python = ["jlpm clean:all"]
-
-[tool.check-wheel-contents]
-ignore = ["W002"]

@@ -57,14 +57,7 @@ class ConfigManager:
         return self._config.copy()
 
     def save_config(self, config: Dict[str, Any]):
-        """Save configuration to file"""
-        # Validate required fields
-        if not config.get('apiKey'):
-            raise ValueError("API key is required")
-
-        if not config.get('modelId'):
-            raise ValueError("Model ID is required")
-
+        """Save configuration to file - no validation"""
         # Merge with existing config
         self._config.update(config)
 

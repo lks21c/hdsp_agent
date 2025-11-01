@@ -15,8 +15,30 @@ import {
 export class ApiService {
   private baseUrl: string;
 
-  constructor(baseUrl: string = '/api/jupyter-agent') {
+  constructor(baseUrl: string = '/jupyter-agent') {
     this.baseUrl = baseUrl;
+  }
+
+  /**
+   * Get CSRF token from cookie
+   */
+  private getCsrfToken(): string {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; _xsrf=`);
+    if (parts.length === 2) {
+      return parts.pop()?.split(';').shift() || '';
+    }
+    return '';
+  }
+
+  /**
+   * Get headers with CSRF token for POST requests
+   */
+  private getHeaders(): HeadersInit {
+    return {
+      'Content-Type': 'application/json',
+      'X-XSRFToken': this.getCsrfToken()
+    };
   }
 
   /**
@@ -25,9 +47,7 @@ export class ApiService {
   async cellAction(request: ICellActionRequest): Promise<ICellResponse> {
     const response = await fetch(`${this.baseUrl}/cell/action`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: this.getHeaders(),
       body: JSON.stringify(request)
     });
 
@@ -45,9 +65,7 @@ export class ApiService {
   async sendMessage(request: IChatRequest): Promise<IChatResponse> {
     const response = await fetch(`${this.baseUrl}/chat/message`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: this.getHeaders(),
       body: JSON.stringify(request)
     });
 
@@ -65,9 +83,7 @@ export class ApiService {
   async saveConfig(config: IAgentConfig): Promise<void> {
     const response = await fetch(`${this.baseUrl}/config`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: this.getHeaders(),
       body: JSON.stringify(config)
     });
 

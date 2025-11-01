@@ -4,6 +4,8 @@
  */
 
 @import './cell-buttons.css';
+@import './agent-panel.css';
+@import './settings-panel.css';
 
 /* Global Variables */
 :root {

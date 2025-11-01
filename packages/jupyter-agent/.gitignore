@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+*.ipynb_checkpoints
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.yarn/
+.pnp.*
+
+# JupyterLab
+.ipynb_checkpoints/
+*.ipynb
+.jupyter/
+jupyter_agent/labextension/
+jupyter_agent/__pycache__/
+jupyter_agent/handlers/__pycache__/
+jupyter_agent/services/__pycache__/
+
+# Build outputs
+dist/
+lib/
+style/
+tsconfig.tsbuildinfo
+poetry.lock
+yarn.lock
+
+# IDE
+.vscode/
+.idea/
+
+# Misc
+.DS_Store
+DEBUG_INSTRUCTIONS.md
