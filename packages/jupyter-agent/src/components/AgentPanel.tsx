@@ -66,6 +66,11 @@ const ChatPanel: React.FC<AgentPanelProps> = ({ apiService }) => {
   const handleSendMessage = async () => {
     if (!input.trim() || isLoading) return;
 
+    // Check if there's an LLM prompt stored (from cell action)
+    const textarea = messagesEndRef.current?.parentElement?.parentElement?.querySelector('.jp-agent-input') as HTMLTextAreaElement;
+    const llmPrompt = textarea?.getAttribute('data-llm-prompt');
+
+    // Use the display prompt (input) for the user message
     const userMessage: IChatMessage = {
       id: Date.now().toString(),
       role: 'user',
@@ -77,9 +82,17 @@ const ChatPanel: React.FC<AgentPanelProps> = ({ apiService }) => {
     setInput('');
     setIsLoading(true);
 
+    // Clear the data attribute after using it
+    if (textarea && llmPrompt) {
+      textarea.removeAttribute('data-llm-prompt');
+    }
+
     try {
+      // Use LLM prompt if available, otherwise use the display prompt
+      const messageToSend = llmPrompt || input;
+
       const response = await apiService.sendMessage({
-        message: input,
+        message: messageToSend,
         conversationId: conversationId || undefined
       });
 
@@ -249,18 +262,33 @@ export class AgentPanelWidget extends ReactWidget {
 
   /**
    * Add a message from cell action
+   * @param action - The action type (explain, fix, custom_prompt)
+   * @param cellContent - The cell content
+   * @param displayPrompt - The user-facing prompt to show in the UI
+   * @param llmPrompt - The actual prompt to send to the LLM
    */
-  addCellActionMessage(action: string, cellContent: string, message: string): void {
+  addCellActionMessage(
+    action: string,
+    cellContent: string,
+    displayPrompt: string,
+    llmPrompt: string
+  ): void {
     console.log('[AgentPanel] Cell action:', action);
+    console.log('[AgentPanel] Display prompt:', displayPrompt);
+    console.log('[AgentPanel] LLM prompt:', llmPrompt);
 
-    // Trigger a re-render by setting the input value
-    // This is a workaround - in production you'd use a proper state management
-    const panel = this.node.querySelector('.jp-agent-input') as HTMLTextAreaElement;
-    if (panel) {
-      panel.value = message;
+    // Store the LLM prompt in a data attribute for later use
+    const textarea = this.node.querySelector('.jp-agent-input') as HTMLTextAreaElement;
+    if (textarea) {
+      // Set the display prompt as the visible value
+      textarea.value = displayPrompt;
+
+      // Store the actual LLM prompt in a data attribute
+      textarea.setAttribute('data-llm-prompt', llmPrompt);
+
       // Trigger React's onChange
       const event = new Event('input', { bubbles: true });
-      panel.dispatchEvent(event);
+      textarea.dispatchEvent(event);
     }
   }
 }

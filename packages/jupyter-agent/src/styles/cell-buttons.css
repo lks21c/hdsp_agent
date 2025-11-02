@@ -3,33 +3,39 @@
  * Based on Chrome Agent button patterns
  */
 
-/* Button Container */
+/* Button Container - Horizontal layout at top of cell, aligned with code */
 .jp-agent-cell-buttons {
-  display: inline-flex;
-  gap: 4px;
-  margin-left: 8px;
-  vertical-align: middle;
-  align-items: center;
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 4px !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  padding: 4px 8px !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  border-bottom: 1px solid var(--jp-border-color2) !important;
+  /* padding-left will be set dynamically via inline style to match prompt width */
 }
 
 /* Base Button Style */
 .jp-agent-button {
-  width: 24px;
-  height: 24px;
-  border: 1px solid var(--jp-border-color2);
-  border-radius: 4px;
-  background: transparent;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: bold;
-  color: var(--jp-ui-font-color1);
+  width: 24px !important;
+  height: 24px !important;
+  border: 1px solid var(--jp-border-color2) !important;
+  border-radius: 4px !important;
+  background: var(--jp-layout-color1) !important;
+  cursor: pointer !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 12px !important;
+  font-weight: bold !important;
+  color: var(--jp-ui-font-color1) !important;
   transition: all 0.2s ease;
-  padding: 0;
-  margin: 0;
+  padding: 0 !important;
+  margin: 0 2px !important;
   outline: none;
+  opacity: 1 !important;
+  visibility: visible !important;
 }
 
 .jp-agent-button:hover {
