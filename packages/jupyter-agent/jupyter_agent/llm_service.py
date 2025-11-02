@@ -31,7 +31,7 @@ class LLMService:
         """Call Google Gemini API"""
         gemini_config = self.config.get('gemini', {})
         api_key = gemini_config.get('apiKey')
-        model = gemini_config.get('model', 'gemini-2.0-flash-exp')
+        model = gemini_config.get('model', 'gemini-2.5-pro')
 
         if not api_key:
             raise ValueError("Gemini API key not configured")

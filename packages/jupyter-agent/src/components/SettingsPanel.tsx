@@ -44,7 +44,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     currentConfig?.gemini?.apiKey || ''
   );
   const [geminiModel, setGeminiModel] = useState(
-    currentConfig?.gemini?.model || 'gemini-2.0-flash-exp'
+    currentConfig?.gemini?.model || 'gemini-2.5-pro'
   );
 
   // vLLM settings
@@ -192,8 +192,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   value={geminiModel}
                   onChange={(e) => setGeminiModel(e.target.value)}
                 >
-                  <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash</option>
-                  <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                  <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+                  <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
                 </select>
               </div>
             </div>

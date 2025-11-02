@@ -131,19 +131,25 @@ function injectButtonsIntoCell(cell: Cell, panel: any): void {
 
   // Create E button (Explain)
   const explainBtn = createButton('E', 'Explain this code', () => {
-    handleCellAction(CellAction.EXPLAIN, cell);
+    handleCellAction(CellAction.EXPLAIN, cell).catch(error => {
+      console.error('[CellButtonsPlugin] Error handling explain action:', error);
+    });
   });
   explainBtn.classList.add('jp-agent-button-explain');
 
   // Create F button (Fix)
   const fixBtn = createButton('F', 'Fix errors in this code', () => {
-    handleCellAction(CellAction.FIX, cell);
+    handleCellAction(CellAction.FIX, cell).catch(error => {
+      console.error('[CellButtonsPlugin] Error handling fix action:', error);
+    });
   });
   fixBtn.classList.add('jp-agent-button-fix');
 
   // Create ? button (Custom)
   const customBtn = createButton('?', 'Custom prompt', () => {
-    handleCellAction(CellAction.CUSTOM_PROMPT, cell);
+    handleCellAction(CellAction.CUSTOM_PROMPT, cell).catch(error => {
+      console.error('[CellButtonsPlugin] Error handling custom prompt action:', error);
+    });
   });
   customBtn.classList.add('jp-agent-button-custom');
 
@@ -233,21 +239,45 @@ function createButton(
 /**
  * Handle cell action button click
  */
-function handleCellAction(action: CellAction, cell: Cell): void {
+async function handleCellAction(action: CellAction, cell: Cell): Promise<void> {
   const cellContent = cell.model.sharedModel.getSource();
 
+  if (!cellContent.trim()) {
+    showNotification('셀 내용이 비어있습니다.', 'warning');
+    return;
+  }
+
+  const cellIndex = getCellIndex(cell);
+
   if (action === CellAction.CUSTOM_PROMPT) {
-    // For custom prompt, show dialog
+    // For custom prompt, show dialog (no confirmation needed)
     showCustomPromptDialog(cell);
   } else {
-    // Get cell index
-    const cellIndex = getCellIndex(cell);
-
     // Get cell output
     const cellOutput = getCellOutput(cell);
 
-    // For explain/fix, send to sidebar panel with both user-facing and LLM prompts
-    sendToSidebarPanel(action, cellContent, cellIndex, cellOutput);
+    // Determine confirmation dialog content based on action
+    let title = '';
+    let message = '';
+
+    switch (action) {
+      case CellAction.EXPLAIN:
+        title = `셀 ${cellIndex}번째: 설명 요청`;
+        message = '이 셀의 코드 설명을 보시겠습니까?';
+        break;
+      case CellAction.FIX:
+        title = `셀 ${cellIndex}번째: 수정 제안 요청`;
+        message = '이 셀의 코드 개선 제안을 받으시겠습니까?';
+        break;
+    }
+
+    // Show confirmation dialog first
+    const confirmed = await showConfirmDialog(title, message);
+
+    if (confirmed) {
+      // User confirmed, send to sidebar panel
+      sendToSidebarPanel(action, cell, cellContent, cellIndex, cellOutput);
+    }
   }
 }
 
@@ -325,10 +355,46 @@ function getCellOutput(cell: Cell): string {
 }
 
 /**
+ * Get or assign cell ID to a cell
+ */
+function getOrAssignCellId(cell: Cell): string {
+  const cellModel = cell.model;
+  let cellId: string | undefined;
+  
+  // Try to get cell ID from metadata
+  try {
+    if (cellModel.metadata && typeof (cellModel.metadata as any).get === 'function') {
+      cellId = (cellModel.metadata as any).get('jupyterAgentCellId') as string | undefined;
+    } else if ((cellModel.metadata as any)?.jupyterAgentCellId) {
+      cellId = (cellModel.metadata as any).jupyterAgentCellId;
+    }
+  } catch (e) {
+    // Ignore errors
+  }
+  
+  if (!cellId) {
+    cellId = `cell-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    // Try to set cell ID in metadata
+    try {
+      if (cellModel.metadata && typeof (cellModel.metadata as any).set === 'function') {
+        (cellModel.metadata as any).set('jupyterAgentCellId', cellId);
+      } else if (cellModel.metadata) {
+        (cellModel.metadata as any).jupyterAgentCellId = cellId;
+      }
+    } catch (e) {
+      // Ignore errors
+    }
+  }
+  
+  return cellId;
+}
+
+/**
  * Send cell action to sidebar panel
  */
 function sendToSidebarPanel(
   action: CellAction,
+  cell: Cell,
   cellContent: string,
   cellIndex: number,
   cellOutput: string
@@ -340,168 +406,546 @@ function sendToSidebarPanel(
     return;
   }
 
+  // Get or assign cell ID
+  const cellId = getOrAssignCellId(cell);
+
   // Activate the sidebar panel
   const app = (window as any).jupyterapp;
   if (app) {
     app.shell.activateById(agentPanel.id);
   }
 
+  // Escape content for markdown
+  const escapedContent = escapeContent(cellContent);
+  const escapedOutput = escapeContent(cellOutput);
+
   // Create user-facing display prompt
   let displayPrompt = '';
-  // Create actual LLM prompt
+  // Create actual LLM prompt (based on chrome_agent)
   let llmPrompt = '';
 
   switch (action) {
     case CellAction.EXPLAIN:
-      // User sees: "Cell x: 설명요청"
-      displayPrompt = `${cellIndex}번째 셀: 설명요청`;
+      // User sees: "Cell x: 설명 요청" (chrome_agent와 동일)
+      displayPrompt = `${cellIndex}번째 셀: 설명 요청`;
 
-      // LLM receives: "코드 설명해줘 + 셀 내용 + cell output 결과"
-      llmPrompt = `코드 설명해줘\n\n셀 내용:\n\`\`\`\n${cellContent}\n\`\`\``;
-      if (cellOutput) {
-        llmPrompt += `\n\n실행 결과:\n\`\`\`\n${cellOutput}\n\`\`\``;
-      }
+      // LLM receives: chrome_agent와 동일한 프롬프트
+      llmPrompt = `다음 Jupyter 셀의 내용을 자세히 설명해주세요:
+
+\`\`\`python
+${escapedContent}
+\`\`\``;
       break;
 
     case CellAction.FIX:
-      // User sees: "Cell x: 오류수정 요청"
-      displayPrompt = `${cellIndex}번째 셀: 오류수정 요청`;
+      // Check if there's an error in the output
+      const hasError = cellOutput && (
+        cellOutput.includes('Error') ||
+        cellOutput.includes('Traceback') ||
+        cellOutput.includes('Exception') ||
+        cellOutput.includes('에러') ||
+        cellOutput.includes('오류')
+      );
 
-      // LLM receives: Fix prompt with code and output
-      llmPrompt = `코드의 오류를 수정해줘\n\n셀 내용:\n\`\`\`\n${cellContent}\n\`\`\``;
-      if (cellOutput) {
-        llmPrompt += `\n\n실행 결과 (오류 포함):\n\`\`\`\n${cellOutput}\n\`\`\``;
+      if (hasError && escapedOutput) {
+        // 에러가 있는 경우 (chrome_agent와 동일)
+        displayPrompt = `${cellIndex}번째 셀: 에러 수정 요청`;
+
+        llmPrompt = `다음 Jupyter 셀 코드에 에러가 발생했습니다.
+
+원본 코드:
+\`\`\`python
+${escapedContent}
+\`\`\`
+
+에러:
+\`\`\`
+${escapedOutput}
+\`\`\`
+
+다음 형식으로 응답해주세요:
+
+## 에러 원인
+(에러가 발생한 원인을 간단히 설명)
+
+## 수정 방법
+
+### 방법 1: (수정 방법 제목)
+(이 방법에 대한 간단한 설명)
+\`\`\`python
+(수정된 코드)
+\`\`\`
+
+### 방법 2: (수정 방법 제목)
+(이 방법에 대한 간단한 설명)
+\`\`\`python
+(수정된 코드)
+\`\`\`
+
+### 방법 3: (수정 방법 제목) (있는 경우)
+(이 방법에 대한 간단한 설명)
+\`\`\`python
+(수정된 코드)
+\`\`\`
+
+최소 2개, 최대 3개의 다양한 수정 방법을 제안해주세요.`;
+      } else {
+        // 에러가 없는 경우 - 코드 리뷰/개선 제안 (chrome_agent와 동일)
+        displayPrompt = `${cellIndex}번째 셀: 개선 제안 요청`;
+
+        llmPrompt = `다음 Jupyter 셀 코드를 리뷰하고 개선 방법을 제안해주세요.
+
+코드:
+\`\`\`python
+${escapedContent}
+\`\`\`
+
+다음 형식으로 응답해주세요:
+
+## 코드 분석
+(현재 코드의 기능과 특징을 간단히 설명)
+
+## 개선 방법
+
+### 방법 1: (개선 방법 제목)
+(이 방법에 대한 간단한 설명)
+\`\`\`python
+(개선된 코드)
+\`\`\`
+
+### 방법 2: (개선 방법 제목)
+(이 방법에 대한 간단한 설명)
+\`\`\`python
+(개선된 코드)
+\`\`\`
+
+### 방법 3: (개선 방법 제목) (있는 경우)
+(이 방법에 대한 간단한 설명)
+\`\`\`python
+(개선된 코드)
+\`\`\`
+
+최소 2개, 최대 3개의 다양한 개선 방법을 제안해주세요.`;
       }
       break;
   }
 
-  // Send both prompts to panel
+  // Send both prompts to panel with cell ID
   if (agentPanel.addCellActionMessage) {
-    agentPanel.addCellActionMessage(action, cellContent, displayPrompt, llmPrompt);
+    agentPanel.addCellActionMessage(action, cellContent, displayPrompt, llmPrompt, cellId);
   }
 }
 
 /**
+ * Show confirmation dialog
+ * Based on chrome_agent's showConfirmDialog implementation
+ */
+function showConfirmDialog(title: string, message: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    // Remove existing dialog if any
+    const existingDialog = document.querySelector('.jp-agent-confirm-dialog');
+    if (existingDialog) {
+      existingDialog.remove();
+    }
+
+    // Create dialog overlay
+    const dialogOverlay = document.createElement('div');
+    dialogOverlay.className = 'jp-agent-confirm-dialog';
+    dialogOverlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.3);
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    `;
+
+    // Create dialog container
+    const dialogContainer = document.createElement('div');
+    dialogContainer.style.cssText = `
+      background: #fafafa;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      padding: 24px;
+      max-width: 400px;
+      width: 90%;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    `;
+
+    // Dialog content
+    dialogContainer.innerHTML = `
+      <div style="margin-bottom: 20px;">
+        <h3 style="margin: 0 0 12px 0; color: #424242; font-size: 16px; font-weight: 500;">
+          ${escapeHtml(title)}
+        </h3>
+        <p style="margin: 0; color: #616161; font-size: 14px; line-height: 1.5;">
+          ${escapeHtml(message)}
+        </p>
+      </div>
+      <div style="display: flex; gap: 12px; justify-content: flex-end;">
+        <button class="jp-agent-confirm-cancel-btn" style="
+          background: transparent;
+          color: #616161;
+          border: 1px solid #d1d5db;
+          border-radius: 3px;
+          padding: 8px 16px;
+          font-size: 13px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.15s ease;
+        ">취소</button>
+        <button class="jp-agent-confirm-submit-btn" style="
+          background: #1976d2;
+          color: white;
+          border: 1px solid #1976d2;
+          border-radius: 3px;
+          padding: 8px 16px;
+          font-size: 13px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.15s ease;
+        ">확인</button>
+      </div>
+    `;
+
+    dialogOverlay.appendChild(dialogContainer);
+    document.body.appendChild(dialogOverlay);
+
+    // Button event listeners
+    const cancelBtn = dialogContainer.querySelector('.jp-agent-confirm-cancel-btn') as HTMLButtonElement;
+    const submitBtn = dialogContainer.querySelector('.jp-agent-confirm-submit-btn') as HTMLButtonElement;
+
+    // Cancel button
+    cancelBtn.addEventListener('click', () => {
+      dialogOverlay.remove();
+      resolve(false);
+    });
+
+    cancelBtn.addEventListener('mouseenter', () => {
+      cancelBtn.style.background = '#f5f5f5';
+    });
+
+    cancelBtn.addEventListener('mouseleave', () => {
+      cancelBtn.style.background = 'transparent';
+    });
+
+    // Submit button
+    submitBtn.addEventListener('click', () => {
+      submitBtn.disabled = true;
+      submitBtn.textContent = '처리 중...';
+      
+      // Small delay to show processing state
+      setTimeout(() => {
+        dialogOverlay.remove();
+        resolve(true);
+      }, 100);
+    });
+
+    submitBtn.addEventListener('mouseenter', () => {
+      if (!submitBtn.disabled) {
+        submitBtn.style.background = '#1565c0';
+      }
+    });
+
+    submitBtn.addEventListener('mouseleave', () => {
+      if (!submitBtn.disabled) {
+        submitBtn.style.background = '#1976d2';
+      }
+    });
+
+    // ESC key to close
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        dialogOverlay.remove();
+        document.removeEventListener('keydown', handleEsc);
+        resolve(false);
+      }
+    };
+    document.addEventListener('keydown', handleEsc);
+
+    // Close on overlay click
+    dialogOverlay.addEventListener('click', (e) => {
+      if (e.target === dialogOverlay) {
+        dialogOverlay.remove();
+        document.removeEventListener('keydown', handleEsc);
+        resolve(false);
+      }
+    });
+  });
+}
+
+/**
+ * Escape HTML to prevent XSS
+ */
+function escapeHtml(text: string): string {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+/**
+ * Escape content for markdown code blocks
+ * Based on chrome_agent's escapeContent function
+ */
+function escapeContent(content: string): string {
+  if (!content) return '';
+
+  // 백슬래시를 먼저 escape (다른 escape 처리 전에 수행)
+  let escaped = content.replace(/\\/g, '\\\\');
+
+  // 백틱 escape (마크다운 코드 블록 안에서 문제 방지)
+  escaped = escaped.replace(/`/g, '\\`');
+
+  return escaped;
+}
+
+/**
+ * Show notification (simple implementation)
+ */
+function showNotification(message: string, type: 'info' | 'warning' | 'error' = 'info'): void {
+  // Simple notification implementation
+  const notification = document.createElement('div');
+  notification.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 12px 16px;
+    border-radius: 6px;
+    color: white;
+    font-size: 14px;
+    font-weight: 500;
+    z-index: 10001;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    max-width: 300px;
+    word-wrap: break-word;
+  `;
+
+  if (type === 'error') {
+    notification.style.background = '#f56565';
+  } else if (type === 'warning') {
+    notification.style.background = '#ed8936';
+  } else {
+    notification.style.background = '#4299e1';
+  }
+
+  notification.textContent = message;
+  document.body.appendChild(notification);
+
+  // Show animation
+  setTimeout(() => {
+    notification.style.opacity = '1';
+  }, 10);
+
+  // Remove after 3 seconds
+  setTimeout(() => {
+    notification.style.opacity = '0';
+    setTimeout(() => {
+      if (notification.parentNode) {
+        notification.parentNode.removeChild(notification);
+      }
+    }, 300);
+  }, 3000);
+}
+
+/**
  * Show custom prompt dialog
+ * Based on chrome_agent's showCustomPromptDialog implementation
  */
 function showCustomPromptDialog(cell: Cell): void {
   const cellContent = cell.model.sharedModel.getSource();
+  const cellIndex = getCellIndex(cell);
+  const cellId = getOrAssignCellId(cell);
 
-  // Create dialog overlay
-  const overlay = document.createElement('div');
-  overlay.className = 'jp-agent-dialog-overlay';
+  console.log('커스텀 프롬프트 다이얼로그 표시', cellIndex, cellId);
 
-  const dialog = document.createElement('div');
-  dialog.className = 'jp-agent-dialog';
+  // 기존 다이얼로그가 있으면 제거
+  const existingDialog = document.querySelector('.jp-agent-custom-prompt-dialog');
+  if (existingDialog) {
+    existingDialog.remove();
+  }
 
-  // Dialog title
-  const title = document.createElement('h2');
-  title.textContent = 'Custom Prompt for Cell';
-  dialog.appendChild(title);
+  // 다이얼로그 오버레이 생성
+  const dialogOverlay = document.createElement('div');
+  dialogOverlay.className = 'jp-agent-custom-prompt-dialog';
+  dialogOverlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.3);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  `;
 
-  // Cell preview
-  const previewLabel = document.createElement('label');
-  previewLabel.textContent = 'Cell Content Preview:';
-  previewLabel.className = 'jp-agent-dialog-label';
-  dialog.appendChild(previewLabel);
+  // 다이얼로그 컨테이너 생성
+  const dialogContainer = document.createElement('div');
+  dialogContainer.style.cssText = `
+    background: #fafafa;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 24px;
+    max-width: 500px;
+    width: 90%;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  `;
 
-  const previewBox = document.createElement('pre');
-  previewBox.className = 'jp-agent-dialog-preview';
-  previewBox.textContent = cellContent.length > 200
-    ? cellContent.substring(0, 200) + '...'
-    : cellContent;
-  dialog.appendChild(previewBox);
+  // 다이얼로그 내용
+  dialogContainer.innerHTML = `
+    <div style="margin-bottom: 20px;">
+      <h3 style="margin: 0 0 8px 0; color: #424242; font-size: 16px; font-weight: 500;">
+        셀에 대해 질문하기
+      </h3>
+      <p style="margin: 0; color: #757575; font-size: 13px;">
+        물리적 위치: 셀 ${cellIndex + 1}번째 (위에서 아래로 카운트)
+      </p>
+    </div>
+    <div style="margin-bottom: 20px;">
+      <textarea class="jp-agent-custom-prompt-input"
+        placeholder="이 셀에 대해 질문할 내용을 입력하세요..."
+        style="
+          width: 100%;
+          min-height: 100px;
+          padding: 12px;
+          border: 1px solid #d1d5db;
+          border-radius: 4px;
+          font-size: 14px;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          resize: vertical;
+          box-sizing: border-box;
+        "
+      ></textarea>
+    </div>
+    <div style="display: flex; gap: 12px; justify-content: flex-end;">
+      <button class="jp-agent-custom-prompt-cancel-btn" style="
+        background: transparent;
+        color: #616161;
+        border: 1px solid #d1d5db;
+        border-radius: 3px;
+        padding: 8px 16px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      ">취소</button>
+      <button class="jp-agent-custom-prompt-submit-btn" style="
+        background: transparent;
+        color: #1976d2;
+        border: 1px solid #1976d2;
+        border-radius: 3px;
+        padding: 8px 16px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      ">질문</button>
+    </div>
+  `;
 
-  // Prompt input
-  const inputLabel = document.createElement('label');
-  inputLabel.textContent = 'Enter your prompt:';
-  inputLabel.className = 'jp-agent-dialog-label';
-  dialog.appendChild(inputLabel);
+  dialogOverlay.appendChild(dialogContainer);
+  document.body.appendChild(dialogOverlay);
 
-  const textarea = document.createElement('textarea');
-  textarea.className = 'jp-agent-dialog-input';
-  textarea.placeholder = "e.g., 'Add docstrings to this function' or 'Optimize this code for performance'";
-  textarea.rows = 4;
-  dialog.appendChild(textarea);
+  // 입력 필드에 포커스
+  const inputField = dialogContainer.querySelector('.jp-agent-custom-prompt-input') as HTMLTextAreaElement;
+  setTimeout(() => inputField?.focus(), 100);
 
-  // Helper text
-  const helperText = document.createElement('div');
-  helperText.className = 'jp-agent-dialog-helper';
-  helperText.textContent = 'Press Enter to submit, Shift+Enter for new line, Escape to cancel';
-  dialog.appendChild(helperText);
+  // 버튼 이벤트 리스너
+  const cancelBtn = dialogContainer.querySelector('.jp-agent-custom-prompt-cancel-btn') as HTMLButtonElement;
+  const submitBtn = dialogContainer.querySelector('.jp-agent-custom-prompt-submit-btn') as HTMLButtonElement;
 
-  // Buttons
-  const buttonRow = document.createElement('div');
-  buttonRow.className = 'jp-agent-dialog-buttons';
+  // 취소 버튼
+  cancelBtn.addEventListener('click', () => {
+    dialogOverlay.remove();
+  });
 
-  const cancelBtn = document.createElement('button');
-  cancelBtn.textContent = 'Cancel';
-  cancelBtn.className = 'jp-agent-dialog-button';
-  cancelBtn.onclick = () => {
-    document.body.removeChild(overlay);
-  };
+  cancelBtn.addEventListener('mouseenter', () => {
+    cancelBtn.style.background = '#f5f5f5';
+    cancelBtn.style.borderColor = '#9ca3af';
+  });
 
-  const submitBtn = document.createElement('button');
-  submitBtn.textContent = 'Submit';
-  submitBtn.className = 'jp-agent-dialog-button jp-agent-dialog-button-primary';
-  submitBtn.onclick = () => {
-    const prompt = textarea.value.trim();
-    if (prompt) {
-      // Get cell index and output
-      const cellIndex = getCellIndex(cell);
-      const cellOutput = getCellOutput(cell);
+  cancelBtn.addEventListener('mouseleave', () => {
+    cancelBtn.style.background = 'transparent';
+    cancelBtn.style.borderColor = '#d1d5db';
+  });
 
-      // Create display prompt: "Cell x: Custom request"
-      const displayPrompt = `${cellIndex}번째 셀: ${prompt}`;
+  // 제출 버튼
+  const handleSubmit = async () => {
+    const promptText = inputField?.value.trim() || '';
 
-      // Create LLM prompt with code and output
-      let llmPrompt = `${prompt}\n\n셀 내용:\n\`\`\`\n${cellContent}\n\`\`\``;
-      if (cellOutput) {
-        llmPrompt += `\n\n실행 결과:\n\`\`\`\n${cellOutput}\n\`\`\``;
+    if (!promptText) {
+      showNotification('질문 내용을 입력해주세요.', 'warning');
+      return;
+    }
+
+    dialogOverlay.remove();
+
+    // Get cell output
+    const cellOutput = getCellOutput(cell);
+
+    // Create display prompt: "Cell x: Custom request"
+    const displayPrompt = `${cellIndex}번째 셀: ${promptText}`;
+
+    // Create LLM prompt with code and output
+    let llmPrompt = `${promptText}\n\n셀 내용:\n\`\`\`\n${cellContent}\n\`\`\``;
+    if (cellOutput) {
+      llmPrompt += `\n\n실행 결과:\n\`\`\`\n${cellOutput}\n\`\`\``;
+    }
+
+    const agentPanel = (window as any)._jupyterAgentPanel;
+    if (agentPanel) {
+      // Activate the sidebar panel
+      const app = (window as any).jupyterapp;
+      if (app) {
+        app.shell.activateById(agentPanel.id);
       }
 
-      const agentPanel = (window as any)._jupyterAgentPanel;
-      if (agentPanel) {
-        // Activate the sidebar panel
-        const app = (window as any).jupyterapp;
-        if (app) {
-          app.shell.activateById(agentPanel.id);
-        }
-
-        // Send both prompts
-        if (agentPanel.addCellActionMessage) {
-          agentPanel.addCellActionMessage(CellAction.CUSTOM_PROMPT, cellContent, displayPrompt, llmPrompt);
-        }
+      // Send both prompts with cell ID
+      if (agentPanel.addCellActionMessage) {
+        agentPanel.addCellActionMessage(CellAction.CUSTOM_PROMPT, cellContent, displayPrompt, llmPrompt, cellId);
       }
-
-      document.body.removeChild(overlay);
     }
   };
 
-  buttonRow.appendChild(cancelBtn);
-  buttonRow.appendChild(submitBtn);
-  dialog.appendChild(buttonRow);
+  submitBtn.addEventListener('click', handleSubmit);
 
-  // Keyboard handlers
-  textarea.addEventListener('keydown', (e) => {
+  submitBtn.addEventListener('mouseenter', () => {
+    submitBtn.style.background = 'rgba(25, 118, 210, 0.1)';
+  });
+
+  submitBtn.addEventListener('mouseleave', () => {
+    submitBtn.style.background = 'transparent';
+  });
+
+  // Enter 키로 제출 (Shift+Enter는 줄바꿈)
+  inputField?.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      submitBtn.click();
-    } else if (e.key === 'Escape') {
-      cancelBtn.click();
+      handleSubmit();
     }
   });
 
-  overlay.appendChild(dialog);
-  document.body.appendChild(overlay);
-
-  // Focus textarea
-  setTimeout(() => textarea.focus(), 100);
-
-  // Close on overlay click
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) {
-      document.body.removeChild(overlay);
+  // 오버레이 클릭 시 다이얼로그 닫기
+  dialogOverlay.addEventListener('click', (e) => {
+    if (e.target === dialogOverlay) {
+      dialogOverlay.remove();
     }
   });
+
+  // ESC 키로 다이얼로그 닫기
+  const handleEscapeKey = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      dialogOverlay.remove();
+      document.removeEventListener('keydown', handleEscapeKey);
+    }
+  };
+  document.addEventListener('keydown', handleEscapeKey);
 }

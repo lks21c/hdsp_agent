@@ -1,0 +1,495 @@
+/**
+ * Markdown to HTML converter with syntax highlighting
+ * Based on chrome_agent's formatMarkdownToHtml implementation
+ */
+
+/**
+ * Escape HTML special characters
+ */
+export function escapeHtml(text: string): string {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+/**
+ * Normalize indentation in code blocks
+ */
+export function normalizeIndentation(code: string): string {
+  const lines = code.split('\n');
+
+  // Find minimum indent from non-empty lines
+  let minIndent = Infinity;
+  const nonEmptyLines: number[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim().length > 0) {
+      const match = line.match(/^(\s*)/);
+      const indent = match ? match[1].length : 0;
+      minIndent = Math.min(minIndent, indent);
+      nonEmptyLines.push(i);
+    }
+  }
+
+  // If no indent or no non-empty lines, return original
+  if (minIndent === Infinity || minIndent === 0) {
+    return code;
+  }
+
+  // Remove minimum indent from all lines
+  const normalized = lines.map(line => {
+    if (line.trim().length === 0) {
+      return '';
+    }
+    return line.substring(minIndent);
+  });
+
+  return normalized.join('\n');
+}
+
+/**
+ * Highlight Python code with inline styles
+ */
+export function highlightPython(code: string): string {
+  let highlighted = code;
+
+  // Color styles (matching chrome_agent)
+  const styles = {
+    COMMENT: 'color: #6a9955; font-style: italic;',
+    STRING: 'color: #ce9178;',
+    NUMBER: 'color: #b5cea8;',
+    KEYWORD: 'color: #c586c0; font-weight: bold;',
+    BUILTIN: 'color: #dcdcaa;',
+    FUNCTION: 'color: #4fc1ff; font-weight: bold;',
+    OPERATOR: 'color: #d4d4d4;',
+    BRACKET: 'color: #d4d4d4;'
+  };
+
+  // Use placeholders to preserve order
+  const placeholders: Array<{ id: string; html: string }> = [];
+  let placeholderIndex = 0;
+
+  // Comments (process first)
+  highlighted = highlighted.replace(/(#.*$)/gm, (match) => {
+    const id = `__PH${placeholderIndex++}__`;
+    placeholders.push({
+      id,
+      html: `<span style="${styles.COMMENT}">${escapeHtml(match)}</span>`
+    });
+    return id;
+  });
+
+  // Triple-quoted strings
+  highlighted = highlighted.replace(/(['"]{3})([\s\S]*?)(\1)/g, (match) => {
+    const id = `__PH${placeholderIndex++}__`;
+    placeholders.push({
+      id,
+      html: `<span style="${styles.STRING}">${escapeHtml(match)}</span>`
+    });
+    return id;
+  });
+
+  // Regular strings
+  highlighted = highlighted.replace(/(['"])([^'"]*?)(\1)/g, (match) => {
+    const id = `__PH${placeholderIndex++}__`;
+    placeholders.push({
+      id,
+      html: `<span style="${styles.STRING}">${escapeHtml(match)}</span>`
+    });
+    return id;
+  });
+
+  // Numbers
+  highlighted = highlighted.replace(/\b(\d+\.?\d*)\b/g, (match) => {
+    const id = `__PH${placeholderIndex++}__`;
+    placeholders.push({
+      id,
+      html: `<span style="${styles.NUMBER}">${match}</span>`
+    });
+    return id;
+  });
+
+  // Python keywords
+  const keywords = [
+    'def', 'class', 'if', 'elif', 'else', 'for', 'while', 'return', 'import',
+    'from', 'as', 'try', 'except', 'finally', 'with', 'lambda', 'yield',
+    'async', 'await', 'pass', 'break', 'continue', 'raise', 'assert', 'del',
+    'global', 'nonlocal', 'True', 'False', 'None', 'and', 'or', 'not', 'in', 'is'
+  ];
+
+  keywords.forEach(keyword => {
+    const regex = new RegExp(`\\b${keyword}\\b`, 'g');
+    highlighted = highlighted.replace(regex, (match) => {
+      const id = `__PH${placeholderIndex++}__`;
+      placeholders.push({
+        id,
+        html: `<span style="${styles.KEYWORD}">${match}</span>`
+      });
+      return id;
+    });
+  });
+
+  // Built-in functions
+  const builtins = [
+    'print', 'len', 'range', 'str', 'int', 'float', 'list', 'dict', 'tuple',
+    'set', 'bool', 'type', 'isinstance', 'issubclass', 'hasattr', 'getattr',
+    'setattr', 'delattr', 'dir', 'vars', 'locals', 'globals', 'input', 'open',
+    'file', 'abs', 'all', 'any', 'bin', 'chr', 'ord', 'hex', 'oct', 'pow',
+    'round', 'sum', 'min', 'max', 'sorted', 'reversed', 'enumerate', 'zip',
+    'map', 'filter', 'reduce'
+  ];
+
+  builtins.forEach(builtin => {
+    const regex = new RegExp(`\\b${builtin}\\b`, 'g');
+    highlighted = highlighted.replace(regex, (match) => {
+      const id = `__PH${placeholderIndex++}__`;
+      placeholders.push({
+        id,
+        html: `<span style="${styles.BUILTIN}">${match}</span>`
+      });
+      return id;
+    });
+  });
+
+  // Function definitions - def keyword followed by function name
+  highlighted = highlighted.replace(/(__PH\d+__\s+)([a-zA-Z_][a-zA-Z0-9_]*)/g, (match, defPart, funcName) => {
+    const defPlaceholder = placeholders.find(p => p.id === defPart.trim());
+    if (defPlaceholder && defPlaceholder.html.includes('def')) {
+      const id = `__PH${placeholderIndex++}__`;
+      placeholders.push({
+        id,
+        html: `<span style="${styles.FUNCTION}">${funcName}</span>`
+      });
+      return defPart + id;
+    }
+    return match;
+  });
+
+  // Process remaining text - escape HTML and handle operators/brackets
+  highlighted = highlighted.split(/(__PH\d+__)/g).map(part => {
+    if (part.match(/^__PH\d+__$/)) {
+      return part; // Keep placeholder as is
+    }
+
+    // Escape HTML
+    part = escapeHtml(part);
+
+    // Operators
+    part = part.replace(/([+\-*/%=<>!&|^~]+)/g, `<span style="${styles.OPERATOR}">$1</span>`);
+
+    // Brackets and delimiters
+    part = part.replace(/([()[\]{}])/g, `<span style="${styles.BRACKET}">$1</span>`);
+
+    return part;
+  }).join('');
+
+  // Replace placeholders with actual HTML
+  placeholders.forEach(ph => {
+    highlighted = highlighted.replace(ph.id, ph.html);
+  });
+
+  return highlighted;
+}
+
+/**
+ * Highlight JavaScript code
+ */
+export function highlightJavaScript(code: string): string {
+  const escaped = escapeHtml(code);
+  const lines = escaped.split('\n');
+  const keywords = [
+    'function', 'const', 'let', 'var', 'if', 'else', 'for', 'while',
+    'return', 'class', 'import', 'export', 'from', 'async', 'await',
+    'new', 'this', 'null', 'undefined', 'true', 'false', 'typeof'
+  ];
+
+  let inMultilineComment = false;
+  const highlightedLines = lines.map(line => {
+    // Check for multiline comment continuation
+    if (inMultilineComment) {
+      const endIndex = line.indexOf('*/');
+      if (endIndex !== -1) {
+        inMultilineComment = false;
+        return `<span style="color: #6a9955; font-style: italic;">${line.substring(0, endIndex + 2)}</span>` +
+               highlightJSTokens(line.substring(endIndex + 2), keywords);
+      }
+      return `<span style="color: #6a9955; font-style: italic;">${line}</span>`;
+    }
+
+    // Single-line comment
+    const commentMatch = line.match(/^(\s*)(\/\/.*)$/);
+    if (commentMatch) {
+      return commentMatch[1] + `<span style="color: #6a9955; font-style: italic;">${commentMatch[2]}</span>`;
+    }
+
+    // Multiline comment start
+    const multiCommentStart = line.indexOf('/*');
+    if (multiCommentStart !== -1) {
+      const multiCommentEnd = line.indexOf('*/', multiCommentStart);
+      if (multiCommentEnd !== -1) {
+        return highlightJSTokens(line.substring(0, multiCommentStart), keywords) +
+               `<span style="color: #6a9955; font-style: italic;">${line.substring(multiCommentStart, multiCommentEnd + 2)}</span>` +
+               highlightJSTokens(line.substring(multiCommentEnd + 2), keywords);
+      } else {
+        inMultilineComment = true;
+        return highlightJSTokens(line.substring(0, multiCommentStart), keywords) +
+               `<span style="color: #6a9955; font-style: italic;">${line.substring(multiCommentStart)}</span>`;
+      }
+    }
+
+    // Comment in middle of line
+    const commentIndex = line.indexOf('//');
+    if (commentIndex !== -1) {
+      return highlightJSTokens(line.substring(0, commentIndex), keywords) +
+             `<span style="color: #6a9955; font-style: italic;">${line.substring(commentIndex)}</span>`;
+    }
+
+    return highlightJSTokens(line, keywords);
+  });
+
+  return highlightedLines.join('\n');
+}
+
+/**
+ * Highlight JavaScript tokens (keywords, strings, numbers)
+ */
+function highlightJSTokens(line: string, keywords: string[]): string {
+  const container = document.createElement('span');
+  let i = 0;
+
+  while (i < line.length) {
+    // String check (template literal, double quote, single quote)
+    if (line[i] === '`') {
+      let j = i + 1;
+      let escaped = false;
+      while (j < line.length) {
+        if (line[j] === '\\' && !escaped) {
+          escaped = true;
+          j++;
+          continue;
+        }
+        if (line[j] === '`' && !escaped) break;
+        escaped = false;
+        j++;
+      }
+      if (j < line.length && line[j] === '`') {
+        const span = document.createElement('span');
+        span.style.color = '#ce9178';
+        span.textContent = line.substring(i, j + 1);
+        container.appendChild(span);
+        i = j + 1;
+        continue;
+      }
+    }
+
+    if (line[i] === '"') {
+      let j = i + 1;
+      let escaped = false;
+      while (j < line.length) {
+        if (line[j] === '\\' && !escaped) {
+          escaped = true;
+          j++;
+          continue;
+        }
+        if (line[j] === '"' && !escaped) break;
+        escaped = false;
+        j++;
+      }
+      if (j < line.length && line[j] === '"') {
+        const span = document.createElement('span');
+        span.style.color = '#ce9178';
+        span.textContent = line.substring(i, j + 1);
+        container.appendChild(span);
+        i = j + 1;
+        continue;
+      }
+      // Unclosed string - treat rest as string
+      const span = document.createElement('span');
+      span.style.color = '#ce9178';
+      span.textContent = line.substring(i);
+      container.appendChild(span);
+      break;
+    }
+
+    if (line[i] === '\'') {
+      let j = i + 1;
+      let escaped = false;
+      while (j < line.length) {
+        if (line[j] === '\\' && !escaped) {
+          escaped = true;
+          j++;
+          continue;
+        }
+        if (line[j] === '\'' && !escaped) break;
+        escaped = false;
+        j++;
+      }
+      if (j < line.length && line[j] === '\'') {
+        const span = document.createElement('span');
+        span.style.color = '#ce9178';
+        span.textContent = line.substring(i, j + 1);
+        container.appendChild(span);
+        i = j + 1;
+        continue;
+      }
+      // Unclosed string
+      const span = document.createElement('span');
+      span.style.color = '#ce9178';
+      span.textContent = line.substring(i);
+      container.appendChild(span);
+      break;
+    }
+
+    // Number check
+    if (/\d/.test(line[i])) {
+      let j = i;
+      while (j < line.length && /[\d.]/.test(line[j])) {
+        j++;
+      }
+      const span = document.createElement('span');
+      span.style.color = '#b5cea8';
+      span.textContent = line.substring(i, j);
+      container.appendChild(span);
+      i = j;
+      continue;
+    }
+
+    // Word check (keyword or identifier)
+    if (/[a-zA-Z_$]/.test(line[i])) {
+      let j = i;
+      while (j < line.length && /[a-zA-Z0-9_$]/.test(line[j])) {
+        j++;
+      }
+      const word = line.substring(i, j);
+
+      if (keywords.includes(word)) {
+        const span = document.createElement('span');
+        span.style.color = '#569cd6';
+        span.style.fontWeight = '500';
+        span.textContent = word;
+        container.appendChild(span);
+      } else {
+        const textNode = document.createTextNode(word);
+        container.appendChild(textNode);
+      }
+      i = j;
+      continue;
+    }
+
+    // Regular character
+    const textNode = document.createTextNode(line[i]);
+    container.appendChild(textNode);
+    i++;
+  }
+
+  return container.innerHTML;
+}
+
+/**
+ * Format markdown text to HTML with syntax highlighting
+ */
+export function formatMarkdownToHtml(text: string): string {
+  // Decode HTML entities if present
+  const textarea = document.createElement('textarea');
+  textarea.innerHTML = text;
+  let html = textarea.value;
+
+  // Step 1: Protect code blocks by replacing with placeholders
+  const codeBlocks: Array<{ id: string; code: string; language: string }> = [];
+  const codeBlockPlaceholders: Array<{ placeholder: string; html: string }> = [];
+
+  html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, language, code) => {
+    const lang = (language || 'python').toLowerCase();
+    const trimmedCode = normalizeIndentation(code.trim());
+    const blockId = 'code-block-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+    const placeholder = '__CODE_BLOCK_' + blockId + '__';
+
+    codeBlocks.push({
+      id: blockId,
+      code: trimmedCode,
+      language: lang
+    });
+
+    // Create HTML for code block
+    const highlightedCode = lang === 'python' || lang === 'py'
+      ? highlightPython(trimmedCode)
+      : lang === 'javascript' || lang === 'js'
+      ? highlightJavaScript(trimmedCode)
+      : escapeHtml(trimmedCode);
+
+    const htmlBlock = '<div class="code-block-container" data-block-id="' + blockId + '">' +
+      '<div class="code-block-header">' +
+        '<span class="code-block-language">' + escapeHtml(lang) + '</span>' +
+        '<div class="code-block-actions">' +
+          '<button class="code-block-apply" data-block-id="' + blockId + '" title="셀에 적용">셀에 적용</button>' +
+          '<button class="code-block-copy" data-block-id="' + blockId + '" title="복사">복사</button>' +
+        '</div>' +
+      '</div>' +
+      '<pre class="code-block language-' + escapeHtml(lang) + '"><code id="' + blockId + '">' + highlightedCode + '</code></pre>' +
+    '</div>';
+
+    codeBlockPlaceholders.push({
+      placeholder: placeholder,
+      html: htmlBlock
+    });
+
+    return placeholder;
+  });
+
+  // Step 2: Protect inline code
+  const inlineCodePlaceholders: Array<{ placeholder: string; html: string }> = [];
+  html = html.replace(/`([^`]+)`/g, (match, code) => {
+    const placeholder = '__INLINE_CODE_' + Math.random().toString(36).substr(2, 9) + '__';
+    inlineCodePlaceholders.push({
+      placeholder: placeholder,
+      html: '<code class="inline-code">' + escapeHtml(code) + '</code>'
+    });
+    return placeholder;
+  });
+
+  // Step 3: Escape HTML for non-placeholder text
+  html = html.split(/(__(?:CODE_BLOCK|INLINE_CODE)_[a-z0-9]+__)/g)
+    .map((part, index) => {
+      // Odd indices are placeholders - keep as is
+      if (index % 2 === 1) return part;
+      // Even indices are regular text - escape HTML
+      return escapeHtml(part);
+    })
+    .join('');
+
+  // Step 4: Convert markdown to HTML
+  // Headings
+  html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
+  html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
+  html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
+
+  // Bold text
+  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+
+  // Italic text
+  html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+
+  // Lists
+  html = html.replace(/^- (.*$)/gim, '<li>$1</li>');
+  html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
+
+  // Numbered lists
+  html = html.replace(/^\d+\. (.*$)/gim, '<li>$1</li>');
+
+  // Line breaks
+  html = html.replace(/\n/g, '<br>');
+
+  // Step 5: Restore inline code placeholders
+  inlineCodePlaceholders.forEach(item => {
+    html = html.replace(item.placeholder, item.html);
+  });
+
+  // Step 6: Restore code block placeholders
+  codeBlockPlaceholders.forEach(item => {
+    html = html.replace(item.placeholder, item.html);
+  });
+
+  return html;
+}
+
