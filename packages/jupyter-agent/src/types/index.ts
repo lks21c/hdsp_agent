@@ -100,3 +100,28 @@ export enum AgentEvent {
   MESSAGE_SENT = 'jupyter-agent:message-sent',
   MESSAGE_RECEIVED = 'jupyter-agent:message-received'
 }
+
+export interface INotebookGenerationRequest {
+  prompt: string;
+  outputDir?: string;
+}
+
+export interface INotebookGenerationResponse {
+  taskId: string;
+  status: string;
+  message: string;
+}
+
+export interface ITaskStatus {
+  taskId: string;
+  prompt: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  progress: number;
+  message: string;
+  result?: any;
+  error?: string;
+  notebookPath?: string;
+  createdAt: string;
+  startedAt?: string;
+  completedAt?: string;
+}

@@ -4,6 +4,7 @@ LLM Service - Handles interactions with different LLM providers
 
 import os
 import json
+import asyncio
 from typing import Dict, Any, Optional
 import aiohttp
 
@@ -27,8 +28,8 @@ class LLMService:
         else:
             raise ValueError(f"Unsupported provider: {self.provider}")
 
-    async def _call_gemini(self, prompt: str, context: Optional[str] = None) -> str:
-        """Call Google Gemini API"""
+    async def _call_gemini(self, prompt: str, context: Optional[str] = None, max_retries: int = 3) -> str:
+        """Call Google Gemini API with retry logic"""
         gemini_config = self.config.get('gemini', {})
         api_key = gemini_config.get('apiKey')
         model = gemini_config.get('model', 'gemini-2.5-pro')
@@ -78,29 +79,78 @@ class LLMService:
             ]
         }
 
-        # Set timeout to 60 seconds for gemini-2.5-pro (slower than 2.0-flash-exp)
-        timeout = aiohttp.ClientTimeout(total=60)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(url, json=payload) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    print(f"[LLMService] Gemini API Error: {error_text}")
-                    raise Exception(f"Gemini API error: {error_text}")
+        # Retry logic with exponential backoff
+        for attempt in range(max_retries):
+            try:
+                # Set timeout to 60 seconds for gemini-2.5-pro (slower than 2.0-flash-exp)
+                timeout = aiohttp.ClientTimeout(total=60)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.post(url, json=payload) as response:
+                        if response.status == 503:
+                            # Service overloaded - retry with backoff
+                            if attempt < max_retries - 1:
+                                wait_time = (2 ** attempt) * 2  # 2, 4, 8 seconds
+                                print(f"[LLMService] Gemini API overloaded (503). Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                                await asyncio.sleep(wait_time)
+                                continue
+                            else:
+                                error_text = await response.text()
+                                print(f"[LLMService] Gemini API Error after {max_retries} retries: {error_text}")
+                                raise Exception(f"Gemini API overloaded after {max_retries} retries: {error_text}")
 
-                data = await response.json()
-                print(f"[LLMService] Gemini API Response Status: {response.status}")
+                        if response.status == 429:
+                            # Rate limit - retry with longer backoff
+                            if attempt < max_retries - 1:
+                                wait_time = (2 ** attempt) * 5  # 5, 10, 20 seconds
+                                print(f"[LLMService] Gemini API rate limit (429). Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                                await asyncio.sleep(wait_time)
+                                continue
+                            else:
+                                error_text = await response.text()
+                                print(f"[LLMService] Gemini API rate limit after {max_retries} retries: {error_text}")
+                                raise Exception(f"Gemini API rate limit after {max_retries} retries: {error_text}")
 
-                # Extract response text from Gemini format
-                if 'candidates' in data and len(data['candidates']) > 0:
-                    candidate = data['candidates'][0]
-                    if 'content' in candidate and 'parts' in candidate['content']:
-                        parts = candidate['content']['parts']
-                        if len(parts) > 0 and 'text' in parts[0]:
-                            response_text = parts[0]['text']
-                            print(f"[LLMService] Successfully received response from {model} (length: {len(response_text)} chars)")
-                            return response_text
+                        if response.status != 200:
+                            error_text = await response.text()
+                            print(f"[LLMService] Gemini API Error: {error_text}")
+                            raise Exception(f"Gemini API error: {error_text}")
 
-                raise Exception("No valid response from Gemini API")
+                        data = await response.json()
+                        print(f"[LLMService] Gemini API Response Status: {response.status}")
+
+                        # Extract response text from Gemini format
+                        if 'candidates' in data and len(data['candidates']) > 0:
+                            candidate = data['candidates'][0]
+                            if 'content' in candidate and 'parts' in candidate['content']:
+                                parts = candidate['content']['parts']
+                                if len(parts) > 0 and 'text' in parts[0]:
+                                    response_text = parts[0]['text']
+                                    print(f"[LLMService] Successfully received response from {model} (length: {len(response_text)} chars)")
+                                    return response_text
+
+                        raise Exception("No valid response from Gemini API")
+
+            except asyncio.TimeoutError:
+                if attempt < max_retries - 1:
+                    wait_time = (2 ** attempt) * 3  # 3, 6, 12 seconds
+                    print(f"[LLMService] Request timeout. Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                    await asyncio.sleep(wait_time)
+                    continue
+                else:
+                    raise Exception(f"Request timeout after {max_retries} retries")
+
+            except Exception as e:
+                # For other exceptions, don't retry
+                if "API error" in str(e) or "timeout" in str(e):
+                    raise
+                # For network errors, retry
+                if attempt < max_retries - 1:
+                    wait_time = (2 ** attempt) * 2
+                    print(f"[LLMService] Network error: {e}. Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                    await asyncio.sleep(wait_time)
+                    continue
+                else:
+                    raise
 
     async def _call_vllm(self, prompt: str, context: Optional[str] = None) -> str:
         """Call vLLM endpoint with OpenAI Compatible API"""

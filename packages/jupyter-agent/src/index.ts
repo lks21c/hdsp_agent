@@ -9,6 +9,7 @@ import {
 // Import plugins
 import { sidebarPlugin } from './plugins/sidebar-plugin';
 import { cellButtonsPlugin } from './plugins/cell-buttons-plugin';
+import { promptGenerationPlugin } from './plugins/prompt-generation-plugin';
 
 // Import styles
 import '../style/index.css';
@@ -19,7 +20,8 @@ import '../style/index.css';
  */
 const plugins: JupyterFrontEndPlugin<any>[] = [
   sidebarPlugin,
-  cellButtonsPlugin
+  cellButtonsPlugin,
+  promptGenerationPlugin
 ];
 
 export default plugins;
