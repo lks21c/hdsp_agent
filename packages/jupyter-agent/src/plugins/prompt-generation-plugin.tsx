@@ -250,8 +250,8 @@ export const promptGenerationPlugin: JupyterFrontEndPlugin<void> = {
 
       // Add command
       app.commands.addCommand(COMMAND_ID, {
-        label: 'HDSP',
-        caption: '프롬프트로 노트북 생성',
+        label: '프롬프트로 노트북 만들기',
+        caption: '프롬프트로 노트북 만들기',
         icon: hdspIcon,
         execute: () => {
           // Create dialog widget
