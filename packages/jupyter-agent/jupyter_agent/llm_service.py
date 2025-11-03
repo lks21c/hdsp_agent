@@ -36,6 +36,9 @@ class LLMService:
         if not api_key:
             raise ValueError("Gemini API key not configured")
 
+        print(f"[LLMService] Calling Gemini API with model: {model}")
+        print(f"[LLMService] API URL: https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent")
+
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
 
         # Construct message with context if provided
@@ -75,13 +78,17 @@ class LLMService:
             ]
         }
 
-        async with aiohttp.ClientSession() as session:
+        # Set timeout to 60 seconds for gemini-2.5-pro (slower than 2.0-flash-exp)
+        timeout = aiohttp.ClientTimeout(total=60)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(url, json=payload) as response:
                 if response.status != 200:
                     error_text = await response.text()
+                    print(f"[LLMService] Gemini API Error: {error_text}")
                     raise Exception(f"Gemini API error: {error_text}")
 
                 data = await response.json()
+                print(f"[LLMService] Gemini API Response Status: {response.status}")
 
                 # Extract response text from Gemini format
                 if 'candidates' in data and len(data['candidates']) > 0:
@@ -89,7 +96,9 @@ class LLMService:
                     if 'content' in candidate and 'parts' in candidate['content']:
                         parts = candidate['content']['parts']
                         if len(parts) > 0 and 'text' in parts[0]:
-                            return parts[0]['text']
+                            response_text = parts[0]['text']
+                            print(f"[LLMService] Successfully received response from {model} (length: {len(response_text)} chars)")
+                            return response_text
 
                 raise Exception("No valid response from Gemini API")
 
@@ -127,7 +136,9 @@ class LLMService:
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
 
-        async with aiohttp.ClientSession() as session:
+        # Set timeout to 60 seconds
+        timeout = aiohttp.ClientTimeout(total=60)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(url, json=payload, headers=headers) as response:
                 if response.status != 200:
                     error_text = await response.text()
@@ -179,7 +190,9 @@ class LLMService:
             "temperature": 0.7
         }
 
-        async with aiohttp.ClientSession() as session:
+        # Set timeout to 60 seconds
+        timeout = aiohttp.ClientTimeout(total=60)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(url, json=payload, headers=headers) as response:
                 if response.status != 200:
                     error_text = await response.text()

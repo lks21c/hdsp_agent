@@ -61,7 +61,20 @@ class ChatHandler(APIHandler):
                 }))
                 return
 
-            self.log.info(f"Using provider: {config.get('provider')}")
+            provider = config.get('provider')
+            self.log.info(f"Using provider: {provider}")
+
+            # Log detailed model configuration
+            if provider == 'gemini':
+                model = config.get('gemini', {}).get('model', 'gemini-pro')
+                self.log.info(f"Gemini Model: {model}")
+            elif provider == 'vllm':
+                model = config.get('vllm', {}).get('model', 'default')
+                endpoint = config.get('vllm', {}).get('endpoint', 'http://localhost:8000')
+                self.log.info(f"vLLM Model: {model}, Endpoint: {endpoint}")
+            elif provider == 'openai':
+                model = config.get('openai', {}).get('model', 'gpt-4')
+                self.log.info(f"OpenAI Model: {model}")
 
             # Initialize LLM service
             self.log.info("Initializing LLM service...")

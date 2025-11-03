@@ -43,8 +43,19 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [geminiApiKey, setGeminiApiKey] = useState(
     currentConfig?.gemini?.apiKey || ''
   );
+
+  // Validate gemini model - only allow valid options
+  const validateGeminiModel = (model: string | undefined): string => {
+    const validModels = ['gemini-2.5-pro', 'gemini-2.5-flash'];
+    if (model && validModels.includes(model)) {
+      return model;
+    }
+    console.warn(`[SettingsPanel] Invalid Gemini model "${model}", defaulting to gemini-2.5-pro`);
+    return 'gemini-2.5-pro';
+  };
+
   const [geminiModel, setGeminiModel] = useState(
-    currentConfig?.gemini?.model || 'gemini-2.5-pro'
+    validateGeminiModel(currentConfig?.gemini?.model)
   );
 
   // vLLM settings
@@ -65,6 +76,20 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [openaiModel, setOpenaiModel] = useState(
     currentConfig?.openai?.model || 'gpt-4'
   );
+
+  // Update state when currentConfig changes
+  useEffect(() => {
+    if (currentConfig) {
+      setProvider(currentConfig.provider || 'gemini');
+      setGeminiApiKey(currentConfig.gemini?.apiKey || '');
+      setGeminiModel(validateGeminiModel(currentConfig.gemini?.model));
+      setVllmEndpoint(currentConfig.vllm?.endpoint || 'http://localhost:8000');
+      setVllmApiKey(currentConfig.vllm?.apiKey || '');
+      setVllmModel(currentConfig.vllm?.model || 'meta-llama/Llama-2-7b-chat-hf');
+      setOpenaiApiKey(currentConfig.openai?.apiKey || '');
+      setOpenaiModel(currentConfig.openai?.model || 'gpt-4');
+    }
+  }, [currentConfig]);
 
   const handleTest = async () => {
     setIsTesting(true);

@@ -415,13 +415,10 @@ function sendToSidebarPanel(
     app.shell.activateById(agentPanel.id);
   }
 
-  // Escape content for markdown
-  const escapedContent = escapeContent(cellContent);
-  const escapedOutput = escapeContent(cellOutput);
-
   // Create user-facing display prompt
   let displayPrompt = '';
   // Create actual LLM prompt (based on chrome_agent)
+  // Note: Use original content, not escaped. JSON.stringify will handle escaping.
   let llmPrompt = '';
 
   switch (action) {
@@ -433,7 +430,7 @@ function sendToSidebarPanel(
       llmPrompt = `다음 Jupyter 셀의 내용을 자세히 설명해주세요:
 
 \`\`\`python
-${escapedContent}
+${cellContent}
 \`\`\``;
       break;
 
@@ -447,7 +444,7 @@ ${escapedContent}
         cellOutput.includes('오류')
       );
 
-      if (hasError && escapedOutput) {
+      if (hasError && cellOutput) {
         // 에러가 있는 경우 (chrome_agent와 동일)
         displayPrompt = `${cellIndex}번째 셀: 에러 수정 요청`;
 
@@ -455,12 +452,12 @@ ${escapedContent}
 
 원본 코드:
 \`\`\`python
-${escapedContent}
+${cellContent}
 \`\`\`
 
 에러:
 \`\`\`
-${escapedOutput}
+${cellOutput}
 \`\`\`
 
 다음 형식으로 응답해주세요:
@@ -497,7 +494,7 @@ ${escapedOutput}
 
 코드:
 \`\`\`python
-${escapedContent}
+${cellContent}
 \`\`\`
 
 다음 형식으로 응답해주세요:
@@ -530,9 +527,11 @@ ${escapedContent}
       break;
   }
 
-  // Send both prompts to panel with cell ID
+  // Send both prompts to panel with cell ID and cell index
   if (agentPanel.addCellActionMessage) {
-    agentPanel.addCellActionMessage(action, cellContent, displayPrompt, llmPrompt, cellId);
+    // cellIndex is 1-based (for display), convert to 0-based for array access
+    const cellIndexZeroBased = cellIndex - 1;
+    agentPanel.addCellActionMessage(action, cellContent, displayPrompt, llmPrompt, cellId, cellIndexZeroBased);
   }
 }
 
@@ -908,9 +907,11 @@ function showCustomPromptDialog(cell: Cell): void {
         app.shell.activateById(agentPanel.id);
       }
 
-      // Send both prompts with cell ID
+      // Send both prompts with cell ID and cell index
       if (agentPanel.addCellActionMessage) {
-        agentPanel.addCellActionMessage(CellAction.CUSTOM_PROMPT, cellContent, displayPrompt, llmPrompt, cellId);
+        // cellIndex is 1-based (for display), convert to 0-based for array access
+        const cellIndexZeroBased = cellIndex - 1;
+        agentPanel.addCellActionMessage(CellAction.CUSTOM_PROMPT, cellContent, displayPrompt, llmPrompt, cellId, cellIndexZeroBased);
       }
     }
   };

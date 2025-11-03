@@ -18,6 +18,7 @@ export interface ChatPanelHandle {
   setInput: (value: string) => void;
   setLlmPrompt: (prompt: string) => void;
   setCurrentCellId: (cellId: string) => void;
+  setCurrentCellIndex: (cellIndex: number) => void;
 }
 
 /**
@@ -34,6 +35,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService }, 
   const pendingLlmPromptRef = useRef<string | null>(null);
   const allCodeBlocksRef = useRef<Array<{ id: string; code: string; language: string }>>([]);
   const currentCellIdRef = useRef<string | null>(null);
+  const currentCellIndexRef = useRef<number | null>(null);
 
   // Expose handleSendMessage via ref
   useImperativeHandle(ref, () => ({
@@ -54,6 +56,10 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService }, 
     setCurrentCellId: (cellId: string) => {
       console.log('[AgentPanel] setCurrentCellId called with:', cellId);
       currentCellIdRef.current = cellId;
+    },
+    setCurrentCellIndex: (cellIndex: number) => {
+      console.log('[AgentPanel] setCurrentCellIndex called with:', cellIndex);
+      currentCellIndexRef.current = cellIndex;
     }
   }));
 
@@ -66,6 +72,25 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService }, 
     try {
       const config = await apiService.getConfig();
       setLlmConfig(config as any);
+
+      // Log loaded model configuration
+      const configData = config as any;
+      console.log('=== HDSP Agent Model Configuration ===');
+      console.log('Provider:', configData.provider);
+
+      if (configData.provider === 'gemini') {
+        console.log('Gemini Model:', configData.gemini?.model || 'gemini-pro (default)');
+        console.log('Gemini API Key:', configData.gemini?.apiKey ? '✓ Configured' : '✗ Not configured');
+      } else if (configData.provider === 'vllm') {
+        console.log('vLLM Model:', configData.vllm?.model || 'default');
+        console.log('vLLM Endpoint:', configData.vllm?.endpoint || 'http://localhost:8000');
+        console.log('vLLM API Key:', configData.vllm?.apiKey ? '✓ Configured' : '✗ Not configured');
+      } else if (configData.provider === 'openai') {
+        console.log('OpenAI Model:', configData.openai?.model || 'gpt-4');
+        console.log('OpenAI API Key:', configData.openai?.apiKey ? '✓ Configured' : '✗ Not configured');
+      }
+
+      console.log('=====================================');
     } catch (error) {
       console.error('Failed to load config:', error);
     }
@@ -332,69 +357,64 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService }, 
     originalText: string | null
   ) => {
     try {
-      console.log('[AgentPanel] applyCodeToNotebookCell called', { 
+      console.log('[AgentPanel] applyCodeToNotebookCell called', {
+        currentCellIndex: currentCellIndexRef.current,
         currentCellId: currentCellIdRef.current,
-        blockId 
+        blockId
       });
-      
-      // If we have a current cell ID, apply directly
-      if (currentCellIdRef.current) {
-        console.log('[AgentPanel] Looking for cell with ID:', currentCellIdRef.current);
+
+      // Try cell index first (most reliable)
+      if (currentCellIndexRef.current !== null && currentCellIndexRef.current !== undefined) {
+        console.log('[AgentPanel] Using cell index:', currentCellIndexRef.current);
         const cells = notebook.widgets || [];
-        if (cells && cells.length > 0) {
-          for (let i = 0; i < cells.length; i++) {
-            const cell = cells[i];
-            const cellModel = cell.model || cell;
-            
-            // Check if this is the target cell
-            let cellId: string | undefined;
-            try {
-              cellId = cellModel.metadata?.get?.('jupyterAgentCellId') as string | undefined;
-            } catch (e) {
-              // Try alternative methods
-              cellId = cellModel.id || 
-                      (cellModel.metadata as any)?.jupyterAgentCellId ||
-                      undefined;
+
+        if (currentCellIndexRef.current >= 0 && currentCellIndexRef.current < cells.length) {
+          const cell = cells[currentCellIndexRef.current];
+          const cellModel = cell.model || cell;
+
+          console.log('[AgentPanel] Found cell at index, applying code...');
+
+          try {
+            if (cellModel.sharedModel && typeof cellModel.sharedModel.setSource === 'function') {
+              cellModel.sharedModel.setSource(code);
+            } else if (cellModel.setSource && typeof cellModel.setSource === 'function') {
+              cellModel.setSource(code);
+            } else if (cellModel.value && typeof cellModel.value.setText === 'function') {
+              cellModel.value.setText(code);
+            } else if (cellModel.value && cellModel.value.text !== undefined) {
+              cellModel.value.text = code;
+            } else {
+              throw new Error('Unable to set cell source - no compatible method found');
             }
-            
-            console.log(`[AgentPanel] Cell ${i} has ID:`, cellId);
-            
-            if (cellId === currentCellIdRef.current) {
-              console.log('[AgentPanel] Found target cell! Applying code...');
-              // Update cell content using sharedModel (JupyterLab standard API)
-              try {
-                if (cellModel.sharedModel && typeof cellModel.sharedModel.setSource === 'function') {
-                  cellModel.sharedModel.setSource(code);
-                } else if (cellModel.setSource && typeof cellModel.setSource === 'function') {
-                  cellModel.setSource(code);
-                } else if (cellModel.value && typeof cellModel.value.setText === 'function') {
-                  cellModel.value.setText(code);
-                } else if (cellModel.value && cellModel.value.text !== undefined) {
-                  cellModel.value.text = code;
-                } else {
-                  throw new Error('Unable to set cell source - no compatible method found');
-                }
-                
-                console.log('[AgentPanel] Code applied successfully!');
-                showNotification('코드가 셀에 적용되었습니다!', 'info');
-                button.disabled = false;
-                button.textContent = originalText || '셀에 적용';
-                // Clear the cell ID after successful application
-                currentCellIdRef.current = null;
-                return;
-              } catch (updateError) {
-                console.error('Failed to update cell content:', updateError);
-                // Fall through to show selector dialog
-              }
-            }
+
+            console.log('[AgentPanel] Code applied successfully!');
+            showNotification('코드가 셀에 적용되었습니다!', 'info');
+            button.disabled = false;
+            button.textContent = originalText || '셀에 적용';
+            // Clear the cell index after successful application
+            currentCellIndexRef.current = null;
+            currentCellIdRef.current = null;
+            return;
+          } catch (updateError) {
+            console.error('Failed to update cell content:', updateError);
+            showNotification('셀 내용 업데이트 실패: ' + (updateError as Error).message, 'error');
+            button.disabled = false;
+            button.textContent = originalText || '셀에 적용';
+            return;
           }
+        } else {
+          console.error('[AgentPanel] Cell index out of bounds:', currentCellIndexRef.current, 'cells.length:', cells.length);
+          showNotification('대상 셀을 찾을 수 없습니다. 셀이 삭제되었거나 이동했을 수 있습니다.', 'error');
+          button.disabled = false;
+          button.textContent = originalText || '셀에 적용';
+          currentCellIndexRef.current = null;
+          currentCellIdRef.current = null;
+          return;
         }
-        console.log('[AgentPanel] Target cell not found, showing selector dialog');
-      } else {
-        console.log('[AgentPanel] No current cell ID set, showing selector dialog');
       }
 
-      // No current cell ID or cell not found, show selector dialog
+      // Fallback: show selector dialog
+      console.log('[AgentPanel] No current cell index set, showing selector dialog');
       showCellSelectorDialog(code, button, originalText);
     } catch (error) {
       console.error('Failed to apply code:', error);
@@ -908,25 +928,33 @@ export class AgentPanelWidget extends ReactWidget {
    * @param displayPrompt - The user-facing prompt to show in the UI
    * @param llmPrompt - The actual prompt to send to the LLM
    * @param cellId - The cell ID for applying code (optional)
+   * @param cellIndex - The cell index (0-based) for applying code (optional)
    */
   addCellActionMessage(
     action: string,
     cellContent: string,
     displayPrompt: string,
     llmPrompt: string,
-    cellId?: string
+    cellId?: string,
+    cellIndex?: number
   ): void {
     console.log('[AgentPanel] Cell action:', action);
     console.log('[AgentPanel] Display prompt:', displayPrompt);
     console.log('[AgentPanel] LLM prompt:', llmPrompt);
     console.log('[AgentPanel] Cell ID:', cellId);
+    console.log('[AgentPanel] Cell Index:', cellIndex);
 
     if (!this.chatPanelRef.current) {
       console.error('[AgentPanel] ChatPanel ref not available');
       return;
     }
 
-    // Store cell ID for code application
+    // Store cell index for code application (preferred method)
+    if (cellIndex !== undefined && this.chatPanelRef.current.setCurrentCellIndex) {
+      this.chatPanelRef.current.setCurrentCellIndex(cellIndex);
+    }
+
+    // Store cell ID for code application (fallback)
     if (cellId && this.chatPanelRef.current.setCurrentCellId) {
       this.chatPanelRef.current.setCurrentCellId(cellId);
     }
