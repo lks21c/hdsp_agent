@@ -974,4 +974,128 @@ export class AgentPanelWidget extends ReactWidget {
       }
     }, 100);
   }
+
+  /**
+   * Analyze entire notebook before saving
+   * @param cells - Array of collected cells with content, output, and imports
+   * @param onComplete - Callback to execute after analysis (perform save)
+   */
+  analyzeNotebook(cells: any[], onComplete: () => void): void {
+    console.log('[AgentPanel] analyzeNotebook called with', cells.length, 'cells');
+
+    if (!this.chatPanelRef.current) {
+      console.error('[AgentPanel] ChatPanel ref not available');
+      onComplete();
+      return;
+    }
+
+    // Create summary of notebook
+    const totalCells = cells.length;
+    const cellsWithErrors = cells.filter(cell =>
+      cell.output && (
+        cell.output.includes('Error') ||
+        cell.output.includes('Traceback') ||
+        cell.output.includes('Exception')
+      )
+    ).length;
+    const cellsWithImports = cells.filter(cell => cell.imports && cell.imports.length > 0).length;
+    const localImports = cells.reduce((acc, cell) => {
+      if (cell.imports) {
+        return acc + cell.imports.filter((imp: any) => imp.isLocal).length;
+      }
+      return acc;
+    }, 0);
+
+    // Create display prompt
+    const displayPrompt = `전체 노트북 검수 요청 (${totalCells}개 셀)`;
+
+    // Create detailed LLM prompt with all cells
+    let llmPrompt = `다음은 저장하기 전의 Jupyter 노트북 전체 내용입니다. 모든 셀을 검토하고 개선 사항을 제안해주세요.
+
+## 노트북 요약
+- 전체 셀 수: ${totalCells}개
+- 에러가 있는 셀: ${cellsWithErrors}개
+- Import가 있는 셀: ${cellsWithImports}개
+- 로컬 모듈 import: ${localImports}개
+
+## 전체 셀 내용
+
+`;
+
+    cells.forEach((cell, index) => {
+      llmPrompt += `### 셀 ${index + 1} (ID: ${cell.id})
+\`\`\`python
+${cell.content}
+\`\`\`
+`;
+
+      if (cell.output) {
+        llmPrompt += `
+**실행 결과:**
+\`\`\`
+${cell.output}
+\`\`\`
+`;
+      }
+
+      if (cell.imports && cell.imports.length > 0) {
+        llmPrompt += `
+**Imports:**
+`;
+        cell.imports.forEach((imp: any) => {
+          llmPrompt += `- \`${imp.module}\` (${imp.isLocal ? '로컬' : '표준 라이브러리'})\n`;
+        });
+      }
+
+      llmPrompt += '\n---\n\n';
+    });
+
+    llmPrompt += `
+## 검수 요청 사항
+
+다음 형식으로 응답해주세요:
+
+### 1. 전반적인 코드 품질 평가
+(노트북 전체의 코드 품질, 구조, 일관성 등을 평가)
+
+### 2. 발견된 주요 이슈
+(에러, 경고, 잠재적 문제점 등을 나열)
+
+### 3. 셀별 개선 제안
+각 셀에 대해 구체적인 개선 사항이 있다면:
+- **셀 X**: (개선 사항)
+  \`\`\`python
+  (개선된 코드)
+  \`\`\`
+
+### 4. 전반적인 개선 권장사항
+(노트북 전체를 개선하기 위한 일반적인 제안)
+
+### 5. 저장 권장 여부
+- ✅ **저장 권장**: (이유)
+- ⚠️ **수정 후 저장 권장**: (이유)
+- ❌ **저장 비권장**: (이유)
+`;
+
+    // Set the display prompt in the input field
+    this.chatPanelRef.current.setInput(displayPrompt);
+
+    // Store the LLM prompt
+    this.chatPanelRef.current.setLlmPrompt(llmPrompt);
+
+    // Automatically execute after a short delay to ensure state is updated
+    setTimeout(() => {
+      if (this.chatPanelRef.current) {
+        this.chatPanelRef.current.handleSendMessage().catch(error => {
+          console.error('[AgentPanel] Failed to send message automatically:', error);
+        }).finally(() => {
+          // Store the onComplete callback to be executed after user reviews the analysis
+          // For now, we'll execute it immediately
+          // TODO: Add UI button to allow user to review and then save
+          console.log('[AgentPanel] Analysis complete, executing onComplete callback');
+          onComplete();
+        });
+      }
+    }, 100);
+  }
 }
