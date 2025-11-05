@@ -1,0 +1,118 @@
+[tool.poetry]
+name = "hdsp-agent"
+version = "0.1.0"
+description = "AI-powered code assistance for JupyterLab with cell-level actions"
+authors = ["Your Name <your.email@example.com>"]
+license = "MIT"
+readme = "README.md"
+homepage = "https://github.com/yourusername/hdsp-agent"
+repository = "https://github.com/yourusername/hdsp-agent.git"
+keywords = ["jupyter", "jupyterlab", "jupyterlab-extension", "ai", "llm", "code-assistant"]
+classifiers = [
+    "Framework :: Jupyter",
+    "Framework :: Jupyter :: JupyterLab",
+    "Framework :: Jupyter :: JupyterLab :: 4",
+    "Framework :: Jupyter :: JupyterLab :: Extensions",
+    "Framework :: Jupyter :: JupyterLab :: Extensions :: Prebuilt",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+packages = [
+    { include = "backend" }
+]
+include = [
+    "backend/labextension/**/*",
+    "backend/etc/**/*",
+    "install.json",
+]
+
+[tool.poetry.dependencies]
+python = "^3.8.1"
+jupyter-server = "^2.0.0"
+aiohttp = "^3.8.0"
+overrides = "^7.7.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.0.0"
+pytest-asyncio = "^0.21.0"
+black = "^23.0.0"
+isort = "^5.12.0"
+flake8 = "^6.0.0"
+jupyterlab = "^4.0.0"
+
+[tool.poetry.group.build.dependencies]
+hatch-jupyter-builder = "^0.8.3"
+jupyter-packaging = "^0.12.3"
+
+[build-system]
+requires = ["poetry-core>=1.0.0", "jupyter-packaging>=0.12.3"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+# Add any CLI scripts here if needed
+
+[tool.poetry.plugins."jupyter_labextensions"]
+hdsp-agent = "backend"
+
+[tool.poetry.plugins."jupyter_server.extension_points"]
+hdsp-agent = "backend:_jupyter_server_extension_points"
+
+
+# Black configuration
+[tool.black]
+line-length = 88
+target-version = ['py38', 'py39', 'py310', 'py311']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+  | node_modules
+  | backend/labextension
+)/
+'''
+
+# isort configuration
+[tool.isort]
+profile = "black"
+line_length = 88
+skip_gitignore = true
+extend_skip_glob = ["backend/labextension/*"]
+
+# pytest configuration
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+
+# JupyterLab extension build configuration
+[tool.jupyter-packaging.options]
+skip-if-exists = ["backend/labextension/static/style.js"]
+ensured-targets = [
+    "backend/labextension/static/style.js",
+    "backend/labextension/package.json",
+]
+
+[tool.jupyter-packaging.builder]
+factory = "jupyter_packaging.npm_builder"
+
+[tool.jupyter-packaging.build-args]
+build_cmd = "build:prod"
+npm = ["jlpm"]
+source_dir = "frontend"
+build_dir = "backend/labextension"

@@ -1,33 +1,3 @@
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-
-# Thumbnails
-._*
-
-# Files that might appear in the root of a volume
-.DocumentRevisions-V100
-.fseventsd
-.Spotlight-V100
-.TemporaryItems
-.Trashes
-.VolumeIcon.icns
-.com.apple.timemachine.donotpresent
-
-# Directories potentially created on remote AFP share
-.AppleDB
-.AppleDesktop
-Network Trash Folder
-Temporary Items
-.apdisk
-
-# Node modules
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
 # Python
 __pycache__/
 *.py[cod]
@@ -49,20 +19,38 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
+*.ipynb_checkpoints
 
-# Virtual environments
-venv/
-ENV/
-env/
-.venv
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.yarn/
+.pnp.*
+
+# JupyterLab
+.ipynb_checkpoints/
+*.ipynb
+.jupyter/
+jupyter_agent/labextension/
+jupyter_agent/__pycache__/
+jupyter_agent/handlers/__pycache__/
+jupyter_agent/services/__pycache__/
+
+# Build outputs
+dist/
+lib/
+style/
+tsconfig.tsbuildinfo
+poetry.lock
+yarn.lock
 
 # IDE
 .vscode/
 .idea/
-*.swp
-*.swo
-*~
 
-# Build outputs
-*.log
-.cache/
+# Misc
+.DS_Store
+DEBUG_INSTRUCTIONS.md
