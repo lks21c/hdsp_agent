@@ -387,6 +387,98 @@ function highlightJSTokens(line: string, keywords: string[]): string {
 }
 
 /**
+ * Format inline markdown (bold, italic, inline code) within text
+ */
+export function formatInlineMarkdown(text: string): string {
+  let html = escapeHtml(text);
+
+  // Inline code first (to protect from other transformations)
+  html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
+
+  // Bold text (**text**)
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+  // Italic text (*text*)
+  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+  return html;
+}
+
+/**
+ * Parse markdown table to HTML
+ */
+export function parseMarkdownTable(tableText: string): string {
+  const lines = tableText.trim().split('\n');
+  if (lines.length < 2) return escapeHtml(tableText);
+
+  // Check if it's a valid table (has header separator)
+  const separatorIndex = lines.findIndex(line => /^\|?\s*[-:]+[-|\s:]+\s*\|?$/.test(line));
+  if (separatorIndex === -1 || separatorIndex === 0) return escapeHtml(tableText);
+
+  const headerLines = lines.slice(0, separatorIndex);
+  const separatorLine = lines[separatorIndex];
+  const bodyLines = lines.slice(separatorIndex + 1);
+
+  // Parse alignment from separator
+  const alignments: string[] = [];
+  const separatorCells = separatorLine.split('|').filter(cell => cell.trim());
+  separatorCells.forEach(cell => {
+    const trimmed = cell.trim();
+    if (trimmed.startsWith(':') && trimmed.endsWith(':')) {
+      alignments.push('center');
+    } else if (trimmed.endsWith(':')) {
+      alignments.push('right');
+    } else {
+      alignments.push('left');
+    }
+  });
+
+  // Build HTML table
+  let html = '<table class="markdown-table">';
+
+  // Header
+  html += '<thead>';
+  headerLines.forEach(line => {
+    html += '<tr>';
+    const cells = line.split('|').filter((cell, idx, arr) => {
+      // Filter out empty cells from leading/trailing |
+      if (idx === 0 && cell.trim() === '') return false;
+      if (idx === arr.length - 1 && cell.trim() === '') return false;
+      return true;
+    });
+    cells.forEach((cell, idx) => {
+      const align = alignments[idx] || 'left';
+      html += `<th style="text-align: ${align};">${formatInlineMarkdown(cell.trim())}</th>`;
+    });
+    html += '</tr>';
+  });
+  html += '</thead>';
+
+  // Body
+  if (bodyLines.length > 0) {
+    html += '<tbody>';
+    bodyLines.forEach(line => {
+      if (!line.trim()) return;
+      html += '<tr>';
+      const cells = line.split('|').filter((cell, idx, arr) => {
+        if (idx === 0 && cell.trim() === '') return false;
+        if (idx === arr.length - 1 && cell.trim() === '') return false;
+        return true;
+      });
+      cells.forEach((cell, idx) => {
+        const align = alignments[idx] || 'left';
+        html += `<td style="text-align: ${align};">${formatInlineMarkdown(cell.trim())}</td>`;
+      });
+      html += '</tr>';
+    });
+    html += '</tbody>';
+  }
+
+  html += '</table>';
+  return html;
+}
+
+/**
  * Format markdown text to HTML with syntax highlighting
  */
 export function formatMarkdownToHtml(text: string): string {
@@ -448,8 +540,34 @@ export function formatMarkdownToHtml(text: string): string {
     return placeholder;
   });
 
-  // Step 3: Escape HTML for non-placeholder text
-  html = html.split(/(__(?:CODE_BLOCK|INLINE_CODE)_[a-z0-9]+__)/g)
+  // Step 3: Parse and protect markdown tables
+  const tablePlaceholders: Array<{ placeholder: string; html: string }> = [];
+  // Match tables: lines starting with | or having | separators, with a separator row (---|---)
+  html = html.replace(/(?:^|\n)((?:\|[^\n]+\|?\n)+\|?\s*[-:|\s]+\s*\|?\n(?:\|[^\n]+\|?\n?)*)/gm, (match, tableBlock) => {
+    const placeholder = '__TABLE_' + Math.random().toString(36).substr(2, 9) + '__';
+    const tableHtml = parseMarkdownTable(tableBlock.trim());
+    tablePlaceholders.push({
+      placeholder: placeholder,
+      html: tableHtml
+    });
+    return '\n' + placeholder + '\n';
+  });
+
+  // Also match tables without leading |
+  html = html.replace(/(?:^|\n)((?:[^\n|]+\|[^\n]+\n)+[-:|\s]+\n(?:[^\n|]+\|[^\n]+\n?)*)/gm, (match, tableBlock) => {
+    // Skip if already processed (contains placeholder)
+    if (tableBlock.includes('__TABLE_')) return match;
+    const placeholder = '__TABLE_' + Math.random().toString(36).substr(2, 9) + '__';
+    const tableHtml = parseMarkdownTable(tableBlock.trim());
+    tablePlaceholders.push({
+      placeholder: placeholder,
+      html: tableHtml
+    });
+    return '\n' + placeholder + '\n';
+  });
+
+  // Step 4: Escape HTML for non-placeholder text
+  html = html.split(/(__(?:CODE_BLOCK|INLINE_CODE|TABLE)_[a-z0-9-]+__)/gi)
     .map((part, index) => {
       // Odd indices are placeholders - keep as is
       if (index % 2 === 1) return part;
@@ -458,34 +576,42 @@ export function formatMarkdownToHtml(text: string): string {
     })
     .join('');
 
-  // Step 4: Convert markdown to HTML
+  // Step 5: Convert markdown to HTML
   // Headings
   html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
   html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
   html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
 
-  // Bold text
-  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  // Links [text](url)
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
 
-  // Italic text
-  html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+  // Lists - process BEFORE bold/italic to handle "* item" correctly
+  // Unordered lists: - or * at start of line
+  html = html.replace(/^[\-\*]\s+(.*$)/gim, '<li>$1</li>');
 
-  // Lists
-  html = html.replace(/^- (.*$)/gim, '<li>$1</li>');
-  html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
+  // Numbered lists: 1. 2. etc
+  html = html.replace(/^\d+\.\s+(.*$)/gim, '<li>$1</li>');
 
-  // Numbered lists
-  html = html.replace(/^\d+\. (.*$)/gim, '<li>$1</li>');
+  // Bold text (must be before italic)
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+  // Italic text - only match single * not at line start (to avoid conflict with lists)
+  html = html.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>');
 
   // Line breaks
   html = html.replace(/\n/g, '<br>');
 
-  // Step 5: Restore inline code placeholders
+  // Step 6: Restore table placeholders
+  tablePlaceholders.forEach(item => {
+    html = html.replace(item.placeholder, item.html);
+  });
+
+  // Step 7: Restore inline code placeholders
   inlineCodePlaceholders.forEach(item => {
     html = html.replace(item.placeholder, item.html);
   });
 
-  // Step 6: Restore code block placeholders
+  // Step 8: Restore code block placeholders
   codeBlockPlaceholders.forEach(item => {
     html = html.replace(item.placeholder, item.html);
   });

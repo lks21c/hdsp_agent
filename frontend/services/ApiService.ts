@@ -70,8 +70,14 @@ export class ApiService {
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: 'Failed to send message' }));
-      throw new Error(error.message || 'Failed to send message');
+      const error = await response.json().catch(() => ({ 
+        message: `Failed to send message (${response.status})`,
+        error: `HTTP ${response.status}: ${response.statusText}`
+      }));
+      console.error('Chat API error:', error);
+      console.error('Response status:', response.status);
+      console.error('Request:', request);
+      throw new Error(error.message || error.error || `Failed to send message (${response.status})`);
     }
 
     return response.json();

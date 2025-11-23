@@ -44,16 +44,26 @@ class ConfigManager:
     def _default_config(self) -> Dict[str, Any]:
         """Get default configuration"""
         return {
-            'apiKey': '',
-            'modelId': 'gpt-4',
-            'baseUrl': 'https://api.openai.com/v1',
-            'temperature': 0.7,
-            'maxTokens': 2000,
-            'systemPrompt': 'You are a helpful AI assistant for code analysis and generation.'
+            'provider': 'gemini',
+            'gemini': {
+                'apiKey': '',
+                'model': 'gemini-2.5-pro'
+            },
+            'vllm': {
+                'endpoint': 'http://localhost:8000',
+                'apiKey': '',
+                'model': 'meta-llama/Llama-2-7b-chat-hf'
+            },
+            'openai': {
+                'apiKey': '',
+                'model': 'gpt-4'
+            }
         }
 
     def get_config(self) -> Dict[str, Any]:
         """Get current configuration"""
+        # Reload config from file to ensure we have the latest
+        self._config = self._load_config()
         return self._config.copy()
 
     def save_config(self, config: Dict[str, Any]):

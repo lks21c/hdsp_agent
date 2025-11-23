@@ -162,10 +162,14 @@ JSON만 응답하세요:"""
             else:
                 content = await self._generate_code_cell(purpose, content_hint)
 
+            # Jupyter notebook source requires each line to end with \n (except the last line)
+            lines = content.split('\n')
+            source_lines = [line + '\n' for line in lines[:-1]] + [lines[-1]] if lines else []
+
             cells.append({
                 'cell_type': cell_type,
                 'metadata': {},
-                'source': content.split('\n')
+                'source': source_lines
             })
 
             # Add execution_count for code cells

@@ -33,7 +33,7 @@ ___CSS_LOADER_EXPORT___.push([module.id, `/**
 .jp-agent-widget {
   display: flex;
   flex-direction: column;
-  min-width: 300px;
+  min-width: 600px;
   height: 100%;
   background: var(--jp-layout-color1);
 }
@@ -213,6 +213,9 @@ ___CSS_LOADER_EXPORT___.push([module.id, `/**
   line-height: 1.5;
   white-space: pre-wrap;
   word-wrap: break-word;
+  overflow: hidden;
+  overflow-x: auto;
+  max-width: 100%;
 }
 
 .jp-agent-message-user .jp-agent-message-content {
@@ -460,59 +463,240 @@ body[data-jp-theme-light="false"] .jp-agent-input {
 
 /* Inline Code Styling */
 .jp-agent-message-content .inline-code {
-  background: #f0f0f0;
-  color: #c7254e;
+  background: #f3f4f6;
+  color: #374151;
   padding: 2px 6px;
-  border-radius: 3px;
+  border-radius: 4px;
   font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
   font-size: 12px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid #d1d5db;
+  font-weight: 500;
+}
+
+/* Dark Theme Inline Code */
+body[data-jp-theme-light="false"] .jp-agent-message-content .inline-code {
+  background: #374151;
+  color: #e5e7eb;
+  border-color: #4b5563;
 }
 
 /* Markdown Elements in Message Content */
 .jp-agent-message-content h1 {
   font-size: 16px;
-  font-weight: 500;
-  color: var(--jp-ui-font-color1);
-  margin: 8px 0 6px 0;
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--jp-border-color2);
+  font-weight: 600;
+  color: #1a56db;
+  margin: 12px 0 8px 0;
+  padding-bottom: 6px;
+  border-bottom: 2px solid #e5e7eb;
 }
 
 .jp-agent-message-content h2 {
   font-size: 14px;
-  font-weight: 500;
-  color: var(--jp-ui-font-color2);
-  margin: 6px 0 4px 0;
+  font-weight: 600;
+  color: #1e40af;
+  margin: 10px 0 6px 0;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #e5e7eb;
 }
 
 .jp-agent-message-content h3 {
   font-size: 13px;
-  font-weight: 500;
-  color: var(--jp-ui-font-color3);
-  margin: 4px 0 2px 0;
+  font-weight: 600;
+  color: #3730a3;
+  margin: 8px 0 4px 0;
 }
 
 .jp-agent-message-content strong {
-  font-weight: 500;
-  color: var(--jp-ui-font-color1);
+  font-weight: 600;
+  color: #111827;
 }
 
 .jp-agent-message-content em {
   font-style: italic;
-  color: var(--jp-ui-font-color2);
+  color: #6b7280;
 }
 
 .jp-agent-message-content ul {
   margin: 8px 0;
-  padding-left: 18px;
+  padding-left: 20px;
+  list-style-position: inside;
+  overflow: hidden;
+}
+
+.jp-agent-message-content ol {
+  margin: 8px 0;
+  padding-left: 20px;
+  list-style-position: inside;
+  overflow: hidden;
 }
 
 .jp-agent-message-content li {
-  margin: 3px 0;
-  line-height: 1.5;
+  margin: 4px 0;
+  line-height: 1.6;
+  color: #374151;
+  text-indent: -8px;
+  padding-left: 8px;
 }
-`, "",{"version":3,"sources":["webpack://./frontend/styles/agent-panel.css"],"names":[],"mappings":"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","sourcesContent":["/**\n * Agent Panel Styling - Sidebar Chat Interface\n */\n\n/* Panel Container */\n.jp-agent-widget {\n  display: flex;\n  flex-direction: column;\n  min-width: 300px;\n  height: 100%;\n  background: var(--jp-layout-color1);\n}\n\n.jp-agent-panel {\n  display: flex;\n  flex-direction: column;\n  height: 100%;\n  padding: 0;\n}\n\n/* Header */\n.jp-agent-header {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  padding: 12px 16px;\n  border-bottom: 1px solid var(--jp-border-color2);\n  background: var(--jp-layout-color2);\n}\n\n.jp-agent-header h2 {\n  margin: 0;\n  font-size: 16px;\n  font-weight: 600;\n  color: var(--jp-ui-font-color1);\n}\n\n.jp-agent-header-buttons {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n}\n\n.jp-agent-settings-button-icon {\n  padding: 4px 8px;\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 4px;\n  background: transparent;\n  color: var(--jp-ui-font-color2);\n  font-size: 16px;\n  cursor: pointer;\n  transition: all 0.2s ease;\n  line-height: 1;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.jp-agent-settings-button-icon svg {\n  display: block;\n}\n\n.jp-agent-settings-button-icon:hover {\n  background: var(--jp-layout-color3);\n  color: var(--jp-ui-font-color1);\n}\n\n.jp-agent-clear-button {\n  padding: 4px 8px;\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 4px;\n  background: transparent;\n  color: var(--jp-ui-font-color2);\n  font-size: 16px;\n  cursor: pointer;\n  transition: all 0.2s ease;\n  line-height: 1;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.jp-agent-clear-button svg {\n  display: block;\n}\n\n.jp-agent-clear-button:hover {\n  background: var(--jp-layout-color3);\n  color: var(--jp-ui-font-color1);\n}\n\n/* Messages Container */\n.jp-agent-messages {\n  flex: 1;\n  overflow-y: auto;\n  padding: 16px;\n  display: flex;\n  flex-direction: column;\n  gap: 12px;\n}\n\n/* Empty State */\n.jp-agent-empty-state {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  justify-content: center;\n  text-align: center;\n  padding: 32px 16px;\n  color: var(--jp-ui-font-color2);\n}\n\n.jp-agent-empty-state p {\n  margin: 8px 0;\n  font-size: 14px;\n}\n\n.jp-agent-suggestions {\n  display: flex;\n  flex-direction: column;\n  gap: 8px;\n  margin-top: 16px;\n  width: 100%;\n  max-width: 240px;\n}\n\n.jp-agent-suggestions button {\n  padding: 8px 12px;\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 4px;\n  background: var(--jp-layout-color2);\n  color: var(--jp-ui-font-color1);\n  font-size: 13px;\n  cursor: pointer;\n  transition: all 0.2s ease;\n  text-align: left;\n}\n\n.jp-agent-suggestions button:hover {\n  background: var(--jp-layout-color3);\n  border-color: var(--jp-brand-color1);\n}\n\n/* Message */\n.jp-agent-message {\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n  padding: 12px;\n  border-radius: 8px;\n  max-width: 90%;\n}\n\n.jp-agent-message-user {\n  align-self: flex-end;\n  background: var(--jp-brand-color1);\n  color: white;\n}\n\n.jp-agent-message-assistant {\n  align-self: flex-start;\n  background: var(--jp-layout-color2);\n  border: 1px solid var(--jp-border-color2);\n}\n\n.jp-agent-message-header {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  margin-bottom: 4px;\n}\n\n.jp-agent-message-role {\n  font-size: 11px;\n  font-weight: 600;\n  opacity: 0.8;\n}\n\n.jp-agent-message-time {\n  font-size: 10px;\n  opacity: 0.6;\n}\n\n.jp-agent-message-content {\n  font-size: 13px;\n  line-height: 1.5;\n  white-space: pre-wrap;\n  word-wrap: break-word;\n}\n\n.jp-agent-message-user .jp-agent-message-content {\n  color: white;\n}\n\n/* Loading Animation */\n.jp-agent-loading {\n  display: flex;\n  gap: 4px;\n  padding: 4px 0;\n}\n\n.jp-agent-loading-dot {\n  animation: jp-agent-loading-bounce 1.4s infinite ease-in-out both;\n  font-size: 20px;\n  line-height: 1;\n}\n\n.jp-agent-loading-dot:nth-child(1) {\n  animation-delay: -0.32s;\n}\n\n.jp-agent-loading-dot:nth-child(2) {\n  animation-delay: -0.16s;\n}\n\n@keyframes jp-agent-loading-bounce {\n  0%, 80%, 100% {\n    opacity: 0.3;\n    transform: translateY(0);\n  }\n  40% {\n    opacity: 1;\n    transform: translateY(-4px);\n  }\n}\n\n/* Input Container */\n.jp-agent-input-container {\n  padding: 12px 16px;\n  border-top: 1px solid var(--jp-border-color2);\n  background: var(--jp-layout-color2);\n}\n\n.jp-agent-input-wrapper {\n  display: flex;\n  gap: 8px;\n  align-items: flex-end;\n}\n\n.jp-agent-input {\n  flex: 1;\n  min-height: 60px;\n  max-height: 150px;\n  padding: 8px 12px;\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 4px;\n  background: var(--jp-layout-color1);\n  color: var(--jp-ui-font-color1);\n  font-family: var(--jp-ui-font-family);\n  font-size: 13px;\n  resize: vertical;\n  outline: none;\n  transition: border-color 0.2s ease;\n}\n\n.jp-agent-input:focus {\n  border-color: var(--jp-brand-color1);\n  box-shadow: 0 0 0 1px var(--jp-brand-color1);\n}\n\n.jp-agent-input:disabled {\n  opacity: 0.5;\n  cursor: not-allowed;\n}\n\n.jp-agent-input::placeholder {\n  color: var(--jp-ui-font-color3);\n}\n\n.jp-agent-send-button {\n  padding: 10px 24px;\n  border: 1px solid var(--jp-border-color1);\n  border-radius: 4px;\n  background: var(--jp-layout-color1);\n  color: var(--jp-ui-font-color1);\n  font-size: 13px;\n  font-weight: 500;\n  cursor: pointer;\n  transition: all 0.2s ease;\n  white-space: nowrap;\n  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);\n}\n\n.jp-agent-send-button:hover:not(:disabled) {\n  background: var(--jp-layout-color3);\n  border-color: var(--jp-border-color1);\n  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);\n}\n\n.jp-agent-send-button:active:not(:disabled) {\n  background: var(--jp-layout-color3);\n  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);\n}\n\n.jp-agent-send-button:disabled {\n  opacity: 0.5;\n  cursor: not-allowed;\n  box-shadow: none;\n}\n\n/* Icon */\n.jp-agent-icon {\n  background-image: url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cGF0aCBkPSJNOCAyQzQuNjkgMiAyIDQuNjkgMiA4czIuNjkgNiA2IDYgNi0yLjY5IDYtNi0yLjY5LTYtNi02em0wIDEwLjVjLTIuNDggMC00LjUtMi4wMi00LjUtNC41czIuMDItNC41IDQuNS00LjUgNC41IDIuMDIgNC41IDQuNS0yLjAyIDQuNS00LjUgNC41eiIgZmlsbD0iY3VycmVudENvbG9yIi8+CiAgPGNpcmNsZSBjeD0iNiIgY3k9IjciIHI9IjEiIGZpbGw9ImN1cnJlbnRDb2xvciIvPgogIDxjaXJjbGUgY3g9IjEwIiBjeT0iNyIgcj0iMSIgZmlsbD0iY3VycmVudENvbG9yIi8+CiAgPHBhdGggZD0iTTUuNSAxMGMwLjUtMC44IDEuNS0xLjMgMi41LTEuMyAxIDAgMiAwLjUgMi41IDEuMyIgc3Ryb2tlPSJjdXJyZW50Q29sb3IiIHN0cm9rZS13aWR0aD0iMSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+Cjwvc3ZnPg==');\n  background-repeat: no-repeat;\n  background-position: center;\n  background-size: contain;\n}\n\n/* Scrollbar Styling */\n.jp-agent-messages::-webkit-scrollbar {\n  width: 8px;\n}\n\n.jp-agent-messages::-webkit-scrollbar-track {\n  background: var(--jp-layout-color1);\n}\n\n.jp-agent-messages::-webkit-scrollbar-thumb {\n  background: var(--jp-border-color2);\n  border-radius: 4px;\n}\n\n.jp-agent-messages::-webkit-scrollbar-thumb:hover {\n  background: var(--jp-border-color1);\n}\n\n/* Dark Theme Adjustments */\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-assistant {\n  background: var(--jp-layout-color0);\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-input {\n  background: var(--jp-layout-color0);\n}\n\n/* Code Block Styling */\n.jp-agent-message-content .code-block-container {\n  margin: 12px 0;\n  border-radius: 6px;\n  overflow: hidden;\n  background: #1e1e1e;\n  border: 1px solid #333;\n}\n\n.jp-agent-message-content .code-block-header {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  padding: 8px 12px;\n  background: #2d2d2d;\n  border-bottom: 1px solid #3d3d3d;\n}\n\n.jp-agent-message-content .code-block-language {\n  font-size: 11px;\n  font-weight: 600;\n  color: #9cdcfe;\n  text-transform: uppercase;\n  letter-spacing: 0.5px;\n}\n\n.jp-agent-message-content .code-block-actions {\n  display: flex;\n  gap: 6px;\n}\n\n.jp-agent-message-content .code-block-apply {\n  background: #667eea;\n  color: white;\n  border: 1px solid #667eea;\n  border-radius: 3px;\n  padding: 4px 10px;\n  font-size: 11px;\n  cursor: pointer;\n  transition: all 0.2s ease;\n  font-weight: 500;\n}\n\n.jp-agent-message-content .code-block-apply:hover {\n  background: #5568d3;\n  border-color: #5568d3;\n}\n\n.jp-agent-message-content .code-block-apply:active {\n  background: #4a5bbd;\n}\n\n.jp-agent-message-content .code-block-apply:disabled {\n  opacity: 0.5;\n  cursor: not-allowed;\n}\n\n.jp-agent-message-content .code-block-copy {\n  background: transparent;\n  color: #858585;\n  border: 1px solid #4d4d4d;\n  border-radius: 3px;\n  padding: 4px 10px;\n  font-size: 11px;\n  cursor: pointer;\n  transition: all 0.2s ease;\n  font-weight: 500;\n}\n\n.jp-agent-message-content .code-block-copy:hover {\n  background: #3d3d3d;\n  color: #d4d4d4;\n  border-color: #5d5d5d;\n}\n\n.jp-agent-message-content .code-block-copy:active {\n  background: #4d4d4d;\n}\n\n.jp-agent-message-content .code-block {\n  margin: 0;\n  padding: 14px;\n  background: #1e1e1e;\n  overflow-x: auto;\n  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;\n  font-size: 12px;\n  line-height: 1.6;\n}\n\n.jp-agent-message-content .code-block code {\n  color: #d4d4d4;\n  background: transparent;\n  padding: 0;\n  border: none;\n  display: block;\n  white-space: pre;\n}\n\n/* Inline Code Styling */\n.jp-agent-message-content .inline-code {\n  background: #f0f0f0;\n  color: #c7254e;\n  padding: 2px 6px;\n  border-radius: 3px;\n  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;\n  font-size: 12px;\n  border: 1px solid #e0e0e0;\n}\n\n/* Markdown Elements in Message Content */\n.jp-agent-message-content h1 {\n  font-size: 16px;\n  font-weight: 500;\n  color: var(--jp-ui-font-color1);\n  margin: 8px 0 6px 0;\n  padding-bottom: 4px;\n  border-bottom: 1px solid var(--jp-border-color2);\n}\n\n.jp-agent-message-content h2 {\n  font-size: 14px;\n  font-weight: 500;\n  color: var(--jp-ui-font-color2);\n  margin: 6px 0 4px 0;\n}\n\n.jp-agent-message-content h3 {\n  font-size: 13px;\n  font-weight: 500;\n  color: var(--jp-ui-font-color3);\n  margin: 4px 0 2px 0;\n}\n\n.jp-agent-message-content strong {\n  font-weight: 500;\n  color: var(--jp-ui-font-color1);\n}\n\n.jp-agent-message-content em {\n  font-style: italic;\n  color: var(--jp-ui-font-color2);\n}\n\n.jp-agent-message-content ul {\n  margin: 8px 0;\n  padding-left: 18px;\n}\n\n.jp-agent-message-content li {\n  margin: 3px 0;\n  line-height: 1.5;\n}\n"],"sourceRoot":""}]);
+
+.jp-agent-message-content li::marker {
+  color: #6366f1;
+}
+
+/* Links */
+.jp-agent-message-content a {
+  color: #2563eb;
+  text-decoration: none;
+  border-bottom: 1px solid #93c5fd;
+  transition: all 0.15s ease;
+}
+
+.jp-agent-message-content a:hover {
+  color: #1d4ed8;
+  border-bottom-color: #2563eb;
+  background: #eff6ff;
+}
+
+/* Dark Theme Links */
+body[data-jp-theme-light="false"] .jp-agent-message-content a {
+  color: #60a5fa;
+  border-bottom-color: #3b82f6;
+}
+
+body[data-jp-theme-light="false"] .jp-agent-message-content a:hover {
+  color: #93c5fd;
+  border-bottom-color: #60a5fa;
+  background: rgba(59, 130, 246, 0.1);
+}
+
+/* Markdown Table Styling */
+.jp-agent-message-content .markdown-table {
+  width: 100%;
+  max-width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 12px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  display: block;
+  overflow-x: auto;
+}
+
+.jp-agent-message-content .markdown-table thead {
+  background: linear-gradient(to bottom, #f8fafc, #f1f5f9);
+}
+
+.jp-agent-message-content .markdown-table th {
+  padding: 10px 14px;
+  font-weight: 600;
+  color: #1e40af;
+  border-bottom: 2px solid #c7d2fe;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+}
+
+.jp-agent-message-content .markdown-table td {
+  padding: 10px 14px;
+  color: #374151;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.jp-agent-message-content .markdown-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.jp-agent-message-content .markdown-table tbody tr:nth-child(even) {
+  background: #f9fafb;
+}
+
+.jp-agent-message-content .markdown-table tbody tr:hover {
+  background: #eef2ff;
+}
+
+/* Table inline styles */
+.jp-agent-message-content .markdown-table strong {
+  color: #111827;
+  font-weight: 600;
+}
+
+.jp-agent-message-content .markdown-table code.inline-code {
+  background: #f3f4f6;
+  color: #374151;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 11px;
+  border: 1px solid #d1d5db;
+}
+
+/* Dark Theme Table Adjustments */
+body[data-jp-theme-light="false"] .jp-agent-message-content .markdown-table {
+  background: #1f2937;
+  border-color: #374151;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+body[data-jp-theme-light="false"] .jp-agent-message-content .markdown-table thead {
+  background: linear-gradient(to bottom, #374151, #1f2937);
+}
+
+body[data-jp-theme-light="false"] .jp-agent-message-content .markdown-table th {
+  color: #93c5fd;
+  border-bottom-color: #4b5563;
+}
+
+body[data-jp-theme-light="false"] .jp-agent-message-content .markdown-table td {
+  color: #e5e7eb;
+  border-bottom-color: #374151;
+}
+
+body[data-jp-theme-light="false"] .jp-agent-message-content .markdown-table tbody tr:nth-child(even) {
+  background: #111827;
+}
+
+body[data-jp-theme-light="false"] .jp-agent-message-content .markdown-table tbody tr:hover {
+  background: #312e81;
+}
+
+body[data-jp-theme-light="false"] .jp-agent-message-content .markdown-table code.inline-code {
+  background: #374151;
+  color: #e5e7eb;
+  border-color: #4b5563;
+}
+
+/* Dark Theme Markdown Elements */
+body[data-jp-theme-light="false"] .jp-agent-message-content h1 {
+  color: #60a5fa;
+  border-bottom-color: #374151;
+}
+
+body[data-jp-theme-light="false"] .jp-agent-message-content h2 {
+  color: #93c5fd;
+  border-bottom-color: #374151;
+}
+
+body[data-jp-theme-light="false"] .jp-agent-message-content h3 {
+  color: #a5b4fc;
+}
+
+body[data-jp-theme-light="false"] .jp-agent-message-content strong {
+  color: #f9fafb;
+}
+
+body[data-jp-theme-light="false"] .jp-agent-message-content em {
+  color: #9ca3af;
+}
+
+body[data-jp-theme-light="false"] .jp-agent-message-content li {
+  color: #e5e7eb;
+}
+
+body[data-jp-theme-light="false"] .jp-agent-message-content li::marker {
+  color: #818cf8;
+}
+`, "",{"version":3,"sources":["webpack://./frontend/styles/agent-panel.css"],"names":[],"mappings":"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","sourcesContent":["/**\n * Agent Panel Styling - Sidebar Chat Interface\n */\n\n/* Panel Container */\n.jp-agent-widget {\n  display: flex;\n  flex-direction: column;\n  min-width: 600px;\n  height: 100%;\n  background: var(--jp-layout-color1);\n}\n\n.jp-agent-panel {\n  display: flex;\n  flex-direction: column;\n  height: 100%;\n  padding: 0;\n}\n\n/* Header */\n.jp-agent-header {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  padding: 12px 16px;\n  border-bottom: 1px solid var(--jp-border-color2);\n  background: var(--jp-layout-color2);\n}\n\n.jp-agent-header h2 {\n  margin: 0;\n  font-size: 16px;\n  font-weight: 600;\n  color: var(--jp-ui-font-color1);\n}\n\n.jp-agent-header-buttons {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n}\n\n.jp-agent-settings-button-icon {\n  padding: 4px 8px;\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 4px;\n  background: transparent;\n  color: var(--jp-ui-font-color2);\n  font-size: 16px;\n  cursor: pointer;\n  transition: all 0.2s ease;\n  line-height: 1;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.jp-agent-settings-button-icon svg {\n  display: block;\n}\n\n.jp-agent-settings-button-icon:hover {\n  background: var(--jp-layout-color3);\n  color: var(--jp-ui-font-color1);\n}\n\n.jp-agent-clear-button {\n  padding: 4px 8px;\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 4px;\n  background: transparent;\n  color: var(--jp-ui-font-color2);\n  font-size: 16px;\n  cursor: pointer;\n  transition: all 0.2s ease;\n  line-height: 1;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.jp-agent-clear-button svg {\n  display: block;\n}\n\n.jp-agent-clear-button:hover {\n  background: var(--jp-layout-color3);\n  color: var(--jp-ui-font-color1);\n}\n\n/* Messages Container */\n.jp-agent-messages {\n  flex: 1;\n  overflow-y: auto;\n  padding: 16px;\n  display: flex;\n  flex-direction: column;\n  gap: 12px;\n}\n\n/* Empty State */\n.jp-agent-empty-state {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  justify-content: center;\n  text-align: center;\n  padding: 32px 16px;\n  color: var(--jp-ui-font-color2);\n}\n\n.jp-agent-empty-state p {\n  margin: 8px 0;\n  font-size: 14px;\n}\n\n.jp-agent-suggestions {\n  display: flex;\n  flex-direction: column;\n  gap: 8px;\n  margin-top: 16px;\n  width: 100%;\n  max-width: 240px;\n}\n\n.jp-agent-suggestions button {\n  padding: 8px 12px;\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 4px;\n  background: var(--jp-layout-color2);\n  color: var(--jp-ui-font-color1);\n  font-size: 13px;\n  cursor: pointer;\n  transition: all 0.2s ease;\n  text-align: left;\n}\n\n.jp-agent-suggestions button:hover {\n  background: var(--jp-layout-color3);\n  border-color: var(--jp-brand-color1);\n}\n\n/* Message */\n.jp-agent-message {\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n  padding: 12px;\n  border-radius: 8px;\n  max-width: 90%;\n}\n\n.jp-agent-message-user {\n  align-self: flex-end;\n  background: var(--jp-brand-color1);\n  color: white;\n}\n\n.jp-agent-message-assistant {\n  align-self: flex-start;\n  background: var(--jp-layout-color2);\n  border: 1px solid var(--jp-border-color2);\n}\n\n.jp-agent-message-header {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  margin-bottom: 4px;\n}\n\n.jp-agent-message-role {\n  font-size: 11px;\n  font-weight: 600;\n  opacity: 0.8;\n}\n\n.jp-agent-message-time {\n  font-size: 10px;\n  opacity: 0.6;\n}\n\n.jp-agent-message-content {\n  font-size: 13px;\n  line-height: 1.5;\n  white-space: pre-wrap;\n  word-wrap: break-word;\n  overflow: hidden;\n  overflow-x: auto;\n  max-width: 100%;\n}\n\n.jp-agent-message-user .jp-agent-message-content {\n  color: white;\n}\n\n/* Loading Animation */\n.jp-agent-loading {\n  display: flex;\n  gap: 4px;\n  padding: 4px 0;\n}\n\n.jp-agent-loading-dot {\n  animation: jp-agent-loading-bounce 1.4s infinite ease-in-out both;\n  font-size: 20px;\n  line-height: 1;\n}\n\n.jp-agent-loading-dot:nth-child(1) {\n  animation-delay: -0.32s;\n}\n\n.jp-agent-loading-dot:nth-child(2) {\n  animation-delay: -0.16s;\n}\n\n@keyframes jp-agent-loading-bounce {\n  0%, 80%, 100% {\n    opacity: 0.3;\n    transform: translateY(0);\n  }\n  40% {\n    opacity: 1;\n    transform: translateY(-4px);\n  }\n}\n\n/* Input Container */\n.jp-agent-input-container {\n  padding: 12px 16px;\n  border-top: 1px solid var(--jp-border-color2);\n  background: var(--jp-layout-color2);\n}\n\n.jp-agent-input-wrapper {\n  display: flex;\n  gap: 8px;\n  align-items: flex-end;\n}\n\n.jp-agent-input {\n  flex: 1;\n  min-height: 60px;\n  max-height: 150px;\n  padding: 8px 12px;\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 4px;\n  background: var(--jp-layout-color1);\n  color: var(--jp-ui-font-color1);\n  font-family: var(--jp-ui-font-family);\n  font-size: 13px;\n  resize: vertical;\n  outline: none;\n  transition: border-color 0.2s ease;\n}\n\n.jp-agent-input:focus {\n  border-color: var(--jp-brand-color1);\n  box-shadow: 0 0 0 1px var(--jp-brand-color1);\n}\n\n.jp-agent-input:disabled {\n  opacity: 0.5;\n  cursor: not-allowed;\n}\n\n.jp-agent-input::placeholder {\n  color: var(--jp-ui-font-color3);\n}\n\n.jp-agent-send-button {\n  padding: 10px 24px;\n  border: 1px solid var(--jp-border-color1);\n  border-radius: 4px;\n  background: var(--jp-layout-color1);\n  color: var(--jp-ui-font-color1);\n  font-size: 13px;\n  font-weight: 500;\n  cursor: pointer;\n  transition: all 0.2s ease;\n  white-space: nowrap;\n  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);\n}\n\n.jp-agent-send-button:hover:not(:disabled) {\n  background: var(--jp-layout-color3);\n  border-color: var(--jp-border-color1);\n  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);\n}\n\n.jp-agent-send-button:active:not(:disabled) {\n  background: var(--jp-layout-color3);\n  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);\n}\n\n.jp-agent-send-button:disabled {\n  opacity: 0.5;\n  cursor: not-allowed;\n  box-shadow: none;\n}\n\n/* Icon */\n.jp-agent-icon {\n  background-image: url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cGF0aCBkPSJNOCAyQzQuNjkgMiAyIDQuNjkgMiA4czIuNjkgNiA2IDYgNi0yLjY5IDYtNi0yLjY5LTYtNi02em0wIDEwLjVjLTIuNDggMC00LjUtMi4wMi00LjUtNC41czIuMDItNC41IDQuNS00LjUgNC41IDIuMDIgNC41IDQuNS0yLjAyIDQuNS00LjUgNC41eiIgZmlsbD0iY3VycmVudENvbG9yIi8+CiAgPGNpcmNsZSBjeD0iNiIgY3k9IjciIHI9IjEiIGZpbGw9ImN1cnJlbnRDb2xvciIvPgogIDxjaXJjbGUgY3g9IjEwIiBjeT0iNyIgcj0iMSIgZmlsbD0iY3VycmVudENvbG9yIi8+CiAgPHBhdGggZD0iTTUuNSAxMGMwLjUtMC44IDEuNS0xLjMgMi41LTEuMyAxIDAgMiAwLjUgMi41IDEuMyIgc3Ryb2tlPSJjdXJyZW50Q29sb3IiIHN0cm9rZS13aWR0aD0iMSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+Cjwvc3ZnPg==');\n  background-repeat: no-repeat;\n  background-position: center;\n  background-size: contain;\n}\n\n/* Scrollbar Styling */\n.jp-agent-messages::-webkit-scrollbar {\n  width: 8px;\n}\n\n.jp-agent-messages::-webkit-scrollbar-track {\n  background: var(--jp-layout-color1);\n}\n\n.jp-agent-messages::-webkit-scrollbar-thumb {\n  background: var(--jp-border-color2);\n  border-radius: 4px;\n}\n\n.jp-agent-messages::-webkit-scrollbar-thumb:hover {\n  background: var(--jp-border-color1);\n}\n\n/* Dark Theme Adjustments */\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-assistant {\n  background: var(--jp-layout-color0);\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-input {\n  background: var(--jp-layout-color0);\n}\n\n/* Code Block Styling */\n.jp-agent-message-content .code-block-container {\n  margin: 12px 0;\n  border-radius: 6px;\n  overflow: hidden;\n  background: #1e1e1e;\n  border: 1px solid #333;\n}\n\n.jp-agent-message-content .code-block-header {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  padding: 8px 12px;\n  background: #2d2d2d;\n  border-bottom: 1px solid #3d3d3d;\n}\n\n.jp-agent-message-content .code-block-language {\n  font-size: 11px;\n  font-weight: 600;\n  color: #9cdcfe;\n  text-transform: uppercase;\n  letter-spacing: 0.5px;\n}\n\n.jp-agent-message-content .code-block-actions {\n  display: flex;\n  gap: 6px;\n}\n\n.jp-agent-message-content .code-block-apply {\n  background: #667eea;\n  color: white;\n  border: 1px solid #667eea;\n  border-radius: 3px;\n  padding: 4px 10px;\n  font-size: 11px;\n  cursor: pointer;\n  transition: all 0.2s ease;\n  font-weight: 500;\n}\n\n.jp-agent-message-content .code-block-apply:hover {\n  background: #5568d3;\n  border-color: #5568d3;\n}\n\n.jp-agent-message-content .code-block-apply:active {\n  background: #4a5bbd;\n}\n\n.jp-agent-message-content .code-block-apply:disabled {\n  opacity: 0.5;\n  cursor: not-allowed;\n}\n\n.jp-agent-message-content .code-block-copy {\n  background: transparent;\n  color: #858585;\n  border: 1px solid #4d4d4d;\n  border-radius: 3px;\n  padding: 4px 10px;\n  font-size: 11px;\n  cursor: pointer;\n  transition: all 0.2s ease;\n  font-weight: 500;\n}\n\n.jp-agent-message-content .code-block-copy:hover {\n  background: #3d3d3d;\n  color: #d4d4d4;\n  border-color: #5d5d5d;\n}\n\n.jp-agent-message-content .code-block-copy:active {\n  background: #4d4d4d;\n}\n\n.jp-agent-message-content .code-block {\n  margin: 0;\n  padding: 14px;\n  background: #1e1e1e;\n  overflow-x: auto;\n  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;\n  font-size: 12px;\n  line-height: 1.6;\n}\n\n.jp-agent-message-content .code-block code {\n  color: #d4d4d4;\n  background: transparent;\n  padding: 0;\n  border: none;\n  display: block;\n  white-space: pre;\n}\n\n/* Inline Code Styling */\n.jp-agent-message-content .inline-code {\n  background: #f3f4f6;\n  color: #374151;\n  padding: 2px 6px;\n  border-radius: 4px;\n  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;\n  font-size: 12px;\n  border: 1px solid #d1d5db;\n  font-weight: 500;\n}\n\n/* Dark Theme Inline Code */\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content .inline-code {\n  background: #374151;\n  color: #e5e7eb;\n  border-color: #4b5563;\n}\n\n/* Markdown Elements in Message Content */\n.jp-agent-message-content h1 {\n  font-size: 16px;\n  font-weight: 600;\n  color: #1a56db;\n  margin: 12px 0 8px 0;\n  padding-bottom: 6px;\n  border-bottom: 2px solid #e5e7eb;\n}\n\n.jp-agent-message-content h2 {\n  font-size: 14px;\n  font-weight: 600;\n  color: #1e40af;\n  margin: 10px 0 6px 0;\n  padding-bottom: 4px;\n  border-bottom: 1px solid #e5e7eb;\n}\n\n.jp-agent-message-content h3 {\n  font-size: 13px;\n  font-weight: 600;\n  color: #3730a3;\n  margin: 8px 0 4px 0;\n}\n\n.jp-agent-message-content strong {\n  font-weight: 600;\n  color: #111827;\n}\n\n.jp-agent-message-content em {\n  font-style: italic;\n  color: #6b7280;\n}\n\n.jp-agent-message-content ul {\n  margin: 8px 0;\n  padding-left: 20px;\n  list-style-position: inside;\n  overflow: hidden;\n}\n\n.jp-agent-message-content ol {\n  margin: 8px 0;\n  padding-left: 20px;\n  list-style-position: inside;\n  overflow: hidden;\n}\n\n.jp-agent-message-content li {\n  margin: 4px 0;\n  line-height: 1.6;\n  color: #374151;\n  text-indent: -8px;\n  padding-left: 8px;\n}\n\n.jp-agent-message-content li::marker {\n  color: #6366f1;\n}\n\n/* Links */\n.jp-agent-message-content a {\n  color: #2563eb;\n  text-decoration: none;\n  border-bottom: 1px solid #93c5fd;\n  transition: all 0.15s ease;\n}\n\n.jp-agent-message-content a:hover {\n  color: #1d4ed8;\n  border-bottom-color: #2563eb;\n  background: #eff6ff;\n}\n\n/* Dark Theme Links */\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content a {\n  color: #60a5fa;\n  border-bottom-color: #3b82f6;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content a:hover {\n  color: #93c5fd;\n  border-bottom-color: #60a5fa;\n  background: rgba(59, 130, 246, 0.1);\n}\n\n/* Markdown Table Styling */\n.jp-agent-message-content .markdown-table {\n  width: 100%;\n  max-width: 100%;\n  border-collapse: collapse;\n  margin: 12px 0;\n  font-size: 12px;\n  background: #ffffff;\n  border: 1px solid #e5e7eb;\n  border-radius: 6px;\n  overflow: hidden;\n  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);\n  display: block;\n  overflow-x: auto;\n}\n\n.jp-agent-message-content .markdown-table thead {\n  background: linear-gradient(to bottom, #f8fafc, #f1f5f9);\n}\n\n.jp-agent-message-content .markdown-table th {\n  padding: 10px 14px;\n  font-weight: 600;\n  color: #1e40af;\n  border-bottom: 2px solid #c7d2fe;\n  text-transform: uppercase;\n  font-size: 11px;\n  letter-spacing: 0.5px;\n}\n\n.jp-agent-message-content .markdown-table td {\n  padding: 10px 14px;\n  color: #374151;\n  border-bottom: 1px solid #e5e7eb;\n}\n\n.jp-agent-message-content .markdown-table tbody tr:last-child td {\n  border-bottom: none;\n}\n\n.jp-agent-message-content .markdown-table tbody tr:nth-child(even) {\n  background: #f9fafb;\n}\n\n.jp-agent-message-content .markdown-table tbody tr:hover {\n  background: #eef2ff;\n}\n\n/* Table inline styles */\n.jp-agent-message-content .markdown-table strong {\n  color: #111827;\n  font-weight: 600;\n}\n\n.jp-agent-message-content .markdown-table code.inline-code {\n  background: #f3f4f6;\n  color: #374151;\n  padding: 1px 4px;\n  border-radius: 3px;\n  font-size: 11px;\n  border: 1px solid #d1d5db;\n}\n\n/* Dark Theme Table Adjustments */\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content .markdown-table {\n  background: #1f2937;\n  border-color: #374151;\n  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content .markdown-table thead {\n  background: linear-gradient(to bottom, #374151, #1f2937);\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content .markdown-table th {\n  color: #93c5fd;\n  border-bottom-color: #4b5563;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content .markdown-table td {\n  color: #e5e7eb;\n  border-bottom-color: #374151;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content .markdown-table tbody tr:nth-child(even) {\n  background: #111827;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content .markdown-table tbody tr:hover {\n  background: #312e81;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content .markdown-table code.inline-code {\n  background: #374151;\n  color: #e5e7eb;\n  border-color: #4b5563;\n}\n\n/* Dark Theme Markdown Elements */\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content h1 {\n  color: #60a5fa;\n  border-bottom-color: #374151;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content h2 {\n  color: #93c5fd;\n  border-bottom-color: #374151;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content h3 {\n  color: #a5b4fc;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content strong {\n  color: #f9fafb;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content em {\n  color: #9ca3af;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content li {\n  color: #e5e7eb;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content li::marker {\n  color: #818cf8;\n}\n"],"sourceRoot":""}]);
 // Exports
 /* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (___CSS_LOADER_EXPORT___);
 
@@ -1215,4 +1399,4 @@ module.exports = "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYi
 /***/ })
 
 }]);
-//# sourceMappingURL=style_index_css.9f6df7a6f74d752673b8.js.map
+//# sourceMappingURL=style_index_css.fc2f8811bed68eaeaf55.js.map

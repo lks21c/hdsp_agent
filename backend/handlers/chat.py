@@ -51,10 +51,28 @@ class ChatHandler(APIHandler):
 
             config = config_manager.get_config()
             self.log.info(f"Loaded config: {config}")
+            self.log.info(f"Config type: {type(config)}")
+            self.log.info(f"Config keys: {config.keys() if isinstance(config, dict) else 'Not a dict'}")
 
             # Check if config has required settings
-            if not config or 'provider' not in config:
-                self.log.warning(f"Invalid config: {config}")
+            if not config:
+                self.log.warning("Config is None or empty")
+                self.set_status(400)
+                self.finish(json.dumps({
+                    'error': 'LLM not configured. Please configure your LLM provider in settings.'
+                }))
+                return
+            
+            if not isinstance(config, dict):
+                self.log.warning(f"Config is not a dict: {type(config)}")
+                self.set_status(400)
+                self.finish(json.dumps({
+                    'error': 'Invalid configuration format.'
+                }))
+                return
+
+            if 'provider' not in config:
+                self.log.warning(f"Provider not found in config. Available keys: {list(config.keys())}")
                 self.set_status(400)
                 self.finish(json.dumps({
                     'error': 'LLM not configured. Please configure your LLM provider in settings.'

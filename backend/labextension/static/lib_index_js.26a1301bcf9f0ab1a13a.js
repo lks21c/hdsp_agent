@@ -71,6 +71,28 @@ const ChatPanel = (0,react__WEBPACK_IMPORTED_MODULE_0__.forwardRef)(({ apiServic
     const loadConfig = async () => {
         try {
             const config = await apiService.getConfig();
+            // If config doesn't have provider, use default
+            if (!config || !config.provider) {
+                console.warn('Config missing provider, using default');
+                const defaultConfig = {
+                    provider: 'gemini',
+                    gemini: {
+                        apiKey: '',
+                        model: 'gemini-2.5-pro'
+                    },
+                    vllm: {
+                        endpoint: 'http://localhost:8000',
+                        apiKey: '',
+                        model: 'meta-llama/Llama-2-7b-chat-hf'
+                    },
+                    openai: {
+                        apiKey: '',
+                        model: 'gpt-4'
+                    }
+                };
+                setLlmConfig(defaultConfig);
+                return;
+            }
             setLlmConfig(config);
             // Log loaded model configuration
             const configData = config;
@@ -104,6 +126,8 @@ const ChatPanel = (0,react__WEBPACK_IMPORTED_MODULE_0__.forwardRef)(({ apiServic
             await apiService.saveConfig(config);
             console.log('서버 저장 완료, state 업데이트 중...');
             setLlmConfig(config);
+            // Reload config from server to ensure consistency
+            await loadConfig();
             console.log('=== handleSaveConfig 완료 ===');
             alert('설정이 성공적으로 저장되었습니다!');
         }
@@ -1766,7 +1790,7 @@ function getOrAssignCellId(cell) {
  * Send cell action to sidebar panel
  */
 function sendToSidebarPanel(action, cell, cellContent, cellIndex, cellOutput) {
-    const agentPanel = window._jupyterAgentPanel;
+    const agentPanel = window._hdspAgentPanel;
     if (!agentPanel) {
         console.error('[CellButtonsPlugin] Agent panel not found. Make sure sidebar plugin is loaded.');
         return;
@@ -3234,8 +3258,14 @@ class ApiService {
             body: JSON.stringify(request)
         });
         if (!response.ok) {
-            const error = await response.json().catch(() => ({ message: 'Failed to send message' }));
-            throw new Error(error.message || 'Failed to send message');
+            const error = await response.json().catch(() => ({
+                message: `Failed to send message (${response.status})`,
+                error: `HTTP ${response.status}: ${response.statusText}`
+            }));
+            console.error('Chat API error:', error);
+            console.error('Response status:', response.status);
+            console.error('Request:', request);
+            throw new Error(error.message || error.error || `Failed to send message (${response.status})`);
         }
         return response.json();
     }
@@ -3473,10 +3503,12 @@ var AgentEvent;
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   escapeHtml: () => (/* binding */ escapeHtml),
+/* harmony export */   formatInlineMarkdown: () => (/* binding */ formatInlineMarkdown),
 /* harmony export */   formatMarkdownToHtml: () => (/* binding */ formatMarkdownToHtml),
 /* harmony export */   highlightJavaScript: () => (/* binding */ highlightJavaScript),
 /* harmony export */   highlightPython: () => (/* binding */ highlightPython),
-/* harmony export */   normalizeIndentation: () => (/* binding */ normalizeIndentation)
+/* harmony export */   normalizeIndentation: () => (/* binding */ normalizeIndentation),
+/* harmony export */   parseMarkdownTable: () => (/* binding */ parseMarkdownTable)
 /* harmony export */ });
 /**
  * Markdown to HTML converter with syntax highlighting
@@ -3829,6 +3861,94 @@ function highlightJSTokens(line, keywords) {
     return container.innerHTML;
 }
 /**
+ * Format inline markdown (bold, italic, inline code) within text
+ */
+function formatInlineMarkdown(text) {
+    let html = escapeHtml(text);
+    // Inline code first (to protect from other transformations)
+    html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
+    // Bold text (**text**)
+    html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    // Italic text (*text*)
+    html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    return html;
+}
+/**
+ * Parse markdown table to HTML
+ */
+function parseMarkdownTable(tableText) {
+    const lines = tableText.trim().split('\n');
+    if (lines.length < 2)
+        return escapeHtml(tableText);
+    // Check if it's a valid table (has header separator)
+    const separatorIndex = lines.findIndex(line => /^\|?\s*[-:]+[-|\s:]+\s*\|?$/.test(line));
+    if (separatorIndex === -1 || separatorIndex === 0)
+        return escapeHtml(tableText);
+    const headerLines = lines.slice(0, separatorIndex);
+    const separatorLine = lines[separatorIndex];
+    const bodyLines = lines.slice(separatorIndex + 1);
+    // Parse alignment from separator
+    const alignments = [];
+    const separatorCells = separatorLine.split('|').filter(cell => cell.trim());
+    separatorCells.forEach(cell => {
+        const trimmed = cell.trim();
+        if (trimmed.startsWith(':') && trimmed.endsWith(':')) {
+            alignments.push('center');
+        }
+        else if (trimmed.endsWith(':')) {
+            alignments.push('right');
+        }
+        else {
+            alignments.push('left');
+        }
+    });
+    // Build HTML table
+    let html = '<table class="markdown-table">';
+    // Header
+    html += '<thead>';
+    headerLines.forEach(line => {
+        html += '<tr>';
+        const cells = line.split('|').filter((cell, idx, arr) => {
+            // Filter out empty cells from leading/trailing |
+            if (idx === 0 && cell.trim() === '')
+                return false;
+            if (idx === arr.length - 1 && cell.trim() === '')
+                return false;
+            return true;
+        });
+        cells.forEach((cell, idx) => {
+            const align = alignments[idx] || 'left';
+            html += `<th style="text-align: ${align};">${formatInlineMarkdown(cell.trim())}</th>`;
+        });
+        html += '</tr>';
+    });
+    html += '</thead>';
+    // Body
+    if (bodyLines.length > 0) {
+        html += '<tbody>';
+        bodyLines.forEach(line => {
+            if (!line.trim())
+                return;
+            html += '<tr>';
+            const cells = line.split('|').filter((cell, idx, arr) => {
+                if (idx === 0 && cell.trim() === '')
+                    return false;
+                if (idx === arr.length - 1 && cell.trim() === '')
+                    return false;
+                return true;
+            });
+            cells.forEach((cell, idx) => {
+                const align = alignments[idx] || 'left';
+                html += `<td style="text-align: ${align};">${formatInlineMarkdown(cell.trim())}</td>`;
+            });
+            html += '</tr>';
+        });
+        html += '</tbody>';
+    }
+    html += '</table>';
+    return html;
+}
+/**
  * Format markdown text to HTML with syntax highlighting
  */
 function formatMarkdownToHtml(text) {
@@ -3881,8 +4001,33 @@ function formatMarkdownToHtml(text) {
         });
         return placeholder;
     });
-    // Step 3: Escape HTML for non-placeholder text
-    html = html.split(/(__(?:CODE_BLOCK|INLINE_CODE)_[a-z0-9]+__)/g)
+    // Step 3: Parse and protect markdown tables
+    const tablePlaceholders = [];
+    // Match tables: lines starting with | or having | separators, with a separator row (---|---)
+    html = html.replace(/(?:^|\n)((?:\|[^\n]+\|?\n)+\|?\s*[-:|\s]+\s*\|?\n(?:\|[^\n]+\|?\n?)*)/gm, (match, tableBlock) => {
+        const placeholder = '__TABLE_' + Math.random().toString(36).substr(2, 9) + '__';
+        const tableHtml = parseMarkdownTable(tableBlock.trim());
+        tablePlaceholders.push({
+            placeholder: placeholder,
+            html: tableHtml
+        });
+        return '\n' + placeholder + '\n';
+    });
+    // Also match tables without leading |
+    html = html.replace(/(?:^|\n)((?:[^\n|]+\|[^\n]+\n)+[-:|\s]+\n(?:[^\n|]+\|[^\n]+\n?)*)/gm, (match, tableBlock) => {
+        // Skip if already processed (contains placeholder)
+        if (tableBlock.includes('__TABLE_'))
+            return match;
+        const placeholder = '__TABLE_' + Math.random().toString(36).substr(2, 9) + '__';
+        const tableHtml = parseMarkdownTable(tableBlock.trim());
+        tablePlaceholders.push({
+            placeholder: placeholder,
+            html: tableHtml
+        });
+        return '\n' + placeholder + '\n';
+    });
+    // Step 4: Escape HTML for non-placeholder text
+    html = html.split(/(__(?:CODE_BLOCK|INLINE_CODE|TABLE)_[a-z0-9-]+__)/gi)
         .map((part, index) => {
         // Odd indices are placeholders - keep as is
         if (index % 2 === 1)
@@ -3891,27 +4036,33 @@ function formatMarkdownToHtml(text) {
         return escapeHtml(part);
     })
         .join('');
-    // Step 4: Convert markdown to HTML
+    // Step 5: Convert markdown to HTML
     // Headings
     html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
     html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
     html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
-    // Bold text
-    html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-    // Italic text
-    html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
-    // Lists
-    html = html.replace(/^- (.*$)/gim, '<li>$1</li>');
-    html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
-    // Numbered lists
-    html = html.replace(/^\d+\. (.*$)/gim, '<li>$1</li>');
+    // Links [text](url)
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    // Lists - process BEFORE bold/italic to handle "* item" correctly
+    // Unordered lists: - or * at start of line
+    html = html.replace(/^[\-\*]\s+(.*$)/gim, '<li>$1</li>');
+    // Numbered lists: 1. 2. etc
+    html = html.replace(/^\d+\.\s+(.*$)/gim, '<li>$1</li>');
+    // Bold text (must be before italic)
+    html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    // Italic text - only match single * not at line start (to avoid conflict with lists)
+    html = html.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>');
     // Line breaks
     html = html.replace(/\n/g, '<br>');
-    // Step 5: Restore inline code placeholders
+    // Step 6: Restore table placeholders
+    tablePlaceholders.forEach(item => {
+        html = html.replace(item.placeholder, item.html);
+    });
+    // Step 7: Restore inline code placeholders
     inlineCodePlaceholders.forEach(item => {
         html = html.replace(item.placeholder, item.html);
     });
-    // Step 6: Restore code block placeholders
+    // Step 8: Restore code block placeholders
     codeBlockPlaceholders.forEach(item => {
         html = html.replace(item.placeholder, item.html);
     });
@@ -3927,9 +4078,9 @@ function formatMarkdownToHtml(text) {
   \***********************************/
 /***/ ((module) => {
 
-module.exports = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\" width=\"100\" height=\"100\">\n  <rect width=\"100\" height=\"100\" fill=\"white\" rx=\"8\"/>\n  <text x=\"50\" y=\"70\" font-family=\"Arial, sans-serif\" font-size=\"60\" font-weight=\"bold\" fill=\"#6b7280\" text-anchor=\"middle\">H</text>\n</svg>\n";
+module.exports = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\" width=\"100\" height=\"100\">\n  <rect width=\"100\" height=\"100\" fill=\"#f97316\" rx=\"12\"/>\n  <text x=\"50\" y=\"62\" font-family=\"Arial, sans-serif\" font-size=\"28\" font-weight=\"bold\" fill=\"white\" text-anchor=\"middle\">HDSP</text>\n</svg>\n";
 
 /***/ })
 
 }]);
-//# sourceMappingURL=lib_index_js.04f2b172012146a74382.js.map
+//# sourceMappingURL=lib_index_js.26a1301bcf9f0ab1a13a.js.map

@@ -399,7 +399,7 @@ function sendToSidebarPanel(
   cellIndex: number,
   cellOutput: string
 ): void {
-  const agentPanel = (window as any)._jupyterAgentPanel;
+  const agentPanel = (window as any)._hdspAgentPanel;
 
   if (!agentPanel) {
     console.error('[CellButtonsPlugin] Agent panel not found. Make sure sidebar plugin is loaded.');

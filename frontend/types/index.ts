@@ -72,8 +72,23 @@ export interface IChatResponse {
 }
 
 export interface IAgentConfig {
-  apiKey: string;
-  modelId: string;
+  provider?: 'gemini' | 'vllm' | 'openai';
+  gemini?: {
+    apiKey: string;
+    model: string;
+  };
+  vllm?: {
+    endpoint: string;
+    apiKey: string;
+    model: string;
+  };
+  openai?: {
+    apiKey: string;
+    model: string;
+  };
+  // Legacy fields for backward compatibility
+  apiKey?: string;
+  modelId?: string;
   baseUrl?: string;
   temperature?: number;
   maxTokens?: number;

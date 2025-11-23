@@ -71,6 +71,30 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService }, 
   const loadConfig = async () => {
     try {
       const config = await apiService.getConfig();
+      
+      // If config doesn't have provider, use default
+      if (!config || !(config as any).provider) {
+        console.warn('Config missing provider, using default');
+        const defaultConfig: LLMConfig = {
+          provider: 'gemini',
+          gemini: {
+            apiKey: '',
+            model: 'gemini-2.5-pro'
+          },
+          vllm: {
+            endpoint: 'http://localhost:8000',
+            apiKey: '',
+            model: 'meta-llama/Llama-2-7b-chat-hf'
+          },
+          openai: {
+            apiKey: '',
+            model: 'gpt-4'
+          }
+        };
+        setLlmConfig(defaultConfig);
+        return;
+      }
+      
       setLlmConfig(config as any);
 
       // Log loaded model configuration
@@ -107,6 +131,10 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService }, 
 
       console.log('서버 저장 완료, state 업데이트 중...');
       setLlmConfig(config);
+      
+      // Reload config from server to ensure consistency
+      await loadConfig();
+      
       console.log('=== handleSaveConfig 완료 ===');
       alert('설정이 성공적으로 저장되었습니다!');
     } catch (error) {
