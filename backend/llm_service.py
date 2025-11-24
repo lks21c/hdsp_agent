@@ -16,6 +16,20 @@ class LLMService:
         self.config = config
         self.provider = config.get('provider', 'gemini')
 
+    async def generate_response_stream(self, prompt: str, context: Optional[str] = None):
+        """Generate a streaming response from the configured LLM provider (async generator)"""
+        if self.provider == 'gemini':
+            async for chunk in self._call_gemini_stream(prompt, context):
+                yield chunk
+        elif self.provider == 'vllm':
+            async for chunk in self._call_vllm_stream(prompt, context):
+                yield chunk
+        elif self.provider == 'openai':
+            async for chunk in self._call_openai_stream(prompt, context):
+                yield chunk
+        else:
+            raise ValueError(f"Unsupported provider: {self.provider}")
+
     async def generate_response(self, prompt: str, context: Optional[str] = None) -> str:
         """Generate a response from the configured LLM provider"""
 
@@ -254,3 +268,158 @@ class LLMService:
                     return data['choices'][0]['message']['content']
 
                 raise Exception("No valid response from OpenAI API")
+
+    async def _call_gemini_stream(self, prompt: str, context: Optional[str] = None):
+        """Call Google Gemini API with streaming"""
+        gemini_config = self.config.get('gemini', {})
+        api_key = gemini_config.get('apiKey')
+        model = gemini_config.get('model', 'gemini-2.5-pro')
+
+        if not api_key:
+            raise ValueError("Gemini API key not configured")
+
+        # Use streamGenerateContent endpoint
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?key={api_key}&alt=sse"
+
+        full_prompt = prompt
+        if context:
+            full_prompt = f"Context:\n{context}\n\nUser Request:\n{prompt}"
+
+        payload = {
+            "contents": [{
+                "parts": [{
+                    "text": full_prompt
+                }]
+            }],
+            "generationConfig": {
+                "temperature": 0.7,
+                "topK": 40,
+                "topP": 0.95,
+                "maxOutputTokens": 4096
+            },
+            "safetySettings": [
+                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"}
+            ]
+        }
+
+        timeout = aiohttp.ClientTimeout(total=120)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(url, json=payload) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    raise Exception(f"Gemini API error: {error_text}")
+
+                # Read SSE stream
+                async for line in response.content:
+                    line_text = line.decode('utf-8').strip()
+                    if line_text.startswith('data: '):
+                        try:
+                            data = json.loads(line_text[6:])
+                            if 'candidates' in data and len(data['candidates']) > 0:
+                                candidate = data['candidates'][0]
+                                if 'content' in candidate and 'parts' in candidate['content']:
+                                    parts = candidate['content']['parts']
+                                    if len(parts) > 0 and 'text' in parts[0]:
+                                        yield parts[0]['text']
+                        except json.JSONDecodeError:
+                            continue
+
+    async def _call_vllm_stream(self, prompt: str, context: Optional[str] = None):
+        """Call vLLM endpoint with streaming"""
+        vllm_config = self.config.get('vllm', {})
+        endpoint = vllm_config.get('endpoint', 'http://localhost:8000')
+        api_key = vllm_config.get('apiKey')
+        model = vllm_config.get('model', 'default')
+
+        full_prompt = prompt
+        if context:
+            full_prompt = f"Context:\n{context}\n\nUser Request:\n{prompt}"
+
+        url = f"{endpoint}/v1/chat/completions"
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": full_prompt}],
+            "max_tokens": 4096,
+            "temperature": 0.7,
+            "stream": True
+        }
+
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        timeout = aiohttp.ClientTimeout(total=120)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(url, json=payload, headers=headers) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    raise Exception(f"vLLM API error: {error_text}")
+
+                async for line in response.content:
+                    line_text = line.decode('utf-8').strip()
+                    if line_text.startswith('data: '):
+                        data_str = line_text[6:]
+                        if data_str == '[DONE]':
+                            break
+                        try:
+                            data = json.loads(data_str)
+                            if 'choices' in data and len(data['choices']) > 0:
+                                delta = data['choices'][0].get('delta', {})
+                                content = delta.get('content', '')
+                                if content:
+                                    yield content
+                        except json.JSONDecodeError:
+                            continue
+
+    async def _call_openai_stream(self, prompt: str, context: Optional[str] = None):
+        """Call OpenAI API with streaming"""
+        openai_config = self.config.get('openai', {})
+        api_key = openai_config.get('apiKey')
+        model = openai_config.get('model', 'gpt-4')
+
+        if not api_key:
+            raise ValueError("OpenAI API key not configured")
+
+        messages = []
+        if context:
+            messages.append({"role": "system", "content": f"Context:\n{context}"})
+        messages.append({"role": "user", "content": prompt})
+
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": 2000,
+            "temperature": 0.7,
+            "stream": True
+        }
+
+        timeout = aiohttp.ClientTimeout(total=120)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(url, json=payload, headers=headers) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    raise Exception(f"OpenAI API error: {error_text}")
+
+                async for line in response.content:
+                    line_text = line.decode('utf-8').strip()
+                    if line_text.startswith('data: '):
+                        data_str = line_text[6:]
+                        if data_str == '[DONE]':
+                            break
+                        try:
+                            data = json.loads(data_str)
+                            if 'choices' in data and len(data['choices']) > 0:
+                                delta = data['choices'][0].get('delta', {})
+                                content = delta.get('content', '')
+                                if content:
+                                    yield content
+                        except json.JSONDecodeError:
+                            continue

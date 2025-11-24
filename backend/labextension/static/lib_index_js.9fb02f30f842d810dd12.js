@@ -31,6 +31,8 @@ const ChatPanel = (0,react__WEBPACK_IMPORTED_MODULE_0__.forwardRef)(({ apiServic
     const [messages, setMessages] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)([]);
     const [input, setInput] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)('');
     const [isLoading, setIsLoading] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false);
+    const [isStreaming, setIsStreaming] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false);
+    const [streamingMessageId, setStreamingMessageId] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null);
     const [conversationId, setConversationId] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)('');
     const [showSettings, setShowSettings] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false);
     const [llmConfig, setLlmConfig] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null);
@@ -663,7 +665,7 @@ const ChatPanel = (0,react__WEBPACK_IMPORTED_MODULE_0__.forwardRef)(({ apiServic
         const textarea = messagesEndRef.current?.parentElement?.querySelector('.jp-agent-input');
         const llmPrompt = pendingLlmPromptRef.current || textarea?.getAttribute('data-llm-prompt');
         // Allow execution if we have an LLM prompt even if input is empty (for auto-execution)
-        if ((!input.trim() && !llmPrompt) || isLoading)
+        if ((!input.trim() && !llmPrompt) || isLoading || isStreaming)
             return;
         // Check if API key is configured before sending
         if (!llmConfig) {
@@ -715,41 +717,70 @@ const ChatPanel = (0,react__WEBPACK_IMPORTED_MODULE_0__.forwardRef)(({ apiServic
             setInput('');
         }
         setIsLoading(true);
+        setIsStreaming(true);
         // Clear the data attribute and ref after using it
         if (textarea && llmPrompt) {
             textarea.removeAttribute('data-llm-prompt');
             pendingLlmPromptRef.current = null;
         }
+        // Create assistant message ID for streaming updates
+        const assistantMessageId = Date.now().toString() + '-assistant';
+        let streamedContent = '';
+        setStreamingMessageId(assistantMessageId);
+        // Add empty assistant message that will be updated during streaming
+        const initialAssistantMessage = {
+            id: assistantMessageId,
+            role: 'assistant',
+            content: '',
+            timestamp: Date.now()
+        };
+        setMessages(prev => [...prev, initialAssistantMessage]);
         try {
             // Use LLM prompt if available, otherwise use the display content
             const messageToSend = llmPrompt || displayContent;
-            const response = await apiService.sendMessage({
+            await apiService.sendMessageStream({
                 message: messageToSend,
                 conversationId: conversationId || undefined
+            }, 
+            // onChunk callback - update message content incrementally
+            (chunk) => {
+                streamedContent += chunk;
+                setMessages(prev => prev.map(msg => msg.id === assistantMessageId
+                    ? { ...msg, content: streamedContent }
+                    : msg));
+            }, 
+            // onMetadata callback - update conversationId and metadata
+            (metadata) => {
+                if (metadata.conversationId && !conversationId) {
+                    setConversationId(metadata.conversationId);
+                }
+                if (metadata.provider || metadata.model) {
+                    setMessages(prev => prev.map(msg => msg.id === assistantMessageId
+                        ? {
+                            ...msg,
+                            metadata: {
+                                ...msg.metadata,
+                                provider: metadata.provider,
+                                model: metadata.model
+                            }
+                        }
+                        : msg));
+                }
             });
-            if (!conversationId) {
-                setConversationId(response.conversationId);
-            }
-            const assistantMessage = {
-                id: response.messageId,
-                role: 'assistant',
-                content: response.content,
-                timestamp: Date.now(),
-                metadata: response.metadata
-            };
-            setMessages(prev => [...prev, assistantMessage]);
         }
         catch (error) {
-            const errorMessage = {
-                id: Date.now().toString(),
-                role: 'assistant',
-                content: `Error: ${error instanceof Error ? error.message : 'Failed to send message'}`,
-                timestamp: Date.now()
-            };
-            setMessages(prev => [...prev, errorMessage]);
+            // Update the assistant message with error
+            setMessages(prev => prev.map(msg => msg.id === assistantMessageId
+                ? {
+                    ...msg,
+                    content: streamedContent + `\n\nError: ${error instanceof Error ? error.message : 'Failed to send message'}`
+                }
+                : msg));
         }
         finally {
             setIsLoading(false);
+            setIsStreaming(false);
+            setStreamingMessageId(null);
         }
     };
     const handleKeyDown = (e) => {
@@ -790,12 +821,12 @@ const ChatPanel = (0,react__WEBPACK_IMPORTED_MODULE_0__.forwardRef)(({ apiServic
                 react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-message-header" },
                     react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "jp-agent-message-role" }, msg.role === 'user' ? '사용자' : 'Agent'),
                     react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "jp-agent-message-time" }, new Date(msg.timestamp).toLocaleTimeString())),
-                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-message-content", dangerouslySetInnerHTML: {
+                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: `jp-agent-message-content${streamingMessageId === msg.id ? ' streaming' : ''}`, dangerouslySetInnerHTML: {
                         __html: msg.role === 'assistant'
                             ? (0,_utils_markdownRenderer__WEBPACK_IMPORTED_MODULE_3__.formatMarkdownToHtml)(msg.content)
                             : escapeHtml(msg.content).replace(/\n/g, '<br>')
                     } }))))),
-            isLoading && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-message jp-agent-message-assistant" },
+            isLoading && !isStreaming && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-message jp-agent-message-assistant" },
                 react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-message-header" },
                     react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "jp-agent-message-role" }, "Agent")),
                 react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-message-content jp-agent-loading" },
@@ -806,7 +837,7 @@ const ChatPanel = (0,react__WEBPACK_IMPORTED_MODULE_0__.forwardRef)(({ apiServic
         react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-input-container" },
             react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-input-wrapper" },
                 react__WEBPACK_IMPORTED_MODULE_0___default().createElement("textarea", { className: "jp-agent-input", value: input, onChange: (e) => setInput(e.target.value), onKeyDown: handleKeyDown, placeholder: "\uCF54\uB4DC\uC5D0 \uB300\uD574 \uBB34\uC5C7\uC774\uB4E0 \uBB3C\uC5B4\uBCF4\uC138\uC694...", rows: 3, disabled: isLoading }),
-                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", { className: "jp-agent-send-button", onClick: handleSendMessage, disabled: !input.trim() || isLoading, title: "\uBA54\uC2DC\uC9C0 \uC804\uC1A1 (Enter)" }, "\uC804\uC1A1")))));
+                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", { className: "jp-agent-send-button", onClick: handleSendMessage, disabled: !input.trim() || isLoading || isStreaming, title: "\uBA54\uC2DC\uC9C0 \uC804\uC1A1 (Enter)" }, "\uC804\uC1A1")))));
 });
 ChatPanel.displayName = 'ChatPanel';
 /**
@@ -1525,96 +1556,56 @@ function injectButtonsIntoAllCells(notebook, panel) {
 }
 /**
  * Inject buttons into a single cell
+ * Buttons are placed outside the cell (above), aligned with code start position
  */
 function injectButtonsIntoCell(cell, panel) {
-    // Only inject into code cells
-    if (cell.model.type !== 'code') {
-        console.log('[CellButtonsPlugin] Skipping non-code cell');
+    // Safety checks
+    if (!cell || !cell.model) {
         return;
     }
-    // Get the cell node (contains the entire cell)
     const cellNode = cell.node;
-    if (!cellNode) {
-        console.warn('[CellButtonsPlugin] No cell node found');
+    if (!cellNode || !cellNode.classList.contains('jp-Cell')) {
         return;
     }
-    // Check if buttons already injected
-    if (cellNode.querySelector('.jp-agent-cell-buttons')) {
-        console.log('[CellButtonsPlugin] Buttons already injected for cell');
+    // Check if buttons already exist (using our unique class name)
+    if (cellNode.querySelector('.jp-hdsp-cell-buttons')) {
         return;
     }
-    console.log('[CellButtonsPlugin] Injecting buttons into cell');
-    // Create button container
+    // Find the prompt area to get the correct left offset
+    const promptNode = cellNode.querySelector('.jp-InputPrompt, .jp-OutputPrompt');
+    const promptWidth = promptNode ? promptNode.getBoundingClientRect().width : 64;
+    // Find the input wrapper to insert before
+    const inputWrapper = cellNode.querySelector('.jp-Cell-inputWrapper');
+    if (!inputWrapper) {
+        return;
+    }
+    // Create button container with unique class name to avoid conflicts
     const buttonContainer = document.createElement('div');
-    buttonContainer.className = 'jp-agent-cell-buttons';
-    // Add inline styles for vertical button layout above prompt
+    buttonContainer.className = 'jp-hdsp-cell-buttons';
     buttonContainer.style.cssText = `
-    display: flex !important;
-    flex-direction: column !important;
-    gap: 2px !important;
-    align-items: center !important;
-    justify-content: center !important;
-    margin-bottom: 4px !important;
+    display: flex;
+    gap: 4px;
+    padding: 4px 8px;
+    padding-left: ${promptWidth}px;
+    background: transparent;
   `;
     // Create E button (Explain)
-    const explainBtn = createButton('E', 'Explain this code', () => {
-        handleCellAction(_types__WEBPACK_IMPORTED_MODULE_1__.CellAction.EXPLAIN, cell).catch(error => {
-            console.error('[CellButtonsPlugin] Error handling explain action:', error);
-        });
+    const explainBtn = createButton('E', '설명 요청', () => {
+        handleCellAction(_types__WEBPACK_IMPORTED_MODULE_1__.CellAction.EXPLAIN, cell);
     });
-    explainBtn.classList.add('jp-agent-button-explain');
     // Create F button (Fix)
-    const fixBtn = createButton('F', 'Fix errors in this code', () => {
-        handleCellAction(_types__WEBPACK_IMPORTED_MODULE_1__.CellAction.FIX, cell).catch(error => {
-            console.error('[CellButtonsPlugin] Error handling fix action:', error);
-        });
+    const fixBtn = createButton('F', '수정 제안 요청', () => {
+        handleCellAction(_types__WEBPACK_IMPORTED_MODULE_1__.CellAction.FIX, cell);
     });
-    fixBtn.classList.add('jp-agent-button-fix');
-    // Create ? button (Custom)
-    const customBtn = createButton('?', 'Custom prompt', () => {
-        handleCellAction(_types__WEBPACK_IMPORTED_MODULE_1__.CellAction.CUSTOM_PROMPT, cell).catch(error => {
-            console.error('[CellButtonsPlugin] Error handling custom prompt action:', error);
-        });
+    // Create ? button (Custom Prompt)
+    const customBtn = createButton('?', '질문하기', () => {
+        handleCellAction(_types__WEBPACK_IMPORTED_MODULE_1__.CellAction.CUSTOM_PROMPT, cell);
     });
-    customBtn.classList.add('jp-agent-button-custom');
-    // Add buttons to container in horizontal order
     buttonContainer.appendChild(explainBtn);
     buttonContainer.appendChild(fixBtn);
     buttonContainer.appendChild(customBtn);
-    // Get the width of the prompt area to align buttons with code
-    const inputArea = cell.inputArea;
-    const promptNode = inputArea?.promptNode;
-    const promptWidth = promptNode ? promptNode.offsetWidth : 80; // Default to ~80px if not found
-    // Style the button container to appear at the top of the cell, aligned with code
-    buttonContainer.style.cssText = `
-    display: flex !important;
-    flex-direction: row !important;
-    gap: 4px !important;
-    align-items: center !important;
-    justify-content: flex-start !important;
-    padding: 4px 8px !important;
-    padding-left: ${promptWidth + 8}px !important;
-    background: rgba(255, 255, 255, 0.05) !important;
-    border-bottom: 1px solid var(--jp-border-color2) !important;
-  `;
-    // Insert button container at the very top of the cell
-    cellNode.insertBefore(buttonContainer, cellNode.firstChild);
-    console.log('[CellButtonsPlugin] ✅ Buttons successfully injected into cell:', {
-        container: buttonContainer,
-        parent: cellNode,
-        buttons: ['E', 'F', '?'],
-        isVisible: buttonContainer.offsetWidth > 0 && buttonContainer.offsetHeight > 0
-    });
-    // Force visibility check
-    if (buttonContainer.offsetWidth === 0 || buttonContainer.offsetHeight === 0) {
-        console.error('[CellButtonsPlugin] ⚠️ Buttons are hidden! Check CSS:', {
-            display: window.getComputedStyle(buttonContainer).display,
-            visibility: window.getComputedStyle(buttonContainer).visibility,
-            opacity: window.getComputedStyle(buttonContainer).opacity,
-            containerWidth: buttonContainer.offsetWidth,
-            containerHeight: buttonContainer.offsetHeight
-        });
-    }
+    // Insert before the input wrapper (outside the cell, above it)
+    inputWrapper.parentNode?.insertBefore(buttonContainer, inputWrapper);
 }
 /**
  * Create a button element
@@ -3270,6 +3261,79 @@ class ApiService {
         return response.json();
     }
     /**
+     * Send chat message with streaming response
+     */
+    async sendMessageStream(request, onChunk, onMetadata) {
+        const response = await fetch(`${this.baseUrl}/chat/stream`, {
+            method: 'POST',
+            headers: this.getHeaders(),
+            body: JSON.stringify(request)
+        });
+        if (!response.ok) {
+            const error = await response.text();
+            throw new Error(`Failed to send message: ${error}`);
+        }
+        const reader = response.body?.getReader();
+        if (!reader) {
+            throw new Error('Response body is not readable');
+        }
+        const decoder = new TextDecoder();
+        let buffer = '';
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done)
+                    break;
+                buffer += decoder.decode(value, { stream: true });
+                // Process complete SSE messages
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || ''; // Keep incomplete line in buffer
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+                            // Handle errors
+                            if (data.error) {
+                                throw new Error(data.error);
+                            }
+                            // Handle metadata (conversationId, messageId, etc.)
+                            if (data.conversationId && onMetadata) {
+                                onMetadata({
+                                    conversationId: data.conversationId,
+                                    messageId: data.messageId,
+                                    provider: data.metadata?.provider,
+                                    model: data.metadata?.model
+                                });
+                            }
+                            // Handle content chunks
+                            if (data.content) {
+                                onChunk(data.content);
+                            }
+                            // Final metadata update
+                            if (data.done && data.metadata && onMetadata) {
+                                onMetadata({
+                                    provider: data.metadata.provider,
+                                    model: data.metadata.model
+                                });
+                            }
+                        }
+                        catch (e) {
+                            if (e instanceof SyntaxError) {
+                                console.warn('Failed to parse SSE data:', line);
+                            }
+                            else {
+                                throw e;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        finally {
+            reader.releaseLock();
+        }
+    }
+    /**
      * Save configuration
      */
     async saveConfig(config) {
@@ -4037,10 +4101,15 @@ function formatMarkdownToHtml(text) {
     })
         .join('');
     // Step 5: Convert markdown to HTML
-    // Headings
+    // Headings (process from h6 to h1 to avoid conflicts)
+    html = html.replace(/^###### (.*$)/gim, '<h6>$1</h6>');
+    html = html.replace(/^##### (.*$)/gim, '<h5>$1</h5>');
+    html = html.replace(/^#### (.*$)/gim, '<h4>$1</h4>');
     html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
     html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
     html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
+    // Horizontal rule (---)
+    html = html.replace(/^---+$/gim, '<hr>');
     // Links [text](url)
     html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
     // Lists - process BEFORE bold/italic to handle "* item" correctly
@@ -4078,9 +4147,9 @@ function formatMarkdownToHtml(text) {
   \***********************************/
 /***/ ((module) => {
 
-module.exports = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\" width=\"100\" height=\"100\">\n  <rect width=\"100\" height=\"100\" fill=\"#f97316\" rx=\"12\"/>\n  <text x=\"50\" y=\"62\" font-family=\"Arial, sans-serif\" font-size=\"28\" font-weight=\"bold\" fill=\"white\" text-anchor=\"middle\">HDSP</text>\n</svg>\n";
+module.exports = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\">\n  <path fill=\"currentColor\" d=\"M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z\"/>\n</svg>\n";
 
 /***/ })
 
 }]);
-//# sourceMappingURL=lib_index_js.26a1301bcf9f0ab1a13a.js.map
+//# sourceMappingURL=lib_index_js.9fb02f30f842d810dd12.js.map

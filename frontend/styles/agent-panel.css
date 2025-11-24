@@ -227,6 +227,23 @@
   }
 }
 
+/* Streaming Cursor Animation */
+.jp-agent-message-content.streaming::after {
+  content: '|';
+  animation: jp-agent-cursor-blink 0.7s infinite;
+  font-weight: bold;
+  color: var(--jp-brand-color1);
+}
+
+@keyframes jp-agent-cursor-blink {
+  0%, 50% {
+    opacity: 1;
+  }
+  51%, 100% {
+    opacity: 0;
+  }
+}
+
 /* Input Container */
 .jp-agent-input-container {
   padding: 12px 16px;

@@ -70,7 +70,7 @@ export class ApiService {
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ 
+      const error = await response.json().catch(() => ({
         message: `Failed to send message (${response.status})`,
         error: `HTTP ${response.status}: ${response.statusText}`
       }));
@@ -81,6 +81,91 @@ export class ApiService {
     }
 
     return response.json();
+  }
+
+  /**
+   * Send chat message with streaming response
+   */
+  async sendMessageStream(
+    request: IChatRequest,
+    onChunk: (chunk: string) => void,
+    onMetadata?: (metadata: { conversationId?: string; messageId?: string; provider?: string; model?: string }) => void
+  ): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/chat/stream`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(request)
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Failed to send message: ${error}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('Response body is not readable');
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // Process complete SSE messages
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              // Handle errors
+              if (data.error) {
+                throw new Error(data.error);
+              }
+
+              // Handle metadata (conversationId, messageId, etc.)
+              if (data.conversationId && onMetadata) {
+                onMetadata({
+                  conversationId: data.conversationId,
+                  messageId: data.messageId,
+                  provider: data.metadata?.provider,
+                  model: data.metadata?.model
+                });
+              }
+
+              // Handle content chunks
+              if (data.content) {
+                onChunk(data.content);
+              }
+
+              // Final metadata update
+              if (data.done && data.metadata && onMetadata) {
+                onMetadata({
+                  provider: data.metadata.provider,
+                  model: data.metadata.model
+                });
+              }
+            } catch (e) {
+              if (e instanceof SyntaxError) {
+                console.warn('Failed to parse SSE data:', line);
+              } else {
+                throw e;
+              }
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
   }
 
   /**

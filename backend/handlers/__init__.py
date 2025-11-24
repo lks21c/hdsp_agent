@@ -6,7 +6,7 @@ from .base import BaseAgentHandler
 from .config import ConfigHandler
 from .cell_action import CellActionHandler
 from .status import StatusHandler
-from .chat import ChatHandler
+from .chat import ChatHandler, ChatStreamHandler
 from .test_llm import TestLLMHandler
 from .notebook_generation import (
     NotebookGenerationHandler,
@@ -33,6 +33,7 @@ def setup_handlers(web_app):
         (url_path_join(base_url, 'hdsp-agent', 'cell', 'action'), CellActionHandler),
         (url_path_join(base_url, 'hdsp-agent', 'status'), StatusHandler),
         (url_path_join(base_url, 'hdsp-agent', 'chat', 'message'), ChatHandler),
+        (url_path_join(base_url, 'hdsp-agent', 'chat', 'stream'), ChatStreamHandler),
         (url_path_join(base_url, 'hdsp-agent', 'test-llm'), TestLLMHandler),
         (url_path_join(base_url, 'hdsp-agent', 'notebook', 'generate'), NotebookGenerationHandler),
         (url_path_join(base_url, 'hdsp-agent', 'task', r'([^/]+)', 'status'), TaskStatusHandler),

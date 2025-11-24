@@ -92,110 +92,66 @@ function injectButtonsIntoAllCells(notebook: any, panel: any): void {
 
 /**
  * Inject buttons into a single cell
+ * Buttons are placed outside the cell (above), aligned with code start position
  */
 function injectButtonsIntoCell(cell: Cell, panel: any): void {
-  // Only inject into code cells
-  if (cell.model.type !== 'code') {
-    console.log('[CellButtonsPlugin] Skipping non-code cell');
+  // Safety checks
+  if (!cell || !cell.model) {
     return;
   }
 
-  // Get the cell node (contains the entire cell)
   const cellNode = cell.node;
-  if (!cellNode) {
-    console.warn('[CellButtonsPlugin] No cell node found');
+  if (!cellNode || !cellNode.classList.contains('jp-Cell')) {
     return;
   }
 
-  // Check if buttons already injected
-  if (cellNode.querySelector('.jp-agent-cell-buttons')) {
-    console.log('[CellButtonsPlugin] Buttons already injected for cell');
+  // Check if buttons already exist (using our unique class name)
+  if (cellNode.querySelector('.jp-hdsp-cell-buttons')) {
     return;
   }
 
-  console.log('[CellButtonsPlugin] Injecting buttons into cell');
+  // Find the prompt area to get the correct left offset
+  const promptNode = cellNode.querySelector('.jp-InputPrompt, .jp-OutputPrompt');
+  const promptWidth = promptNode ? promptNode.getBoundingClientRect().width : 64;
 
-  // Create button container
+  // Find the input wrapper to insert before
+  const inputWrapper = cellNode.querySelector('.jp-Cell-inputWrapper');
+  if (!inputWrapper) {
+    return;
+  }
+
+  // Create button container with unique class name to avoid conflicts
   const buttonContainer = document.createElement('div');
-  buttonContainer.className = 'jp-agent-cell-buttons';
-
-  // Add inline styles for vertical button layout above prompt
+  buttonContainer.className = 'jp-hdsp-cell-buttons';
   buttonContainer.style.cssText = `
-    display: flex !important;
-    flex-direction: column !important;
-    gap: 2px !important;
-    align-items: center !important;
-    justify-content: center !important;
-    margin-bottom: 4px !important;
+    display: flex;
+    gap: 4px;
+    padding: 4px 8px;
+    padding-left: ${promptWidth}px;
+    background: transparent;
   `;
 
   // Create E button (Explain)
-  const explainBtn = createButton('E', 'Explain this code', () => {
-    handleCellAction(CellAction.EXPLAIN, cell).catch(error => {
-      console.error('[CellButtonsPlugin] Error handling explain action:', error);
-    });
+  const explainBtn = createButton('E', '설명 요청', () => {
+    handleCellAction(CellAction.EXPLAIN, cell);
   });
-  explainBtn.classList.add('jp-agent-button-explain');
 
   // Create F button (Fix)
-  const fixBtn = createButton('F', 'Fix errors in this code', () => {
-    handleCellAction(CellAction.FIX, cell).catch(error => {
-      console.error('[CellButtonsPlugin] Error handling fix action:', error);
-    });
+  const fixBtn = createButton('F', '수정 제안 요청', () => {
+    handleCellAction(CellAction.FIX, cell);
   });
-  fixBtn.classList.add('jp-agent-button-fix');
 
-  // Create ? button (Custom)
-  const customBtn = createButton('?', 'Custom prompt', () => {
-    handleCellAction(CellAction.CUSTOM_PROMPT, cell).catch(error => {
-      console.error('[CellButtonsPlugin] Error handling custom prompt action:', error);
-    });
+  // Create ? button (Custom Prompt)
+  const customBtn = createButton('?', '질문하기', () => {
+    handleCellAction(CellAction.CUSTOM_PROMPT, cell);
   });
-  customBtn.classList.add('jp-agent-button-custom');
 
-  // Add buttons to container in horizontal order
   buttonContainer.appendChild(explainBtn);
   buttonContainer.appendChild(fixBtn);
   buttonContainer.appendChild(customBtn);
 
-  // Get the width of the prompt area to align buttons with code
-  const inputArea = cell.inputArea as any;
-  const promptNode = inputArea?.promptNode;
-  const promptWidth = promptNode ? promptNode.offsetWidth : 80; // Default to ~80px if not found
-
-  // Style the button container to appear at the top of the cell, aligned with code
-  buttonContainer.style.cssText = `
-    display: flex !important;
-    flex-direction: row !important;
-    gap: 4px !important;
-    align-items: center !important;
-    justify-content: flex-start !important;
-    padding: 4px 8px !important;
-    padding-left: ${promptWidth + 8}px !important;
-    background: rgba(255, 255, 255, 0.05) !important;
-    border-bottom: 1px solid var(--jp-border-color2) !important;
-  `;
-
-  // Insert button container at the very top of the cell
-  cellNode.insertBefore(buttonContainer, cellNode.firstChild);
-
-  console.log('[CellButtonsPlugin] ✅ Buttons successfully injected into cell:', {
-    container: buttonContainer,
-    parent: cellNode,
-    buttons: ['E', 'F', '?'],
-    isVisible: buttonContainer.offsetWidth > 0 && buttonContainer.offsetHeight > 0
-  });
-
-  // Force visibility check
-  if (buttonContainer.offsetWidth === 0 || buttonContainer.offsetHeight === 0) {
-    console.error('[CellButtonsPlugin] ⚠️ Buttons are hidden! Check CSS:', {
-      display: window.getComputedStyle(buttonContainer).display,
-      visibility: window.getComputedStyle(buttonContainer).visibility,
-      opacity: window.getComputedStyle(buttonContainer).opacity,
-      containerWidth: buttonContainer.offsetWidth,
-      containerHeight: buttonContainer.offsetHeight
-    });
-  }
+  // Insert before the input wrapper (outside the cell, above it)
+  inputWrapper.parentNode?.insertBefore(buttonContainer, inputWrapper);
 }
 
 /**

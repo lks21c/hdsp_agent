@@ -28,6 +28,8 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService }, 
   const [messages, setMessages] = useState<IChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string>('');
   const [showSettings, setShowSettings] = useState(false);
   const [llmConfig, setLlmConfig] = useState<LLMConfig | null>(null);
@@ -739,7 +741,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService }, 
     const llmPrompt = pendingLlmPromptRef.current || textarea?.getAttribute('data-llm-prompt');
 
     // Allow execution if we have an LLM prompt even if input is empty (for auto-execution)
-    if ((!input.trim() && !llmPrompt) || isLoading) return;
+    if ((!input.trim() && !llmPrompt) || isLoading || isStreaming) return;
 
     // Check if API key is configured before sending
     if (!llmConfig) {
@@ -793,6 +795,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService }, 
       setInput('');
     }
     setIsLoading(true);
+    setIsStreaming(true);
 
     // Clear the data attribute and ref after using it
     if (textarea && llmPrompt) {
@@ -800,38 +803,79 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService }, 
       pendingLlmPromptRef.current = null;
     }
 
+    // Create assistant message ID for streaming updates
+    const assistantMessageId = Date.now().toString() + '-assistant';
+    let streamedContent = '';
+    setStreamingMessageId(assistantMessageId);
+
+    // Add empty assistant message that will be updated during streaming
+    const initialAssistantMessage: IChatMessage = {
+      id: assistantMessageId,
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now()
+    };
+    setMessages(prev => [...prev, initialAssistantMessage]);
+
     try {
       // Use LLM prompt if available, otherwise use the display content
       const messageToSend = llmPrompt || displayContent;
 
-      const response = await apiService.sendMessage({
-        message: messageToSend,
-        conversationId: conversationId || undefined
-      });
-
-      if (!conversationId) {
-        setConversationId(response.conversationId);
-      }
-
-      const assistantMessage: IChatMessage = {
-        id: response.messageId,
-        role: 'assistant',
-        content: response.content,
-        timestamp: Date.now(),
-        metadata: response.metadata
-      };
-
-      setMessages(prev => [...prev, assistantMessage]);
+      await apiService.sendMessageStream(
+        {
+          message: messageToSend,
+          conversationId: conversationId || undefined
+        },
+        // onChunk callback - update message content incrementally
+        (chunk: string) => {
+          streamedContent += chunk;
+          setMessages(prev =>
+            prev.map(msg =>
+              msg.id === assistantMessageId
+                ? { ...msg, content: streamedContent }
+                : msg
+            )
+          );
+        },
+        // onMetadata callback - update conversationId and metadata
+        (metadata) => {
+          if (metadata.conversationId && !conversationId) {
+            setConversationId(metadata.conversationId);
+          }
+          if (metadata.provider || metadata.model) {
+            setMessages(prev =>
+              prev.map(msg =>
+                msg.id === assistantMessageId
+                  ? {
+                      ...msg,
+                      metadata: {
+                        ...msg.metadata,
+                        provider: metadata.provider,
+                        model: metadata.model
+                      }
+                    }
+                  : msg
+              )
+            );
+          }
+        }
+      );
     } catch (error) {
-      const errorMessage: IChatMessage = {
-        id: Date.now().toString(),
-        role: 'assistant',
-        content: `Error: ${error instanceof Error ? error.message : 'Failed to send message'}`,
-        timestamp: Date.now()
-      };
-      setMessages(prev => [...prev, errorMessage]);
+      // Update the assistant message with error
+      setMessages(prev =>
+        prev.map(msg =>
+          msg.id === assistantMessageId
+            ? {
+                ...msg,
+                content: streamedContent + `\n\nError: ${error instanceof Error ? error.message : 'Failed to send message'}`
+              }
+            : msg
+        )
+      );
     } finally {
       setIsLoading(false);
+      setIsStreaming(false);
+      setStreamingMessageId(null);
     }
   };
 
@@ -912,9 +956,9 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService }, 
                 </span>
               </div>
               <div
-                className="jp-agent-message-content"
+                className={`jp-agent-message-content${streamingMessageId === msg.id ? ' streaming' : ''}`}
                 dangerouslySetInnerHTML={{
-                  __html: msg.role === 'assistant' 
+                  __html: msg.role === 'assistant'
                     ? formatMarkdownToHtml(msg.content)
                     : escapeHtml(msg.content).replace(/\n/g, '<br>')
                 }}
@@ -922,7 +966,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService }, 
             </div>
           ))
         )}
-        {isLoading && (
+        {isLoading && !isStreaming && (
           <div className="jp-agent-message jp-agent-message-assistant">
             <div className="jp-agent-message-header">
               <span className="jp-agent-message-role">Agent</span>
@@ -952,7 +996,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService }, 
           <button
             className="jp-agent-send-button"
             onClick={handleSendMessage}
-            disabled={!input.trim() || isLoading}
+            disabled={!input.trim() || isLoading || isStreaming}
             title="메시지 전송 (Enter)"
           >
             전송

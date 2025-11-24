@@ -577,10 +577,16 @@ export function formatMarkdownToHtml(text: string): string {
     .join('');
 
   // Step 5: Convert markdown to HTML
-  // Headings
+  // Headings (process from h6 to h1 to avoid conflicts)
+  html = html.replace(/^###### (.*$)/gim, '<h6>$1</h6>');
+  html = html.replace(/^##### (.*$)/gim, '<h5>$1</h5>');
+  html = html.replace(/^#### (.*$)/gim, '<h4>$1</h4>');
   html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
   html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
   html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
+
+  // Horizontal rule (---)
+  html = html.replace(/^---+$/gim, '<hr>');
 
   // Links [text](url)
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');

@@ -5,6 +5,7 @@ Chat message handler for Jupyter Agent
 import json
 from jupyter_server.base.handlers import APIHandler
 from tornado import web
+from tornado.iostream import StreamClosedError
 from ..llm_service import LLMService
 import uuid
 
@@ -149,6 +150,137 @@ class ChatHandler(APIHandler):
             self.log.error(f"Error in chat handler: {e}")
             self.set_status(500)
             self.finish(json.dumps({'error': f'Failed to generate response: {str(e)}'}))
+
+    def _get_model_from_config(self, config):
+        """Extract model name from config based on provider"""
+        provider = config.get('provider')
+        if provider == 'gemini':
+            return config.get('gemini', {}).get('model', 'gemini-pro')
+        elif provider == 'vllm':
+            return config.get('vllm', {}).get('model', 'unknown')
+        elif provider == 'openai':
+            return config.get('openai', {}).get('model', 'gpt-4')
+        return 'unknown'
+
+
+class ChatStreamHandler(APIHandler):
+    """Handler for streaming chat messages via SSE"""
+
+    # Share conversations with ChatHandler
+    conversations = ChatHandler.conversations
+
+    async def _send_sse_message(self, data: dict):
+        """Send a Server-Sent Events message"""
+        message = f"data: {json.dumps(data)}\n\n"
+        self.write(message)
+        await self.flush()
+
+    @web.authenticated
+    async def post(self):
+        """Handle streaming chat message request"""
+        try:
+            # Set SSE headers
+            self.set_header('Content-Type', 'text/event-stream')
+            self.set_header('Cache-Control', 'no-cache')
+            self.set_header('Connection', 'keep-alive')
+            self.set_header('X-Accel-Buffering', 'no')
+
+            # Parse request body
+            data = self.get_json_body()
+            message = data.get('message', '')
+            conversation_id = data.get('conversationId')
+
+            if not message:
+                await self._send_sse_message({'error': 'Message is required', 'done': True})
+                return
+
+            # Get or create conversation
+            if not conversation_id:
+                conversation_id = str(uuid.uuid4())
+                self.conversations[conversation_id] = []
+
+            # Get LLM config
+            config_manager = self.settings.get('config_manager')
+            if not config_manager:
+                await self._send_sse_message({'error': 'Configuration manager not available', 'done': True})
+                return
+
+            config = config_manager.get_config()
+            if not config or not isinstance(config, dict) or 'provider' not in config:
+                await self._send_sse_message({'error': 'LLM not configured. Please configure your LLM provider.', 'done': True})
+                return
+
+            # Send initial message with conversation info
+            message_id = str(uuid.uuid4())
+            await self._send_sse_message({
+                'conversationId': conversation_id,
+                'messageId': message_id,
+                'content': '',
+                'done': False
+            })
+
+            # Initialize LLM service
+            llm_service = LLMService(config)
+
+            # Get conversation context
+            context = None
+            if conversation_id in self.conversations:
+                history = self.conversations[conversation_id]
+                if len(history) > 0:
+                    recent_history = history[-5:]
+                    context = "\n".join([
+                        f"{'User' if msg['role'] == 'user' else 'Assistant'}: {msg['content']}"
+                        for msg in recent_history
+                    ])
+
+            # Stream response from LLM
+            full_response = ""
+            try:
+                async for chunk in llm_service.generate_response_stream(message, context):
+                    full_response += chunk
+                    await self._send_sse_message({
+                        'content': chunk,
+                        'done': False
+                    })
+            except StreamClosedError:
+                self.log.warning("Client disconnected during streaming")
+                return
+            except Exception as e:
+                self.log.error(f"Error during streaming: {e}")
+                await self._send_sse_message({'error': str(e), 'done': True})
+                return
+
+            # Store messages in conversation
+            if conversation_id not in self.conversations:
+                self.conversations[conversation_id] = []
+
+            self.conversations[conversation_id].append({
+                'role': 'user',
+                'content': message
+            })
+            self.conversations[conversation_id].append({
+                'role': 'assistant',
+                'content': full_response
+            })
+
+            # Send final message
+            await self._send_sse_message({
+                'content': '',
+                'done': True,
+                'metadata': {
+                    'provider': config.get('provider'),
+                    'model': self._get_model_from_config(config)
+                }
+            })
+
+        except StreamClosedError:
+            self.log.warning("Client disconnected")
+        except Exception as e:
+            self.log.error(f"Error in chat stream handler: {e}")
+            try:
+                await self._send_sse_message({'error': str(e), 'done': True})
+            except StreamClosedError:
+                pass
 
     def _get_model_from_config(self, config):
         """Extract model name from config based on provider"""
