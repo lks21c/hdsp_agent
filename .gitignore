@@ -47,6 +47,10 @@ tsconfig.tsbuildinfo
 poetry.lock
 yarn.lock
 
+# Deprecated directories (should not exist)
+hdsp_agent/
+src/
+
 # IDE
 .vscode/
 .idea/
