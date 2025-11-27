@@ -91,46 +91,59 @@ class TaskManager:
             # Notify all callbacks
             self._notify_progress(task_id, task)
 
+    def _update_task_state(self, task_id: str, updates: Dict[str, Any], condition=None):
+        """Update task state with given updates and notify. Optionally check condition first."""
+        task = self.tasks.get(task_id)
+        if not task:
+            return False
+        if condition and not condition(task):
+            return False
+
+        for key, value in updates.items():
+            setattr(task, key, value)
+        self._notify_progress(task_id, task)
+        return True
+
     def start_task(self, task_id: str):
         """Mark task as started"""
-        task = self.tasks.get(task_id)
-        if task:
-            task.status = TaskStatus.RUNNING
-            task.started_at = datetime.now()
-            task.progress = 5
-            task.message = "작업 시작..."
-            self._notify_progress(task_id, task)
+        self._update_task_state(task_id, {
+            'status': TaskStatus.RUNNING,
+            'started_at': datetime.now(),
+            'progress': 5,
+            'message': "작업 시작..."
+        })
 
     def complete_task(self, task_id: str, notebook_path: str, result: Any = None):
         """Mark task as completed"""
-        task = self.tasks.get(task_id)
-        if task:
-            task.status = TaskStatus.COMPLETED
-            task.completed_at = datetime.now()
-            task.progress = 100
-            task.message = "완료!"
-            task.notebook_path = notebook_path
-            task.result = result
-            self._notify_progress(task_id, task)
+        self._update_task_state(task_id, {
+            'status': TaskStatus.COMPLETED,
+            'completed_at': datetime.now(),
+            'progress': 100,
+            'message': "완료!",
+            'notebook_path': notebook_path,
+            'result': result
+        })
 
     def fail_task(self, task_id: str, error: str):
         """Mark task as failed"""
-        task = self.tasks.get(task_id)
-        if task:
-            task.status = TaskStatus.FAILED
-            task.completed_at = datetime.now()
-            task.error = error
-            task.message = f"실패: {error}"
-            self._notify_progress(task_id, task)
+        self._update_task_state(task_id, {
+            'status': TaskStatus.FAILED,
+            'completed_at': datetime.now(),
+            'error': error,
+            'message': f"실패: {error}"
+        })
 
     def cancel_task(self, task_id: str):
         """Cancel a task"""
-        task = self.tasks.get(task_id)
-        if task and task.status in [TaskStatus.PENDING, TaskStatus.RUNNING]:
-            task.status = TaskStatus.CANCELLED
-            task.completed_at = datetime.now()
-            task.message = "취소됨"
-            self._notify_progress(task_id, task)
+        self._update_task_state(
+            task_id,
+            {
+                'status': TaskStatus.CANCELLED,
+                'completed_at': datetime.now(),
+                'message': "취소됨"
+            },
+            condition=lambda t: t.status in [TaskStatus.PENDING, TaskStatus.RUNNING]
+        )
 
     def add_progress_callback(self, task_id: str, callback: Callable):
         """Add a callback for progress updates"""

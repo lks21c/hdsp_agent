@@ -286,8 +286,17 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService }, 
     };
   }, [messages]);
 
-  // Show notification
-  const showNotification = (message: string, type: 'info' | 'warning' | 'error' = 'info') => {
+  // Helper: Get notification background color
+  const getNotificationColor = (type: 'info' | 'warning' | 'error'): string => {
+    switch (type) {
+      case 'error': return '#f56565';
+      case 'warning': return '#ed8936';
+      default: return '#4299e1';
+    }
+  };
+
+  // Helper: Create and show notification element
+  const createNotificationElement = (message: string, backgroundColor: string): HTMLDivElement => {
     const notification = document.createElement('div');
     notification.style.cssText = `
       position: fixed;
@@ -303,23 +312,15 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService }, 
       transition: opacity 0.3s ease;
       max-width: 300px;
       word-wrap: break-word;
+      background: ${backgroundColor};
     `;
-
-    if (type === 'error') {
-      notification.style.background = '#f56565';
-    } else if (type === 'warning') {
-      notification.style.background = '#ed8936';
-    } else {
-      notification.style.background = '#4299e1';
-    }
-
     notification.textContent = message;
-    document.body.appendChild(notification);
+    return notification;
+  };
 
-    setTimeout(() => {
-      notification.style.opacity = '1';
-    }, 10);
-
+  // Helper: Animate notification in and out
+  const animateNotification = (notification: HTMLDivElement) => {
+    setTimeout(() => notification.style.opacity = '1', 10);
     setTimeout(() => {
       notification.style.opacity = '0';
       setTimeout(() => {
@@ -328,6 +329,13 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService }, 
         }
       }, 300);
     }, 3000);
+  };
+
+  // Show notification
+  const showNotification = (message: string, type: 'info' | 'warning' | 'error' = 'info') => {
+    const notification = createNotificationElement(message, getNotificationColor(type));
+    document.body.appendChild(notification);
+    animateNotification(notification);
   };
 
   // Apply code to Jupyter cell
@@ -378,6 +386,27 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService }, 
     }
   };
 
+  // Helper: Try different methods to set cell source
+  const setCellSource = (cellModel: any, code: string): void => {
+    if (cellModel.sharedModel && typeof cellModel.sharedModel.setSource === 'function') {
+      cellModel.sharedModel.setSource(code);
+    } else if (cellModel.setSource && typeof cellModel.setSource === 'function') {
+      cellModel.setSource(code);
+    } else if (cellModel.value && typeof cellModel.value.setText === 'function') {
+      cellModel.value.setText(code);
+    } else if (cellModel.value && cellModel.value.text !== undefined) {
+      cellModel.value.text = code;
+    } else {
+      throw new Error('Unable to set cell source - no compatible method found');
+    }
+  };
+
+  // Helper: Reset button state
+  const resetButtonState = (button: HTMLButtonElement, originalText: string | null) => {
+    button.disabled = false;
+    button.textContent = originalText || '셀에 적용';
+  };
+
   // Apply code to a specific notebook cell
   const applyCodeToNotebookCell = async (
     code: string,
@@ -405,22 +434,10 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService }, 
           console.log('[AgentPanel] Found cell at index, applying code...');
 
           try {
-            if (cellModel.sharedModel && typeof cellModel.sharedModel.setSource === 'function') {
-              cellModel.sharedModel.setSource(code);
-            } else if (cellModel.setSource && typeof cellModel.setSource === 'function') {
-              cellModel.setSource(code);
-            } else if (cellModel.value && typeof cellModel.value.setText === 'function') {
-              cellModel.value.setText(code);
-            } else if (cellModel.value && cellModel.value.text !== undefined) {
-              cellModel.value.text = code;
-            } else {
-              throw new Error('Unable to set cell source - no compatible method found');
-            }
-
+            setCellSource(cellModel, code);
             console.log('[AgentPanel] Code applied successfully!');
             showNotification('코드가 셀에 적용되었습니다!', 'info');
-            button.disabled = false;
-            button.textContent = originalText || '셀에 적용';
+            resetButtonState(button, originalText);
             // Clear the cell index after successful application
             currentCellIndexRef.current = null;
             currentCellIdRef.current = null;
@@ -428,15 +445,13 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService }, 
           } catch (updateError) {
             console.error('Failed to update cell content:', updateError);
             showNotification('셀 내용 업데이트 실패: ' + (updateError as Error).message, 'error');
-            button.disabled = false;
-            button.textContent = originalText || '셀에 적용';
+            resetButtonState(button, originalText);
             return;
           }
         } else {
           console.error('[AgentPanel] Cell index out of bounds:', currentCellIndexRef.current, 'cells.length:', cells.length);
           showNotification('대상 셀을 찾을 수 없습니다. 셀이 삭제되었거나 이동했을 수 있습니다.', 'error');
-          button.disabled = false;
-          button.textContent = originalText || '셀에 적용';
+          resetButtonState(button, originalText);
           currentCellIndexRef.current = null;
           currentCellIdRef.current = null;
           return;
@@ -449,8 +464,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService }, 
     } catch (error) {
       console.error('Failed to apply code:', error);
       showNotification('코드 적용에 실패했습니다.', 'error');
-      button.disabled = false;
-      button.textContent = originalText || '셀에 적용';
+      resetButtonState(button, originalText);
     }
   };
 
@@ -641,31 +655,17 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService }, 
           if (!cellInfo) return;
 
           const cellModel = cellInfo.cell.model || cellInfo.cell;
-          
+
           // Apply code to cell
           try {
-            // Try different methods to set cell content
-            if (cellModel.sharedModel && typeof cellModel.sharedModel.setSource === 'function') {
-              cellModel.sharedModel.setSource(code);
-            } else if (cellModel.setSource && typeof cellModel.setSource === 'function') {
-              cellModel.setSource(code);
-            } else if (cellModel.value && typeof cellModel.value.setText === 'function') {
-              cellModel.value.setText(code);
-            } else if (cellModel.value && cellModel.value.text !== undefined) {
-              cellModel.value.text = code;
-            } else {
-              throw new Error('Unable to set cell source - no compatible method found');
-            }
-
+            setCellSource(cellModel, code);
             showNotification('코드가 셀에 적용되었습니다!', 'info');
             dialogOverlay.remove();
-            button.disabled = false;
-            button.textContent = originalText || '셀에 적용';
+            resetButtonState(button, originalText);
           } catch (error) {
             console.error('Failed to apply code to cell:', error);
             showNotification('코드 적용에 실패했습니다.', 'error');
-            button.disabled = false;
-            button.textContent = originalText || '셀에 적용';
+            resetButtonState(button, originalText);
           }
         });
 

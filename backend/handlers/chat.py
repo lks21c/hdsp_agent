@@ -3,6 +3,7 @@ Chat message handler for Jupyter Agent
 """
 
 import json
+from dataclasses import dataclass
 from jupyter_server.base.handlers import APIHandler
 from tornado import web
 from tornado.iostream import StreamClosedError
@@ -10,135 +11,176 @@ from ..llm_service import LLMService
 import uuid
 
 
-class ChatHandler(APIHandler):
-    """Handler for chat messages"""
+@dataclass
+class ChatRequest:
+    """Parsed chat request data"""
+    message: str
+    conversation_id: str | None
+
+
+class BaseChatHandler(APIHandler):
+    """Base handler with shared chat functionality"""
 
     # Store conversations in memory (in production, use a database)
     conversations = {}
+
+    # Provider configuration mapping: provider -> (config_key, default_model)
+    PROVIDER_CONFIG = {
+        'gemini': ('gemini', 'gemini-pro'),
+        'vllm': ('vllm', 'unknown'),
+        'openai': ('openai', 'gpt-4'),
+    }
+
+    def _parse_request(self) -> ChatRequest:
+        """Parse and return chat request data"""
+        data = self.get_json_body()
+        return ChatRequest(
+            message=data.get('message', ''),
+            conversation_id=data.get('conversationId')
+        )
+
+    def _get_or_create_conversation(self, conversation_id: str | None) -> str:
+        """Get existing conversation or create new one"""
+        if not conversation_id:
+            conversation_id = str(uuid.uuid4())
+            self.conversations[conversation_id] = []
+        return conversation_id
+
+    def _validate_config(self, config: dict | None) -> tuple[bool, str | None]:
+        """Validate LLM configuration. Returns (is_valid, error_message)"""
+        if not config:
+            return False, 'LLM not configured. Please configure your LLM provider in settings.'
+        if not isinstance(config, dict):
+            return False, 'Invalid configuration format.'
+        if 'provider' not in config:
+            return False, 'LLM not configured. Please configure your LLM provider in settings.'
+        return True, None
+
+    def _get_config(self) -> tuple[dict | None, str | None]:
+        """Get and validate config. Returns (config, error_message)"""
+        config_manager = self.settings.get('config_manager')
+        if not config_manager:
+            return None, 'Configuration manager not available'
+
+        config = config_manager.get_config()
+        is_valid, error = self._validate_config(config)
+        if not is_valid:
+            return None, error
+        return config, None
+
+    def _build_context(self, conversation_id: str, max_messages: int = 5) -> str | None:
+        """Build conversation context from history"""
+        if conversation_id not in self.conversations:
+            return None
+
+        history = self.conversations[conversation_id]
+        if not history:
+            return None
+
+        recent_history = history[-max_messages:]
+        return "\n".join([
+            f"{'User' if msg['role'] == 'user' else 'Assistant'}: {msg['content']}"
+            for msg in recent_history
+        ])
+
+    def _store_messages(self, conversation_id: str, user_message: str, assistant_response: str):
+        """Store user and assistant messages in conversation history"""
+        if conversation_id not in self.conversations:
+            self.conversations[conversation_id] = []
+
+        self.conversations[conversation_id].append({
+            'role': 'user',
+            'content': user_message
+        })
+        self.conversations[conversation_id].append({
+            'role': 'assistant',
+            'content': assistant_response
+        })
+
+    def _get_provider_config(self, config: dict) -> tuple[str, str, dict]:
+        """Get provider-specific config. Returns (provider, model, provider_config)"""
+        provider = config.get('provider')
+        if provider in self.PROVIDER_CONFIG:
+            key, default = self.PROVIDER_CONFIG[provider]
+            provider_config = config.get(key, {})
+            model = provider_config.get('model', default)
+            return provider, model, provider_config
+        return provider or 'unknown', 'unknown', {}
+
+    def _get_model_from_config(self, config: dict) -> str:
+        """Extract model name from config based on provider"""
+        _, model, _ = self._get_provider_config(config)
+        return model
+
+    def _build_metadata(self, config: dict) -> dict:
+        """Build response metadata"""
+        return {
+            'provider': config.get('provider'),
+            'model': self._get_model_from_config(config)
+        }
+
+    def _log_provider_info(self, config: dict):
+        """Log provider-specific configuration details"""
+        provider, model, provider_config = self._get_provider_config(config)
+        self.log.info(f"Using provider: {provider}")
+        self.log.info(f"{provider.capitalize()} Model: {model}")
+
+        if provider == 'vllm':
+            endpoint = provider_config.get('endpoint', 'http://localhost:8000')
+            self.log.info(f"vLLM Endpoint: {endpoint}")
+
+    def _create_llm_service(self, config: dict, conversation_id: str) -> tuple[LLMService, str | None]:
+        """Create LLM service and build context. Returns (llm_service, context)"""
+        return LLMService(config), self._build_context(conversation_id)
+
+
+class ChatHandler(BaseChatHandler):
+    """Handler for chat messages (non-streaming)"""
 
     @web.authenticated
     async def post(self):
         """Handle chat message request"""
         try:
-            # Parse request body
-            data = self.get_json_body()
-            message = data.get('message', '')
-            conversation_id = data.get('conversationId')
+            request = self._parse_request()
 
             self.log.info(f"=== Chat message received ===")
-            self.log.info(f"Message: {message}")
-            self.log.info(f"Conversation ID: {conversation_id}")
+            self.log.info(f"Message: {request.message}")
+            self.log.info(f"Conversation ID: {request.conversation_id}")
 
-            if not message:
+            if not request.message:
                 self.log.warning("Message is empty")
                 self.set_status(400)
                 self.finish(json.dumps({'error': 'Message is required'}))
                 return
 
-            # Get or create conversation
-            if not conversation_id:
-                conversation_id = str(uuid.uuid4())
-                self.conversations[conversation_id] = []
+            conversation_id = self._get_or_create_conversation(request.conversation_id)
 
-            # Get LLM config from extension settings
-            config_manager = self.settings.get('config_manager')
-            self.log.info(f"Config manager: {config_manager}")
-
-            if not config_manager:
-                self.log.error("Config manager not available in settings")
-                self.set_status(500)
-                self.finish(json.dumps({'error': 'Configuration manager not available'}))
+            config, error = self._get_config()
+            if error:
+                status = 500 if 'manager' in error.lower() else 400
+                self.log.error(error) if status == 500 else self.log.warning(error)
+                self.set_status(status)
+                self.finish(json.dumps({'error': error}))
                 return
 
-            config = config_manager.get_config()
-            self.log.info(f"Loaded config: {config}")
-            self.log.info(f"Config type: {type(config)}")
-            self.log.info(f"Config keys: {config.keys() if isinstance(config, dict) else 'Not a dict'}")
+            self._log_provider_info(config)
 
-            # Check if config has required settings
-            if not config:
-                self.log.warning("Config is None or empty")
-                self.set_status(400)
-                self.finish(json.dumps({
-                    'error': 'LLM not configured. Please configure your LLM provider in settings.'
-                }))
-                return
-            
-            if not isinstance(config, dict):
-                self.log.warning(f"Config is not a dict: {type(config)}")
-                self.set_status(400)
-                self.finish(json.dumps({
-                    'error': 'Invalid configuration format.'
-                }))
-                return
-
-            if 'provider' not in config:
-                self.log.warning(f"Provider not found in config. Available keys: {list(config.keys())}")
-                self.set_status(400)
-                self.finish(json.dumps({
-                    'error': 'LLM not configured. Please configure your LLM provider in settings.'
-                }))
-                return
-
-            provider = config.get('provider')
-            self.log.info(f"Using provider: {provider}")
-
-            # Log detailed model configuration
-            if provider == 'gemini':
-                model = config.get('gemini', {}).get('model', 'gemini-pro')
-                self.log.info(f"Gemini Model: {model}")
-            elif provider == 'vllm':
-                model = config.get('vllm', {}).get('model', 'default')
-                endpoint = config.get('vllm', {}).get('endpoint', 'http://localhost:8000')
-                self.log.info(f"vLLM Model: {model}, Endpoint: {endpoint}")
-            elif provider == 'openai':
-                model = config.get('openai', {}).get('model', 'gpt-4')
-                self.log.info(f"OpenAI Model: {model}")
-
-            # Initialize LLM service
             self.log.info("Initializing LLM service...")
-            llm_service = LLMService(config)
+            llm_service, context = self._create_llm_service(config, conversation_id)
+            if context:
+                self.log.info("Using context with previous messages")
 
-            # Get conversation history as context
-            context = None
-            if conversation_id in self.conversations:
-                history = self.conversations[conversation_id]
-                if len(history) > 0:
-                    # Include last 5 messages as context
-                    recent_history = history[-5:]
-                    context = "\n".join([
-                        f"{'User' if msg['role'] == 'user' else 'Assistant'}: {msg['content']}"
-                        for msg in recent_history
-                    ])
-                    self.log.info(f"Using context with {len(recent_history)} previous messages")
-
-            # Generate response from LLM
-            self.log.info(f"Calling LLM with message: {message[:50]}...")
-            response_text = await llm_service.generate_response(message, context)
+            self.log.info(f"Calling LLM with message: {request.message[:50]}...")
+            response_text = await llm_service.generate_response(request.message, context)
             self.log.info(f"LLM response received: {response_text[:100]}...")
 
-            # Store messages in conversation
-            if conversation_id not in self.conversations:
-                self.conversations[conversation_id] = []
+            self._store_messages(conversation_id, request.message, response_text)
 
-            self.conversations[conversation_id].append({
-                'role': 'user',
-                'content': message
-            })
-            self.conversations[conversation_id].append({
-                'role': 'assistant',
-                'content': response_text
-            })
-
-            # Build response
             response = {
                 'conversationId': conversation_id,
                 'messageId': str(uuid.uuid4()),
                 'content': response_text,
-                'metadata': {
-                    'provider': config.get('provider'),
-                    'model': self._get_model_from_config(config)
-                }
+                'metadata': self._build_metadata(config)
             }
 
             self.finish(json.dumps(response))
@@ -151,23 +193,9 @@ class ChatHandler(APIHandler):
             self.set_status(500)
             self.finish(json.dumps({'error': f'Failed to generate response: {str(e)}'}))
 
-    def _get_model_from_config(self, config):
-        """Extract model name from config based on provider"""
-        provider = config.get('provider')
-        if provider == 'gemini':
-            return config.get('gemini', {}).get('model', 'gemini-pro')
-        elif provider == 'vllm':
-            return config.get('vllm', {}).get('model', 'unknown')
-        elif provider == 'openai':
-            return config.get('openai', {}).get('model', 'gpt-4')
-        return 'unknown'
 
-
-class ChatStreamHandler(APIHandler):
+class ChatStreamHandler(BaseChatHandler):
     """Handler for streaming chat messages via SSE"""
-
-    # Share conversations with ChatHandler
-    conversations = ChatHandler.conversations
 
     async def _send_sse_message(self, data: dict):
         """Send a Server-Sent Events message"""
@@ -179,64 +207,36 @@ class ChatStreamHandler(APIHandler):
     async def post(self):
         """Handle streaming chat message request"""
         try:
-            # Set SSE headers
             self.set_header('Content-Type', 'text/event-stream')
             self.set_header('Cache-Control', 'no-cache')
             self.set_header('Connection', 'keep-alive')
             self.set_header('X-Accel-Buffering', 'no')
 
-            # Parse request body
-            data = self.get_json_body()
-            message = data.get('message', '')
-            conversation_id = data.get('conversationId')
+            request = self._parse_request()
 
-            if not message:
+            if not request.message:
                 await self._send_sse_message({'error': 'Message is required', 'done': True})
                 return
 
-            # Get or create conversation
-            if not conversation_id:
-                conversation_id = str(uuid.uuid4())
-                self.conversations[conversation_id] = []
+            conversation_id = self._get_or_create_conversation(request.conversation_id)
 
-            # Get LLM config
-            config_manager = self.settings.get('config_manager')
-            if not config_manager:
-                await self._send_sse_message({'error': 'Configuration manager not available', 'done': True})
+            config, error = self._get_config()
+            if error:
+                await self._send_sse_message({'error': error, 'done': True})
                 return
 
-            config = config_manager.get_config()
-            if not config or not isinstance(config, dict) or 'provider' not in config:
-                await self._send_sse_message({'error': 'LLM not configured. Please configure your LLM provider.', 'done': True})
-                return
-
-            # Send initial message with conversation info
-            message_id = str(uuid.uuid4())
             await self._send_sse_message({
                 'conversationId': conversation_id,
-                'messageId': message_id,
+                'messageId': str(uuid.uuid4()),
                 'content': '',
                 'done': False
             })
 
-            # Initialize LLM service
-            llm_service = LLMService(config)
+            llm_service, context = self._create_llm_service(config, conversation_id)
 
-            # Get conversation context
-            context = None
-            if conversation_id in self.conversations:
-                history = self.conversations[conversation_id]
-                if len(history) > 0:
-                    recent_history = history[-5:]
-                    context = "\n".join([
-                        f"{'User' if msg['role'] == 'user' else 'Assistant'}: {msg['content']}"
-                        for msg in recent_history
-                    ])
-
-            # Stream response from LLM
             full_response = ""
             try:
-                async for chunk in llm_service.generate_response_stream(message, context):
+                async for chunk in llm_service.generate_response_stream(request.message, context):
                     full_response += chunk
                     await self._send_sse_message({
                         'content': chunk,
@@ -250,27 +250,12 @@ class ChatStreamHandler(APIHandler):
                 await self._send_sse_message({'error': str(e), 'done': True})
                 return
 
-            # Store messages in conversation
-            if conversation_id not in self.conversations:
-                self.conversations[conversation_id] = []
+            self._store_messages(conversation_id, request.message, full_response)
 
-            self.conversations[conversation_id].append({
-                'role': 'user',
-                'content': message
-            })
-            self.conversations[conversation_id].append({
-                'role': 'assistant',
-                'content': full_response
-            })
-
-            # Send final message
             await self._send_sse_message({
                 'content': '',
                 'done': True,
-                'metadata': {
-                    'provider': config.get('provider'),
-                    'model': self._get_model_from_config(config)
-                }
+                'metadata': self._build_metadata(config)
             })
 
         except StreamClosedError:
@@ -281,14 +266,3 @@ class ChatStreamHandler(APIHandler):
                 await self._send_sse_message({'error': str(e), 'done': True})
             except StreamClosedError:
                 pass
-
-    def _get_model_from_config(self, config):
-        """Extract model name from config based on provider"""
-        provider = config.get('provider')
-        if provider == 'gemini':
-            return config.get('gemini', {}).get('model', 'gemini-pro')
-        elif provider == 'vllm':
-            return config.get('vllm', {}).get('model', 'unknown')
-        elif provider == 'openai':
-            return config.get('openai', {}).get('model', 'gpt-4')
-        return 'unknown'

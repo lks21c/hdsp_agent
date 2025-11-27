@@ -18,6 +18,30 @@ class NotebookGenerator:
         self.llm_service = llm_service
         self.task_manager = task_manager
 
+    def _extract_json_from_response(self, response_text: str) -> dict | None:
+        """Extract JSON object from LLM response text"""
+        content = response_text.strip()
+        json_match = re.search(r'\{.*\}', content, re.DOTALL)
+        if json_match:
+            try:
+                return json.loads(json_match.group())
+            except json.JSONDecodeError:
+                return None
+        return None
+
+    async def _call_llm_for_json(self, prompt: str, fallback: dict) -> dict:
+        """Call LLM and extract JSON response, with fallback"""
+        response_text = await self.llm_service.generate_response(prompt)
+        result = self._extract_json_from_response(response_text)
+        return result if result else fallback
+
+    def _remove_code_block_markers(self, content: str) -> str:
+        """Remove markdown code block markers from content"""
+        content = re.sub(r'^```python\n', '', content)
+        content = re.sub(r'^```\n', '', content)
+        content = re.sub(r'\n```$', '', content)
+        return content.strip()
+
     async def generate_notebook(self, task_id: str, prompt: str, output_dir: str = None) -> str:
         """
         Generate a notebook from a prompt
@@ -73,22 +97,14 @@ class NotebookGenerator:
 
 JSON만 응답하세요:"""
 
-        response_text = await self.llm_service.generate_response(analysis_prompt)
-        content = response_text.strip()
-
-        # Extract JSON from response
-        json_match = re.search(r'\{.*\}', content, re.DOTALL)
-        if json_match:
-            return json.loads(json_match.group())
-
-        # Fallback default
-        return {
+        fallback = {
             'title': 'Generated Notebook',
             'objective': prompt,
             'libraries': ['pandas', 'numpy'],
             'estimated_cells': 10,
             'analysis_type': 'general'
         }
+        return await self._call_llm_for_json(analysis_prompt, fallback)
 
     async def _create_notebook_plan(self, prompt: str, analysis: Dict[str, Any]) -> Dict[str, Any]:
         """Create a structured plan for the notebook"""
@@ -120,16 +136,7 @@ JSON만 응답하세요:"""
 
 JSON만 응답하세요:"""
 
-        response_text = await self.llm_service.generate_response(plan_prompt)
-        content = response_text.strip()
-
-        # Extract JSON
-        json_match = re.search(r'\{.*\}', content, re.DOTALL)
-        if json_match:
-            return json.loads(json_match.group())
-
-        # Fallback default plan
-        return {
+        fallback = {
             'cells': [
                 {'type': 'markdown', 'purpose': '제목', 'content_hint': analysis['title']},
                 {'type': 'code', 'purpose': '라이브러리 임포트', 'content_hint': 'import pandas, numpy'},
@@ -137,6 +144,7 @@ JSON만 응답하세요:"""
                 {'type': 'code', 'purpose': '분석', 'content_hint': 'analysis code'},
             ]
         }
+        return await self._call_llm_for_json(plan_prompt, fallback)
 
     async def _generate_cells(self, task_id: str, plan: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Generate actual cell content based on plan"""
@@ -202,14 +210,7 @@ JSON만 응답하세요:"""
 주석은 한국어로 간단히 작성하세요:"""
 
         response_text = await self.llm_service.generate_response(prompt)
-        content = response_text.strip()
-
-        # Remove code block markers if present
-        content = re.sub(r'^```python\n', '', content)
-        content = re.sub(r'^```\n', '', content)
-        content = re.sub(r'\n```$', '', content)
-
-        return content.strip()
+        return self._remove_code_block_markers(response_text.strip())
 
     async def _save_notebook(self, cells: List[Dict], output_dir: str, base_name: str) -> str:
         """Save notebook to file"""

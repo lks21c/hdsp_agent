@@ -8,30 +8,42 @@ from .base import BaseAgentHandler
 class ConfigHandler(BaseAgentHandler):
     """Handle configuration operations"""
 
+    def _mask_api_key(self, key: str) -> str:
+        """Mask API key, showing only last 4 characters"""
+        return f"****{key[-4:]}" if len(key) > 4 else "****"
+
+    def _mask_provider_keys(self, config: dict, providers: list) -> dict:
+        """Mask API keys for specified providers in config"""
+        for provider in providers:
+            if provider in config and config[provider].get('apiKey'):
+                config[provider]['apiKey'] = self._mask_api_key(config[provider]['apiKey'])
+        return config
+
     @web.authenticated
     async def get(self):
         """Get current configuration"""
         try:
             config = self.config_manager.get_config()
-
-            # Don't expose full API keys, only last 4 chars
-            if 'gemini' in config and config['gemini'].get('apiKey'):
-                key = config['gemini']['apiKey']
-                config['gemini']['apiKey'] = f"****{key[-4:]}" if len(key) > 4 else "****"
-
-            if 'vllm' in config and config['vllm'].get('apiKey'):
-                key = config['vllm']['apiKey']
-                config['vllm']['apiKey'] = f"****{key[-4:]}" if len(key) > 4 else "****"
-
-            if 'openai' in config and config['openai'].get('apiKey'):
-                key = config['openai']['apiKey']
-                config['openai']['apiKey'] = f"****{key[-4:]}" if len(key) > 4 else "****"
-
+            config = self._mask_provider_keys(config, ['gemini', 'vllm', 'openai'])
             self.write_json(config)
 
         except Exception as e:
             self.log.error(f"Get config failed: {e}")
             self.write_error_json(500, "Failed to load configuration")
+
+    def _is_masked_key(self, key: str) -> bool:
+        """Check if API key is masked"""
+        return key and key.startswith('****')
+
+    def _restore_masked_keys(self, data: dict, existing_config: dict, providers: list) -> dict:
+        """Restore masked API keys from existing config for specified providers"""
+        for provider in providers:
+            if provider in data:
+                api_key = data.get(provider, {}).get('apiKey', '')
+                if self._is_masked_key(api_key) and provider in existing_config:
+                    data[provider]['apiKey'] = existing_config[provider].get('apiKey', '')
+                    self.log.info(f"Restored masked {provider.capitalize()} API key")
+        return data
 
     @web.authenticated
     async def post(self):
@@ -44,29 +56,8 @@ class ConfigHandler(BaseAgentHandler):
             # Load existing config to preserve masked keys
             existing_config = self.config_manager.get_config()
 
-            # Helper to check if key is masked
-            def is_masked(key):
-                return key and key.startswith('****')
-
-            # Only restore masked keys from existing config
-            # No validation - accept any values the user provides
-            if 'gemini' in data:
-                gemini_key = data.get('gemini', {}).get('apiKey', '')
-                if is_masked(gemini_key) and 'gemini' in existing_config:
-                    data['gemini']['apiKey'] = existing_config['gemini'].get('apiKey', '')
-                    self.log.info("Restored masked Gemini API key")
-
-            if 'openai' in data:
-                openai_key = data.get('openai', {}).get('apiKey', '')
-                if is_masked(openai_key) and 'openai' in existing_config:
-                    data['openai']['apiKey'] = existing_config['openai'].get('apiKey', '')
-                    self.log.info("Restored masked OpenAI API key")
-
-            if 'vllm' in data:
-                vllm_key = data.get('vllm', {}).get('apiKey', '')
-                if is_masked(vllm_key) and 'vllm' in existing_config:
-                    data['vllm']['apiKey'] = existing_config['vllm'].get('apiKey', '')
-                    self.log.info("Restored masked vLLM API key")
+            # Restore masked keys for all providers
+            data = self._restore_masked_keys(data, existing_config, ['gemini', 'openai', 'vllm'])
 
             # Save configuration without any validation
             self.log.info(f"About to save config: {data}")

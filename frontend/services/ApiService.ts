@@ -20,15 +20,22 @@ export class ApiService {
   }
 
   /**
-   * Get CSRF token from cookie
+   * Get cookie value by name
    */
-  private getCsrfToken(): string {
+  private getCookie(name: string): string {
     const value = `; ${document.cookie}`;
-    const parts = value.split(`; _xsrf=`);
+    const parts = value.split(`; ${name}=`);
     if (parts.length === 2) {
       return parts.pop()?.split(';').shift() || '';
     }
     return '';
+  }
+
+  /**
+   * Get CSRF token from cookie
+   */
+  private getCsrfToken(): string {
+    return this.getCookie('_xsrf');
   }
 
   /**

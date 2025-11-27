@@ -12,6 +12,10 @@ class LLMClient:
     _instance = None
 
     def __init__(self, config: Dict[str, Any]):
+        self._update_config(config)
+
+    def _update_config(self, config: Dict[str, Any]):
+        """Update client configuration from config dict"""
         self.config = config
         self.api_key = config.get('apiKey') or os.environ.get('OPENAI_API_KEY')
         self.base_url = config.get('baseUrl', 'https://api.openai.com/v1')
@@ -25,14 +29,7 @@ class LLMClient:
         if cls._instance is None:
             cls._instance = LLMClient(config)
         else:
-            # Update config
-            cls._instance.config = config
-            cls._instance.api_key = config.get('apiKey') or os.environ.get('OPENAI_API_KEY')
-            cls._instance.base_url = config.get('baseUrl', 'https://api.openai.com/v1')
-            cls._instance.model = config.get('modelId', 'gpt-4')
-            cls._instance.temperature = config.get('temperature', 0.7)
-            cls._instance.max_tokens = config.get('maxTokens', 2000)
-
+            cls._instance._update_config(config)
         return cls._instance
 
     async def generate(self, prompt: str) -> Dict[str, Any]:

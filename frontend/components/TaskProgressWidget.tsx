@@ -48,38 +48,36 @@ export const TaskProgressWidget: React.FC<TaskProgressWidgetProps> = ({
   const isRunning = status === 'running';
   const isDone = isComplete || isFailed || isCancelled;
 
-  // Get status color
-  const getStatusColor = () => {
-    if (isComplete) return 'success';
-    if (isFailed) return 'error';
-    if (isCancelled) return 'default';
-    return 'primary';
-  };
-
-  // Get status icon
-  const getStatusIcon = () => {
-    if (isComplete) return <CheckCircleIcon fontSize="small" />;
-    if (isFailed) return <ErrorIcon fontSize="small" />;
-    if (isCancelled) return <CancelIcon fontSize="small" />;
-    return null;
-  };
-
-  // Get status text
-  const getStatusText = () => {
-    switch (status) {
-      case 'pending':
-        return '대기 중';
-      case 'running':
-        return '생성 중';
-      case 'completed':
-        return '완료';
-      case 'failed':
-        return '실패';
-      case 'cancelled':
-        return '취소됨';
-      default:
-        return status;
+  // Helper: Map status to color
+  const getStatusColor = (currentStatus: string): 'success' | 'error' | 'default' | 'primary' => {
+    switch (currentStatus) {
+      case 'completed': return 'success';
+      case 'failed': return 'error';
+      case 'cancelled': return 'default';
+      default: return 'primary';
     }
+  };
+
+  // Helper: Map status to icon
+  const getStatusIcon = (currentStatus: string): JSX.Element | null => {
+    switch (currentStatus) {
+      case 'completed': return <CheckCircleIcon fontSize="small" />;
+      case 'failed': return <ErrorIcon fontSize="small" />;
+      case 'cancelled': return <CancelIcon fontSize="small" />;
+      default: return null;
+    }
+  };
+
+  // Helper: Map status to Korean text
+  const getStatusText = (currentStatus: string): string => {
+    const statusTextMap: Record<string, string> = {
+      'pending': '대기 중',
+      'running': '생성 중',
+      'completed': '완료',
+      'failed': '실패',
+      'cancelled': '취소됨'
+    };
+    return statusTextMap[currentStatus] || currentStatus;
   };
 
   return (
@@ -108,10 +106,10 @@ export const TaskProgressWidget: React.FC<TaskProgressWidgetProps> = ({
               노트북 생성
             </Typography>
             <Chip
-              label={getStatusText()}
+              label={getStatusText(status)}
               size="small"
-              color={getStatusColor() as any}
-              icon={getStatusIcon() || undefined}
+              color={getStatusColor(status) as any}
+              icon={getStatusIcon(status) || undefined}
             />
           </Box>
 

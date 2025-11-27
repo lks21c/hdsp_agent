@@ -91,42 +91,47 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     }
   }, [currentConfig]);
 
+  // Helper: Get cookie value by name
+  const getCookie = (name: string): string => {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) {
+      return parts.pop()?.split(';').shift() || '';
+    }
+    return '';
+  };
+
+  // Helper: Build LLM config from state
+  const buildLLMConfig = (): LLMConfig => ({
+    provider,
+    gemini: {
+      apiKey: geminiApiKey,
+      model: geminiModel
+    },
+    vllm: {
+      endpoint: vllmEndpoint,
+      apiKey: vllmApiKey,
+      model: vllmModel
+    },
+    openai: {
+      apiKey: openaiApiKey,
+      model: openaiModel
+    }
+  });
+
   const handleTest = async () => {
     setIsTesting(true);
     setTestResult(null);
 
     try {
-      const config: LLMConfig = {
-        provider,
-        gemini: {
-          apiKey: geminiApiKey,
-          model: geminiModel
-        },
-        vllm: {
-          endpoint: vllmEndpoint,
-          apiKey: vllmApiKey,
-          model: vllmModel
-        },
-        openai: {
-          apiKey: openaiApiKey,
-          model: openaiModel
-        }
-      };
-
-      // Get CSRF token from cookie
-      const getCookie = (name: string) => {
-        const value = `; ${document.cookie}`;
-        const parts = value.split(`; ${name}=`);
-        if (parts.length === 2) return parts.pop()?.split(';').shift();
-        return '';
-      };
+      const config = buildLLMConfig();
 
       // Test API call
       const response = await fetch('/hdsp-agent/test-llm', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-XSRFToken': getCookie('_xsrf') || ''
+          'X-XSRFToken': getCookie('_xsrf')
         },
         body: JSON.stringify(config)
       });
@@ -146,23 +151,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   };
 
   const handleSave = () => {
-    const config: LLMConfig = {
-      provider,
-      gemini: {
-        apiKey: geminiApiKey,
-        model: geminiModel
-      },
-      vllm: {
-        endpoint: vllmEndpoint,
-        apiKey: vllmApiKey,
-        model: vllmModel
-      },
-      openai: {
-        apiKey: openaiApiKey,
-        model: openaiModel
-      }
-    };
-
+    const config = buildLLMConfig();
     onSave(config);
     onClose();
   };

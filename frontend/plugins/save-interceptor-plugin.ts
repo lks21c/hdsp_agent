@@ -600,9 +600,22 @@ function isLocalImport(moduleName: string): boolean {
 }
 
 /**
- * Show notification
+ * Get notification background color based on type
  */
-function showNotification(message: string, type: 'info' | 'warning' | 'error' | 'success' = 'info'): void {
+function getNotificationColor(type: 'info' | 'warning' | 'error' | 'success'): string {
+  const colors: Record<string, string> = {
+    success: '#48bb78',
+    error: '#f56565',
+    warning: '#ed8936',
+    info: '#4299e1'
+  };
+  return colors[type] || colors.info;
+}
+
+/**
+ * Create notification element with styles
+ */
+function createNotificationElement(message: string, backgroundColor: string): HTMLDivElement {
   const notification = document.createElement('div');
   notification.style.cssText = `
     position: fixed;
@@ -619,20 +632,16 @@ function showNotification(message: string, type: 'info' | 'warning' | 'error' | 
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     max-width: 300px;
     word-wrap: break-word;
+    background: ${backgroundColor};
   `;
-
-  // Type-based colors
-  const colors = {
-    success: '#48bb78',
-    error: '#f56565',
-    warning: '#ed8936',
-    info: '#4299e1'
-  };
-
-  notification.style.background = colors[type] || colors.info;
   notification.textContent = message;
-  document.body.appendChild(notification);
+  return notification;
+}
 
+/**
+ * Animate notification appearance and removal
+ */
+function animateNotification(notification: HTMLDivElement): void {
   // Show animation
   setTimeout(() => {
     notification.style.opacity = '1';
@@ -647,4 +656,13 @@ function showNotification(message: string, type: 'info' | 'warning' | 'error' | 
       }
     }, 300);
   }, 3000);
+}
+
+/**
+ * Show notification
+ */
+function showNotification(message: string, type: 'info' | 'warning' | 'error' | 'success' = 'info'): void {
+  const notification = createNotificationElement(message, getNotificationColor(type));
+  document.body.appendChild(notification);
+  animateNotification(notification);
 }

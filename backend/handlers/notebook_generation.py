@@ -82,18 +82,30 @@ class NotebookGenerationHandler(BaseAgentHandler):
             task_manager.fail_task(task_id, str(e))
 
 
-class TaskStatusHandler(BaseAgentHandler):
+class TaskHandlerMixin:
+    """Mixin providing common task operations"""
+
+    async def _get_task_or_error(self, task_id: str):
+        """Get task by ID, returns (task_manager, task) or writes error and returns (None, None)"""
+        task_manager = await TaskManager.get_instance()
+        task = task_manager.get_task(task_id)
+
+        if not task:
+            self.write_error_json(404, f"Task not found: {task_id}")
+            return None, None
+
+        return task_manager, task
+
+
+class TaskStatusHandler(TaskHandlerMixin, BaseAgentHandler):
     """Handle task status queries"""
 
     @web.authenticated
     async def get(self, task_id: str):
         """Get task status"""
         try:
-            task_manager = await TaskManager.get_instance()
-            task = task_manager.get_task(task_id)
-
+            task_manager, task = await self._get_task_or_error(task_id)
             if not task:
-                self.write_error_json(404, f"Task not found: {task_id}")
                 return
 
             self.write_json(task.to_dict())
@@ -103,18 +115,15 @@ class TaskStatusHandler(BaseAgentHandler):
             self.write_error_json(500, "Internal server error")
 
 
-class TaskStatusStreamHandler(BaseAgentHandler):
+class TaskStatusStreamHandler(TaskHandlerMixin, BaseAgentHandler):
     """Handle Server-Sent Events for task progress"""
 
     @web.authenticated
     async def get(self, task_id: str):
         """Stream task progress updates via SSE"""
         try:
-            task_manager = await TaskManager.get_instance()
-            task = task_manager.get_task(task_id)
-
+            task_manager, task = await self._get_task_or_error(task_id)
             if not task:
-                self.write_error_json(404, f"Task not found: {task_id}")
                 return
 
             # Set SSE headers
@@ -173,18 +182,15 @@ class TaskStatusStreamHandler(BaseAgentHandler):
         await self.flush()
 
 
-class TaskCancelHandler(BaseAgentHandler):
+class TaskCancelHandler(TaskHandlerMixin, BaseAgentHandler):
     """Handle task cancellation"""
 
     @web.authenticated
     async def post(self, task_id: str):
         """Cancel a task"""
         try:
-            task_manager = await TaskManager.get_instance()
-            task = task_manager.get_task(task_id)
-
+            task_manager, task = await self._get_task_or_error(task_id)
             if not task:
-                self.write_error_json(404, f"Task not found: {task_id}")
                 return
 
             task_manager.cancel_task(task_id)

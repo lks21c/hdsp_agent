@@ -11,6 +11,23 @@ from ..llm_service import LLMService
 class TestLLMHandler(APIHandler):
     """Handler for testing LLM configuration"""
 
+    # Provider validation rules: (config_key, required_field, error_message)
+    VALIDATION_RULES = {
+        'gemini': ('gemini', 'apiKey', 'Gemini API 키가 필요합니다'),
+        'openai': ('openai', 'apiKey', 'OpenAI API 키가 필요합니다'),
+        'vllm': ('vllm', 'endpoint', 'vLLM 엔드포인트가 필요합니다'),
+    }
+
+    def _validate_provider_config(self, config: dict, provider: str) -> tuple[bool, str | None]:
+        """Validate provider-specific configuration. Returns (is_valid, error_message)"""
+        if provider not in self.VALIDATION_RULES:
+            return True, None
+
+        config_key, required_field, error_msg = self.VALIDATION_RULES[provider]
+        if not config.get(config_key, {}).get(required_field):
+            return False, error_msg
+        return True, None
+
     @web.authenticated
     async def post(self):
         """Test LLM connection with provided config"""
@@ -26,21 +43,11 @@ class TestLLMHandler(APIHandler):
             provider = config.get('provider')
 
             # Validate provider-specific config
-            if provider == 'gemini':
-                if not config.get('gemini', {}).get('apiKey'):
-                    self.set_status(400)
-                    self.finish(json.dumps({'error': 'Gemini API 키가 필요합니다'}))
-                    return
-            elif provider == 'openai':
-                if not config.get('openai', {}).get('apiKey'):
-                    self.set_status(400)
-                    self.finish(json.dumps({'error': 'OpenAI API 키가 필요합니다'}))
-                    return
-            elif provider == 'vllm':
-                if not config.get('vllm', {}).get('endpoint'):
-                    self.set_status(400)
-                    self.finish(json.dumps({'error': 'vLLM 엔드포인트가 필요합니다'}))
-                    return
+            is_valid, error_msg = self._validate_provider_config(config, provider)
+            if not is_valid:
+                self.set_status(400)
+                self.finish(json.dumps({'error': error_msg}))
+                return
 
             # Initialize LLM service with test config
             llm_service = LLMService(config)

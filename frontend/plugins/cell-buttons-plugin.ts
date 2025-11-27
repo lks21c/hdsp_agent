@@ -492,45 +492,63 @@ ${cellContent}
 }
 
 /**
+ * Helper: Remove existing dialog if present
+ */
+function removeExistingDialog(className: string): void {
+  const existingDialog = document.querySelector(`.${className}`);
+  if (existingDialog) {
+    existingDialog.remove();
+  }
+}
+
+/**
+ * Helper: Create dialog overlay element
+ */
+function createDialogOverlay(className: string): HTMLDivElement {
+  const dialogOverlay = document.createElement('div');
+  dialogOverlay.className = className;
+  dialogOverlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.3);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  `;
+  return dialogOverlay;
+}
+
+/**
+ * Helper: Create dialog container element
+ */
+function createDialogContainer(maxWidth: string = '400px'): HTMLDivElement {
+  const dialogContainer = document.createElement('div');
+  dialogContainer.style.cssText = `
+    background: #fafafa;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 24px;
+    max-width: ${maxWidth};
+    width: 90%;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  `;
+  return dialogContainer;
+}
+
+/**
  * Show confirmation dialog
  * Based on chrome_agent's showConfirmDialog implementation
  */
 function showConfirmDialog(title: string, message: string): Promise<boolean> {
   return new Promise((resolve) => {
-    // Remove existing dialog if any
-    const existingDialog = document.querySelector('.jp-agent-confirm-dialog');
-    if (existingDialog) {
-      existingDialog.remove();
-    }
-
-    // Create dialog overlay
-    const dialogOverlay = document.createElement('div');
-    dialogOverlay.className = 'jp-agent-confirm-dialog';
-    dialogOverlay.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.3);
-      z-index: 10000;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    `;
-
-    // Create dialog container
-    const dialogContainer = document.createElement('div');
-    dialogContainer.style.cssText = `
-      background: #fafafa;
-      border: 1px solid #e0e0e0;
-      border-radius: 4px;
-      padding: 24px;
-      max-width: 400px;
-      width: 90%;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    `;
+    removeExistingDialog('jp-agent-confirm-dialog');
+    const dialogOverlay = createDialogOverlay('jp-agent-confirm-dialog');
+    const dialogContainer = createDialogContainer();
 
     // Dialog content
     dialogContainer.innerHTML = `
@@ -660,10 +678,20 @@ function escapeContent(content: string): string {
 }
 
 /**
- * Show notification (simple implementation)
+ * Get notification background color
  */
-function showNotification(message: string, type: 'info' | 'warning' | 'error' = 'info'): void {
-  // Simple notification implementation
+function getNotificationColor(type: 'info' | 'warning' | 'error'): string {
+  switch (type) {
+    case 'error': return '#f56565';
+    case 'warning': return '#ed8936';
+    default: return '#4299e1';
+  }
+}
+
+/**
+ * Create notification element with styles
+ */
+function createNotificationElement(message: string, backgroundColor: string): HTMLDivElement {
   const notification = document.createElement('div');
   notification.style.cssText = `
     position: fixed;
@@ -679,23 +707,18 @@ function showNotification(message: string, type: 'info' | 'warning' | 'error' = 
     transition: opacity 0.3s ease;
     max-width: 300px;
     word-wrap: break-word;
+    background: ${backgroundColor};
   `;
-
-  if (type === 'error') {
-    notification.style.background = '#f56565';
-  } else if (type === 'warning') {
-    notification.style.background = '#ed8936';
-  } else {
-    notification.style.background = '#4299e1';
-  }
-
   notification.textContent = message;
-  document.body.appendChild(notification);
+  return notification;
+}
 
+/**
+ * Animate notification appearance and removal
+ */
+function animateNotification(notification: HTMLDivElement): void {
   // Show animation
-  setTimeout(() => {
-    notification.style.opacity = '1';
-  }, 10);
+  setTimeout(() => notification.style.opacity = '1', 10);
 
   // Remove after 3 seconds
   setTimeout(() => {
@@ -709,6 +732,15 @@ function showNotification(message: string, type: 'info' | 'warning' | 'error' = 
 }
 
 /**
+ * Show notification (simple implementation)
+ */
+function showNotification(message: string, type: 'info' | 'warning' | 'error' = 'info'): void {
+  const notification = createNotificationElement(message, getNotificationColor(type));
+  document.body.appendChild(notification);
+  animateNotification(notification);
+}
+
+/**
  * Show custom prompt dialog
  * Based on chrome_agent's showCustomPromptDialog implementation
  */
@@ -719,40 +751,9 @@ function showCustomPromptDialog(cell: Cell): void {
 
   console.log('커스텀 프롬프트 다이얼로그 표시', cellIndex, cellId);
 
-  // 기존 다이얼로그가 있으면 제거
-  const existingDialog = document.querySelector('.jp-agent-custom-prompt-dialog');
-  if (existingDialog) {
-    existingDialog.remove();
-  }
-
-  // 다이얼로그 오버레이 생성
-  const dialogOverlay = document.createElement('div');
-  dialogOverlay.className = 'jp-agent-custom-prompt-dialog';
-  dialogOverlay.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.3);
-    z-index: 10000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  `;
-
-  // 다이얼로그 컨테이너 생성
-  const dialogContainer = document.createElement('div');
-  dialogContainer.style.cssText = `
-    background: #fafafa;
-    border: 1px solid #e0e0e0;
-    border-radius: 4px;
-    padding: 24px;
-    max-width: 500px;
-    width: 90%;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  `;
+  removeExistingDialog('jp-agent-custom-prompt-dialog');
+  const dialogOverlay = createDialogOverlay('jp-agent-custom-prompt-dialog');
+  const dialogContainer = createDialogContainer('500px');
 
   // 다이얼로그 내용
   dialogContainer.innerHTML = `
