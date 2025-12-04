@@ -46,7 +46,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
   // Validate gemini model - only allow valid options
   const validateGeminiModel = (model: string | undefined): string => {
-    const validModels = ['gemini-2.5-pro', 'gemini-2.5-flash'];
+    const validModels = ['gemini-3-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash'];
     if (model && validModels.includes(model)) {
       return model;
     }
@@ -206,6 +206,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   value={geminiModel}
                   onChange={(e) => setGeminiModel(e.target.value)}
                 >
+                  <option value="gemini-3-pro-preview">Gemini 3.0 Pro</option>
                   <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
                   <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
                 </select>

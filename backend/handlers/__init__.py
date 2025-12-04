@@ -14,6 +14,11 @@ from .notebook_generation import (
     TaskStatusStreamHandler,
     TaskCancelHandler
 )
+from .auto_agent import (
+    AutoAgentPlanHandler,
+    AutoAgentRefineHandler,
+    AutoAgentPlanStreamHandler
+)
 
 from jupyter_server.utils import url_path_join
 from ..services.config_manager import ConfigManager
@@ -39,6 +44,10 @@ def setup_handlers(web_app):
         (url_path_join(base_url, 'hdsp-agent', 'task', r'([^/]+)', 'status'), TaskStatusHandler),
         (url_path_join(base_url, 'hdsp-agent', 'task', r'([^/]+)', 'stream'), TaskStatusStreamHandler),
         (url_path_join(base_url, 'hdsp-agent', 'task', r'([^/]+)', 'cancel'), TaskCancelHandler),
+        # Auto-Agent routes
+        (url_path_join(base_url, 'hdsp-agent', 'auto-agent', 'plan'), AutoAgentPlanHandler),
+        (url_path_join(base_url, 'hdsp-agent', 'auto-agent', 'refine'), AutoAgentRefineHandler),
+        (url_path_join(base_url, 'hdsp-agent', 'auto-agent', 'plan', 'stream'), AutoAgentPlanStreamHandler),
     ]
 
     web_app.add_handlers(host_pattern, handlers)

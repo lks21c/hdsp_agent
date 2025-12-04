@@ -7,6 +7,7 @@
 @import './agent-panel.css';
 @import './settings-panel.css';
 @import './launcher-icon.css';
+@import './auto-agent.css';
 
 /* Global Variables */
 :root {

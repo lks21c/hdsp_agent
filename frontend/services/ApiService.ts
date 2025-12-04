@@ -12,6 +12,17 @@ import {
   IModelInfo
 } from '../types';
 
+import {
+  AutoAgentPlanRequest,
+  AutoAgentPlanResponse,
+  AutoAgentRefineRequest,
+  AutoAgentRefineResponse,
+  ExecutionPlan,
+  PlanStep,
+  ExecutionError,
+  ToolCall,
+} from '../types/auto-agent';
+
 export class ApiService {
   private baseUrl: string;
 
@@ -232,5 +243,158 @@ export class ApiService {
     }
 
     return response.json();
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Auto-Agent API Methods
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Generate execution plan for auto-agent task
+   */
+  async generateExecutionPlan(request: AutoAgentPlanRequest): Promise<AutoAgentPlanResponse> {
+    console.log('[ApiService] generateExecutionPlan request:', request);
+
+    const response = await fetch(`${this.baseUrl}/auto-agent/plan`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(request)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[ApiService] Plan API Error:', {
+        status: response.status,
+        statusText: response.statusText,
+        body: errorText,
+        url: `${this.baseUrl}/auto-agent/plan`
+      });
+
+      let errorMessage = '계획 생성 실패';
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error || errorJson.message || errorMessage;
+      } catch (e) {
+        errorMessage = errorText || errorMessage;
+      }
+
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    console.log('[ApiService] Plan API Success:', result);
+    return result;
+  }
+
+  /**
+   * Refine step code after error (Self-Healing)
+   */
+  async refineStepCode(request: AutoAgentRefineRequest): Promise<AutoAgentRefineResponse> {
+    console.log('[ApiService] refineStepCode request:', request);
+
+    const response = await fetch(`${this.baseUrl}/auto-agent/refine`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(request)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[ApiService] Refine API Error:', {
+        status: response.status,
+        statusText: response.statusText,
+        body: errorText,
+        url: `${this.baseUrl}/auto-agent/refine`
+      });
+
+      let errorMessage = '코드 수정 실패';
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error || errorJson.message || errorMessage;
+      } catch (e) {
+        errorMessage = errorText || errorMessage;
+      }
+
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    console.log('[ApiService] Refine API Success:', result);
+    return result;
+  }
+
+  /**
+   * Stream execution plan generation with real-time updates
+   */
+  async generateExecutionPlanStream(
+    request: AutoAgentPlanRequest,
+    onPlanUpdate: (plan: Partial<ExecutionPlan>) => void,
+    onReasoning?: (reasoning: string) => void
+  ): Promise<ExecutionPlan> {
+    const response = await fetch(`${this.baseUrl}/auto-agent/plan/stream`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(request)
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Failed to generate plan: ${error}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('Response body is not readable');
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let finalPlan: ExecutionPlan | null = null;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              if (data.error) {
+                throw new Error(data.error);
+              }
+
+              if (data.reasoning && onReasoning) {
+                onReasoning(data.reasoning);
+              }
+
+              if (data.plan) {
+                onPlanUpdate(data.plan);
+                if (data.done) {
+                  finalPlan = data.plan;
+                }
+              }
+            } catch (e) {
+              if (!(e instanceof SyntaxError)) {
+                throw e;
+              }
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    if (!finalPlan) {
+      throw new Error('No plan received from server');
+    }
+
+    return finalPlan;
   }
 }

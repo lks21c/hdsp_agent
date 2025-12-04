@@ -1,0 +1,429 @@
+/**
+ * Auto-Agent Panel - Claude/Cursor Style
+ * Minimal, matte design
+ */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Panel Container
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.aa-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  height: 100%;
+  overflow-y: auto;
+  background: var(--jp-layout-color1);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Empty State
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.aa-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 16px;
+  color: var(--jp-ui-font-color3);
+}
+
+.aa-empty-text {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Input Section
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.aa-input-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.aa-textarea {
+  width: 100%;
+  min-height: 72px;
+  max-height: 180px;
+  padding: 12px;
+  border: 1px solid var(--jp-border-color2);
+  border-radius: 6px;
+  background: var(--jp-layout-color0);
+  color: var(--jp-ui-font-color1);
+  font-family: var(--jp-ui-font-family);
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.aa-textarea:focus {
+  border-color: var(--jp-brand-color1);
+}
+
+.aa-textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.aa-textarea::placeholder {
+  color: var(--jp-ui-font-color3);
+}
+
+/* Actions */
+.aa-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.aa-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.aa-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.aa-btn--primary {
+  background: var(--jp-brand-color1);
+  color: white;
+}
+
+.aa-btn--primary:hover:not(:disabled) {
+  background: var(--jp-brand-color0);
+}
+
+.aa-btn--secondary {
+  background: var(--jp-layout-color2);
+  color: var(--jp-ui-font-color1);
+}
+
+.aa-btn--secondary:hover:not(:disabled) {
+  background: var(--jp-layout-color3);
+}
+
+.aa-btn--cancel {
+  background: transparent;
+  color: var(--jp-error-color1);
+  border: 1px solid var(--jp-error-color1);
+}
+
+.aa-btn--cancel:hover {
+  background: var(--jp-error-color1);
+  color: white;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Status Indicator
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.aa-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  background: var(--jp-layout-color2);
+  border-left: 3px solid var(--jp-border-color1);
+}
+
+.aa-status--planning,
+.aa-status--executing,
+.aa-status--tool_calling {
+  border-left-color: var(--jp-brand-color1);
+}
+
+.aa-status--self_healing {
+  border-left-color: var(--jp-warn-color1);
+}
+
+.aa-status--completed {
+  border-left-color: var(--jp-success-color1);
+}
+
+.aa-status--failed {
+  border-left-color: var(--jp-error-color1);
+}
+
+.aa-status-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--jp-border-color2);
+  border-top-color: var(--jp-brand-color1);
+  border-radius: 50%;
+  animation: aa-spin 0.8s linear infinite;
+}
+
+.aa-status-text {
+  flex: 1;
+  color: var(--jp-ui-font-color1);
+}
+
+.aa-status-error {
+  font-size: 12px;
+  color: var(--jp-error-color1);
+  margin-left: auto;
+}
+
+@keyframes aa-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Execution Plan
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.aa-plan {
+  background: var(--jp-layout-color0);
+  border: 1px solid var(--jp-border-color2);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.aa-plan-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--jp-layout-color2);
+  border-bottom: 1px solid var(--jp-border-color2);
+}
+
+.aa-plan-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--jp-ui-font-color2);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.aa-plan-progress {
+  font-size: 12px;
+  color: var(--jp-ui-font-color3);
+  font-variant-numeric: tabular-nums;
+}
+
+.aa-plan-steps {
+  display: flex;
+  flex-direction: column;
+}
+
+.aa-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--jp-border-color3);
+  transition: background 0.15s ease;
+}
+
+.aa-step:last-child {
+  border-bottom: none;
+}
+
+.aa-step--current {
+  background: rgba(99, 102, 241, 0.06);
+}
+
+.aa-step--completed {
+  opacity: 0.7;
+}
+
+.aa-step--failed {
+  background: rgba(239, 68, 68, 0.06);
+}
+
+.aa-step--pending {
+  opacity: 0.5;
+}
+
+.aa-step-indicator {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.aa-step-indicator svg {
+  width: 14px;
+  height: 14px;
+}
+
+.aa-step--completed .aa-step-indicator {
+  color: var(--jp-success-color1);
+}
+
+.aa-step--failed .aa-step-indicator {
+  color: var(--jp-error-color1);
+}
+
+.aa-step-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--jp-border-color2);
+  border-top-color: var(--jp-brand-color1);
+  border-radius: 50%;
+  animation: aa-spin 0.8s linear infinite;
+}
+
+.aa-step-number {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--jp-ui-font-color3);
+}
+
+.aa-step-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.aa-step-desc {
+  display: block;
+  font-size: 13px;
+  color: var(--jp-ui-font-color1);
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+
+.aa-step-tools {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.aa-tool-tag {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--jp-ui-font-color3);
+  background: var(--jp-layout-color2);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: var(--jp-code-font-family);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Result Section
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.aa-result {
+  padding: 12px;
+  border-radius: 6px;
+  border: 1px solid var(--jp-border-color2);
+}
+
+.aa-result--success {
+  border-left: 3px solid var(--jp-success-color1);
+  background: var(--jp-layout-color0);
+}
+
+.aa-result--error {
+  border-left: 3px solid var(--jp-error-color1);
+  background: var(--jp-layout-color0);
+}
+
+.aa-result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.aa-result-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--jp-ui-font-color1);
+}
+
+.aa-result--success .aa-result-title {
+  color: var(--jp-success-color1);
+}
+
+.aa-result--error .aa-result-title {
+  color: var(--jp-error-color1);
+}
+
+.aa-result-time {
+  font-size: 11px;
+  color: var(--jp-ui-font-color3);
+  font-variant-numeric: tabular-nums;
+}
+
+.aa-result-message {
+  font-size: 13px;
+  color: var(--jp-ui-font-color1);
+  line-height: 1.5;
+  margin: 0 0 8px 0;
+}
+
+.aa-result-error {
+  font-size: 12px;
+  color: var(--jp-error-color1);
+  line-height: 1.4;
+  margin: 0 0 8px 0;
+  word-break: break-word;
+}
+
+.aa-result-stats {
+  display: flex;
+  gap: 16px;
+  font-size: 11px;
+  color: var(--jp-ui-font-color3);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Hint Section
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.aa-hint {
+  padding: 16px;
+  text-align: center;
+}
+
+.aa-hint p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--jp-ui-font-color2);
+  line-height: 1.5;
+}
+
+.aa-hint-sub {
+  margin-top: 4px !important;
+  font-size: 11px !important;
+  color: var(--jp-ui-font-color3) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Scrollbar
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.aa-panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+.aa-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.aa-panel::-webkit-scrollbar-thumb {
+  background: var(--jp-border-color2);
+  border-radius: 3px;
+}
+
+.aa-panel::-webkit-scrollbar-thumb:hover {
+  background: var(--jp-border-color1);
+}

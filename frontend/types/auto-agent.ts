@@ -1,0 +1,233 @@
+/**
+ * Auto-Agent Type Definitions
+ * HuggingFace Jupyter Agent 패턴 기반 Tool Calling 구조
+ */
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Tool Definitions (HF Jupyter Agent 패턴)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export type ToolName = 'jupyter_cell' | 'markdown' | 'final_answer';
+
+export interface ToolCall {
+  tool: ToolName;
+  parameters: JupyterCellParams | MarkdownParams | FinalAnswerParams;
+}
+
+// jupyter_cell 도구 파라미터
+export interface JupyterCellParams {
+  code: string;
+  cellIndex?: number;    // 기존 셀 수정 시 인덱스 지정
+  insertAfter?: number;  // 특정 셀 뒤에 삽입
+}
+
+// markdown 도구 파라미터
+export interface MarkdownParams {
+  content: string;
+  cellIndex?: number;
+}
+
+// final_answer 도구 파라미터
+export interface FinalAnswerParams {
+  answer: string;
+  summary?: string;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Tool Results
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface ToolResult {
+  success: boolean;
+  output?: any;
+  error?: string;
+  traceback?: string[];
+  cellIndex?: number;
+  wasModified?: boolean;  // 기존 셀 수정 vs 새 셀 생성 구분
+}
+
+// 커널 실행 결과
+export interface ExecutionResult {
+  status: 'ok' | 'error';
+  stdout: string;
+  stderr: string;
+  result: any;
+  error?: {
+    ename: string;
+    evalue: string;
+    traceback: string[];
+  };
+  executionTime: number;
+  cellIndex: number;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Plan-and-Execute 구조
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface ExecutionPlan {
+  steps: PlanStep[];
+  totalSteps: number;
+  estimatedTime?: number;  // 예상 소요 시간 (초)
+}
+
+export interface PlanStep {
+  stepNumber: number;
+  description: string;
+  toolCalls: ToolCall[];
+  dependencies: number[];  // 의존하는 이전 단계 번호들
+}
+
+export interface StepResult {
+  success: boolean;
+  stepNumber: number;
+  toolResults: ToolResult[];
+  attempts: number;
+  isFinalAnswer?: boolean;
+  finalAnswer?: string;
+  error?: string;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Agent Status & Progress
+// ═══════════════════════════════════════════════════════════════════════════
+
+export type AgentPhase =
+  | 'idle'
+  | 'planning'
+  | 'planned'
+  | 'executing'
+  | 'tool_calling'
+  | 'self_healing'
+  | 'completed'
+  | 'failed';
+
+export interface AgentStatus {
+  phase: AgentPhase;
+  message?: string;
+  plan?: ExecutionPlan;
+  currentStep?: number;
+  totalSteps?: number;
+  description?: string;
+  tool?: ToolName;
+  attempt?: number;
+  error?: ExecutionError;
+}
+
+export interface ExecutionError {
+  type: 'runtime' | 'timeout' | 'safety' | 'validation';
+  message: string;
+  traceback?: string[];
+  recoverable: boolean;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Final Results
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface AutoAgentResult {
+  success: boolean;
+  plan: ExecutionPlan | null;
+  executedSteps: StepResult[];
+  createdCells: number[];    // 생성된 셀 인덱스들
+  modifiedCells: number[];   // 수정된 셀 인덱스들
+  finalAnswer?: string;
+  error?: string;
+  totalAttempts: number;
+  executionTime?: number;    // 총 실행 시간 (ms)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Notebook Context
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface NotebookContext {
+  cellCount: number;
+  recentCells: CellContext[];
+  importedLibraries: string[];
+  definedVariables: string[];
+  notebookPath?: string;
+}
+
+export interface CellContext {
+  index: number;
+  type: 'code' | 'markdown';
+  source: string;
+  output?: string;
+  hasError?: boolean;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Safety
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface SafetyResult {
+  safe: boolean;
+  warnings: string[];
+  blockedPatterns?: string[];
+}
+
+export interface SafetyConfig {
+  enableSafetyCheck: boolean;
+  blockDangerousPatterns: boolean;
+  requireConfirmation: boolean;
+  maxExecutionTime: number;  // 초 단위
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// API Request/Response Types
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface AutoAgentPlanRequest {
+  request: string;
+  notebookContext: NotebookContext;
+  availableTools?: ToolName[];
+}
+
+export interface AutoAgentPlanResponse {
+  plan: ExecutionPlan;
+  reasoning?: string;
+}
+
+export interface AutoAgentRefineRequest {
+  step: PlanStep;
+  error: ExecutionError;
+  attempt: number;
+  previousCode?: string;
+}
+
+export interface AutoAgentRefineResponse {
+  toolCalls: ToolCall[];
+  reasoning?: string;
+}
+
+export interface AutoAgentToolCallRequest {
+  toolCall: ToolCall;
+  context?: NotebookContext;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// UI Component Props
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface AutoAgentPanelProps {
+  notebook: any;  // NotebookPanel type from JupyterLab
+  sessionContext: any;  // ISessionContext from JupyterLab
+  onComplete?: (result: AutoAgentResult) => void;
+  onCancel?: () => void;
+  config?: AutoAgentConfig;
+}
+
+export interface AutoAgentConfig {
+  maxRetriesPerStep: number;
+  executionTimeout: number;  // ms
+  enableSafetyCheck: boolean;
+  showDetailedProgress: boolean;
+}
+
+export const DEFAULT_AUTO_AGENT_CONFIG: AutoAgentConfig = {
+  maxRetriesPerStep: 3,
+  executionTimeout: 30000,
+  enableSafetyCheck: true,
+  showDetailedProgress: true,
+};

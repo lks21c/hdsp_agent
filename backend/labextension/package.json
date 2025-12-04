@@ -113,7 +113,11 @@
       }
     },
     "_build": {
+<<<<<<< HEAD
       "load": "static/remoteEntry.bfe3521c29cf6db1982d.js",
+=======
+      "load": "static/remoteEntry.1588be49772aa1dfa3b7.js",
+>>>>>>> 213d397 (feat: Implement auto-agent functionality for HDSP Agent)
       "extension": "./extension",
       "style": "./style"
     }

@@ -7,10 +7,14 @@ import { ReactWidget } from '@jupyterlab/ui-components';
 import { ApiService } from '../services/ApiService';
 import { IChatMessage } from '../types';
 import { SettingsPanel, LLMConfig } from './SettingsPanel';
+import { AutoAgentPanel } from './AutoAgentPanel';
 import { formatMarkdownToHtml, escapeHtml } from '../utils/markdownRenderer';
+
+type AgentMode = 'chat' | 'auto';
 
 interface AgentPanelProps {
   apiService: ApiService;
+  notebookTracker?: any;
 }
 
 export interface ChatPanelHandle {
@@ -24,7 +28,7 @@ export interface ChatPanelHandle {
 /**
  * Chat Panel Component
  */
-const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService }, ref) => {
+const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, notebookTracker }, ref) => {
   const [messages, setMessages] = useState<IChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -33,6 +37,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService }, 
   const [conversationId, setConversationId] = useState<string>('');
   const [showSettings, setShowSettings] = useState(false);
   const [llmConfig, setLlmConfig] = useState<LLMConfig | null>(null);
+  const [agentMode, setAgentMode] = useState<AgentMode>('chat');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const pendingLlmPromptRef = useRef<string | null>(null);
   const allCodeBlocksRef = useRef<Array<{ id: string; code: string; language: string }>>([]);
@@ -906,18 +911,20 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService }, 
       <div className="jp-agent-header">
         <h2>HDSP Agent</h2>
         <div className="jp-agent-header-buttons">
-          <button
-            className="jp-agent-clear-button"
-            onClick={clearChat}
-            title="대화 초기화"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="3 6 5 6 21 6"></polyline>
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-              <line x1="10" y1="11" x2="10" y2="17"></line>
-              <line x1="14" y1="11" x2="14" y2="17"></line>
-            </svg>
-          </button>
+          {agentMode === 'chat' && (
+            <button
+              className="jp-agent-clear-button"
+              onClick={clearChat}
+              title="대화 초기화"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                <line x1="10" y1="11" x2="10" y2="17"></line>
+                <line x1="14" y1="11" x2="14" y2="17"></line>
+              </svg>
+            </button>
+          )}
           <button
             className="jp-agent-settings-button-icon"
             onClick={() => setShowSettings(true)}
@@ -938,71 +945,111 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService }, 
         </div>
       </div>
 
-      {/* Messages */}
-      <div className="jp-agent-messages">
-        {messages.length === 0 ? (
-          <div className="jp-agent-empty-state">
-            <p>안녕하세요! HDSP Agent입니다.</p>
-          </div>
-        ) : (
-          messages.map(msg => (
-            <div key={msg.id} className={`jp-agent-message jp-agent-message-${msg.role}`}>
-              <div className="jp-agent-message-header">
-                <span className="jp-agent-message-role">
-                  {msg.role === 'user' ? '사용자' : 'Agent'}
-                </span>
-                <span className="jp-agent-message-time">
-                  {new Date(msg.timestamp).toLocaleTimeString()}
-                </span>
+      {/* Chat Mode - Messages */}
+      {agentMode === 'chat' && (
+        <div className="jp-agent-messages">
+          {messages.length === 0 ? (
+            <div className="jp-agent-empty-state">
+              <p>안녕하세요! HDSP Agent입니다.</p>
+            </div>
+          ) : (
+            messages.map(msg => (
+              <div key={msg.id} className={`jp-agent-message jp-agent-message-${msg.role}`}>
+                <div className="jp-agent-message-header">
+                  <span className="jp-agent-message-role">
+                    {msg.role === 'user' ? '사용자' : 'Agent'}
+                  </span>
+                  <span className="jp-agent-message-time">
+                    {new Date(msg.timestamp).toLocaleTimeString()}
+                  </span>
+                </div>
+                <div
+                  className={`jp-agent-message-content${streamingMessageId === msg.id ? ' streaming' : ''}`}
+                  dangerouslySetInnerHTML={{
+                    __html: msg.role === 'assistant'
+                      ? formatMarkdownToHtml(msg.content)
+                      : escapeHtml(msg.content).replace(/\n/g, '<br>')
+                  }}
+                />
               </div>
-              <div
-                className={`jp-agent-message-content${streamingMessageId === msg.id ? ' streaming' : ''}`}
-                dangerouslySetInnerHTML={{
-                  __html: msg.role === 'assistant'
-                    ? formatMarkdownToHtml(msg.content)
-                    : escapeHtml(msg.content).replace(/\n/g, '<br>')
-                }}
-              />
+            ))
+          )}
+          {isLoading && !isStreaming && (
+            <div className="jp-agent-message jp-agent-message-assistant">
+              <div className="jp-agent-message-header">
+                <span className="jp-agent-message-role">Agent</span>
+              </div>
+              <div className="jp-agent-message-content jp-agent-loading">
+                <span className="jp-agent-loading-dot">.</span>
+                <span className="jp-agent-loading-dot">.</span>
+                <span className="jp-agent-loading-dot">.</span>
+              </div>
             </div>
-          ))
-        )}
-        {isLoading && !isStreaming && (
-          <div className="jp-agent-message jp-agent-message-assistant">
-            <div className="jp-agent-message-header">
-              <span className="jp-agent-message-role">Agent</span>
-            </div>
-            <div className="jp-agent-message-content jp-agent-loading">
-              <span className="jp-agent-loading-dot">.</span>
-              <span className="jp-agent-loading-dot">.</span>
-              <span className="jp-agent-loading-dot">.</span>
-            </div>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Input */}
-      <div className="jp-agent-input-container">
-        <div className="jp-agent-input-wrapper">
-          <textarea
-            className="jp-agent-input"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="코드에 대해 무엇이든 물어보세요..."
-            rows={3}
-            disabled={isLoading}
-          />
-          <button
-            className="jp-agent-send-button"
-            onClick={handleSendMessage}
-            disabled={!input.trim() || isLoading || isStreaming}
-            title="메시지 전송 (Enter)"
-          >
-            전송
-          </button>
+          )}
+          <div ref={messagesEndRef} />
         </div>
-      </div>
+      )}
+
+      {/* Auto Agent Mode Content */}
+      {agentMode === 'auto' && (
+        <AutoAgentPanel
+          apiService={apiService}
+          notebookTracker={notebookTracker}
+          onComplete={(result) => {
+            console.log('[AgentPanel] Auto-Agent completed:', result);
+          }}
+        />
+      )}
+
+      {/* Input Container - Always Visible */}
+      {agentMode === 'chat' && (
+        <div className="jp-agent-input-container">
+          {/* Mode Selector - Bottom Left */}
+          <div className="jp-agent-mode-selector">
+            <select
+              className="jp-agent-mode-select"
+              value={agentMode}
+              onChange={(e) => setAgentMode(e.target.value as AgentMode)}
+            >
+              <option value="chat">Chat</option>
+              <option value="auto">Agent</option>
+            </select>
+          </div>
+          <div className="jp-agent-input-wrapper">
+            <textarea
+              className="jp-agent-input"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="코드에 대해 무엇이든 물어보세요..."
+              rows={3}
+              disabled={isLoading}
+            />
+            <button
+              className="jp-agent-send-button"
+              onClick={handleSendMessage}
+              disabled={!input.trim() || isLoading || isStreaming}
+              title="메시지 전송 (Enter)"
+            >
+              전송
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Mode Selector for Auto Agent Mode */}
+      {agentMode === 'auto' && (
+        <div className="jp-agent-mode-selector-standalone">
+          <select
+            className="jp-agent-mode-select"
+            value={agentMode}
+            onChange={(e) => setAgentMode(e.target.value as AgentMode)}
+          >
+            <option value="chat">Chat</option>
+            <option value="auto">Agent</option>
+          </select>
+        </div>
+      )}
     </div>
   );
 });
@@ -1014,11 +1061,13 @@ ChatPanel.displayName = 'ChatPanel';
  */
 export class AgentPanelWidget extends ReactWidget {
   private apiService: ApiService;
+  private notebookTracker: any;
   private chatPanelRef = React.createRef<ChatPanelHandle>();
 
-  constructor(apiService: ApiService) {
+  constructor(apiService: ApiService, notebookTracker?: any) {
     super();
     this.apiService = apiService;
+    this.notebookTracker = notebookTracker;
     this.id = 'hdsp-agent-panel';
     this.title.label = 'HDSP';
     this.title.caption = 'HDSP Agent Assistant';
@@ -1027,7 +1076,13 @@ export class AgentPanelWidget extends ReactWidget {
   }
 
   render(): JSX.Element {
-    return <ChatPanel ref={this.chatPanelRef} apiService={this.apiService} />;
+    return (
+      <ChatPanel
+        ref={this.chatPanelRef}
+        apiService={this.apiService}
+        notebookTracker={this.notebookTracker}
+      />
+    );
   }
 
   /**

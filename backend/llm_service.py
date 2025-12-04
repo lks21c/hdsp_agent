@@ -334,3 +334,40 @@ class LLMService:
 
         async for content in self._stream_response(url, payload, headers, "OpenAI", self._parse_openai_stream_line):
             yield content
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Module-level helper functions for Auto-Agent
+# ═══════════════════════════════════════════════════════════════════════════
+
+async def call_llm(prompt: str, config: Dict[str, Any], context: Optional[str] = None) -> str:
+    """
+    Convenience function to call LLM with the given config.
+
+    Args:
+        prompt: The prompt to send to the LLM
+        config: LLM configuration dictionary
+        context: Optional context to include
+
+    Returns:
+        The LLM response string
+    """
+    service = LLMService(config)
+    return await service.generate_response(prompt, context)
+
+
+async def call_llm_stream(prompt: str, config: Dict[str, Any], context: Optional[str] = None):
+    """
+    Convenience function to stream LLM response with the given config.
+
+    Args:
+        prompt: The prompt to send to the LLM
+        config: LLM configuration dictionary
+        context: Optional context to include
+
+    Yields:
+        Response chunks as they arrive
+    """
+    service = LLMService(config)
+    async for chunk in service.generate_response_stream(prompt, context):
+        yield chunk
