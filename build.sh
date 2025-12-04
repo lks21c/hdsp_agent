@@ -16,6 +16,11 @@ npx tsc
 echo "✅ TypeScript compilation complete"
 echo ""
 
+echo "📂 Copying static assets..."
+# frontend/styles 폴더를 lib/styles로 통째로 복사합니다.
+cp -R frontend/styles lib/
+echo "✅ Assets copied"
+
 # Step 2: JupyterLab extension build (production mode)
 echo "2️⃣  Building JupyterLab extension (production)..."
 poetry run jupyter labextension build .

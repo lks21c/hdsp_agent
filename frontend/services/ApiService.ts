@@ -15,7 +15,7 @@ import {
 export class ApiService {
   private baseUrl: string;
 
-  constructor(baseUrl: string = '/hdsp-agent') {
+  constructor(baseUrl: string = '/user/453467/pl2wadmprj/hdsp-agent') {
     this.baseUrl = baseUrl;
   }
 
@@ -55,6 +55,7 @@ export class ApiService {
     const response = await fetch(`${this.baseUrl}/cell/action`, {
       method: 'POST',
       headers: this.getHeaders(),
+      credentials: 'include', // ✅ 핵심 수정: 쿠키를 같이 보냄
       body: JSON.stringify(request)
     });
 
@@ -73,6 +74,7 @@ export class ApiService {
     const response = await fetch(`${this.baseUrl}/chat/message`, {
       method: 'POST',
       headers: this.getHeaders(),
+      credentials: 'include', // ✅ 핵심 수정: 쿠키를 같이 보냄
       body: JSON.stringify(request)
     });
 
@@ -101,6 +103,7 @@ export class ApiService {
     const response = await fetch(`${this.baseUrl}/chat/stream`, {
       method: 'POST',
       headers: this.getHeaders(),
+      credentials: 'include', // ✅ 핵심 수정: 쿠키를 같이 보냄
       body: JSON.stringify(request)
     });
 
@@ -182,6 +185,7 @@ export class ApiService {
     const response = await fetch(`${this.baseUrl}/config`, {
       method: 'POST',
       headers: this.getHeaders(),
+      credentials: 'include', // ✅ 핵심 수정: 쿠키를 같이 보냄
       body: JSON.stringify(config)
     });
 

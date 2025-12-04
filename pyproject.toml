@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "hdsp-agent"
-version = "0.1.0"
+version = "0.1.1"
 description = "AI-powered code assistance for JupyterLab with cell-level actions"
 authors = ["Your Name <your.email@example.com>"]
 license = "MIT"

@@ -13,7 +13,7 @@ import { promptGenerationPlugin } from './plugins/prompt-generation-plugin';
 import { saveInterceptorPlugin } from './plugins/save-interceptor-plugin';
 
 // Import styles
-import '../style/index.css';
+// import '../style/index.css';
 
 /**
  * The main plugin export

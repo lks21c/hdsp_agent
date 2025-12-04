@@ -1,6 +1,6 @@
 {
   "name": "@hdsp-agent/extension",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "AI-powered code assistance for JupyterLab with cell-level actions",
   "keywords": [
     "jupyter",
@@ -21,12 +21,12 @@
   },
   "files": [
     "lib/**/*.{d.ts,eot,gif,html,jpg,js,js.map,json,png,svg,woff2,ttf}",
-    "style/**/*.{css,js,eot,gif,html,jpg,json,png,svg,woff2,ttf}",
+    "frontend/styles/**/*.{css,js,eot,gif,html,jpg,json,png,svg,woff2,ttf}",
     "schema/*.json"
   ],
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
-  "style": "style/index.css",
+  "style": "frontend/styles/index.css",
   "repository": {
     "type": "git",
     "url": "https://github.com/yourusername/hdsp-agent.git"
@@ -37,7 +37,7 @@
     "build:labextension": "jupyter labextension build .",
     "build:labextension:dev": "jupyter labextension build --development True .",
     "build:lib": "tsc",
-    "clean": "jlpm clean:lib",
+    "clean": "jlpm clean:all",
     "clean:lib": "rimraf lib tsconfig.tsbuildinfo",
     "clean:lintcache": "rimraf .eslintcache .stylelintcache",
     "clean:labextension": "rimraf backend/labextension",
@@ -51,7 +51,7 @@
     "prettier:base": "prettier \"**/*{.ts,.tsx,.js,.jsx,.css,.json,.md}\"",
     "prettier:check": "jlpm prettier:base --check",
     "stylelint": "jlpm stylelint:check --fix",
-    "stylelint:check": "stylelint --cache \"style/**/*.css\"",
+    "stylelint:check": "stylelint --cache \"frontend/styles/**/*.css\"",
     "watch": "run-p watch:src watch:labextension",
     "watch:src": "tsc -w",
     "watch:labextension": "jupyter labextension watch ."
@@ -90,11 +90,8 @@
     "stylelint-prettier": "^4.0.0",
     "typescript": "~5.1.6"
   },
-  "sideEffects": [
-    "style/*.css",
-    "style/index.js"
-  ],
-  "styleModule": "style/index.js",
+  "sideEffects": true,
+  "styleModule": "frontend/styles/index.js",
   "publishConfig": {
     "access": "public"
   },
@@ -116,7 +113,7 @@
       }
     },
     "_build": {
-      "load": "static/remoteEntry.b11b382fe8f87e0b9d61.js",
+      "load": "static/remoteEntry.bfe3521c29cf6db1982d.js",
       "extension": "./extension",
       "style": "./style"
     }

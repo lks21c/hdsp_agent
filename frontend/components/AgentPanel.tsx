@@ -85,8 +85,8 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService }, 
           },
           vllm: {
             endpoint: 'http://localhost:8000',
-            apiKey: '',
-            model: 'meta-llama/Llama-2-7b-chat-hf'
+            apiKey: 'test',
+            model: 'gpt-oss-120b'
           },
           openai: {
             apiKey: '',

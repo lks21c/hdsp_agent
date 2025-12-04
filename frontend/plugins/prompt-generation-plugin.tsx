@@ -17,7 +17,7 @@ import { Widget } from '@lumino/widgets';
 import React, { useState } from 'react';
 import { ThemeProvider, createTheme } from '@mui/material';
 
-import hdspIconSvg from '../../style/icons/hdsp-icon.svg';
+import hdspIconSvg from '../styles/icons/hdsp-icon.svg';
 
 import { PromptGenerationDialog } from '../components/PromptGenerationDialog';
 import { TaskProgressWidget } from '../components/TaskProgressWidget';
