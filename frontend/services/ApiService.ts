@@ -29,27 +29,27 @@ import {
   ToolCall,
 } from '../types/auto-agent';
 
+// ✅ 핵심 변경 1: ServerConnection 대신 PageConfig 임포트
+import { URLExt, PageConfig } from '@jupyterlab/coreutils';
+
 export class ApiService {
   private baseUrl: string;
 
+  // 생성자에서 baseUrl을 선택적으로 받도록 하되, 없으면 자동으로 계산
   constructor(baseUrl?: string) {
-    this.baseUrl = baseUrl || this.detectBaseUrl();
-  }
+    if (baseUrl) {
+      this.baseUrl = baseUrl;
+    } else {
+      // ✅ 핵심 변경 2: ServerConnection 대신 PageConfig로 URL 가져오기
+      // PageConfig.getBaseUrl()은 '/user/아이디/프로젝트/' 형태의 주소를 정확히 가져옵니다.
+      const serverRoot = PageConfig.getBaseUrl();
 
-  /**
-   * Detect base URL dynamically based on environment
-   * - JupyterHub: /user/{username}/{servername}/hdsp-agent
-   * - Local: /hdsp-agent
-   */
-  private detectBaseUrl(): string {
-    const pathname = window.location.pathname;
-    // JupyterHub pattern: /user/username/servername/lab/...
-    const hubMatch = pathname.match(/^(\/user\/[^/]+\/[^/]+)/);
-    if (hubMatch) {
-      return `${hubMatch[1]}/hdsp-agent`;
+      // 3. 경로 합치기
+      // 결과: /user/453467/pl2wadmprj/hdsp-agent
+      this.baseUrl = URLExt.join(serverRoot, 'hdsp-agent');
     }
-    // Local JupyterLab
-    return '/hdsp-agent';
+
+    console.log('[ApiService] Base URL initialized:', this.baseUrl); // 디버깅용 로그
   }
 
   /**

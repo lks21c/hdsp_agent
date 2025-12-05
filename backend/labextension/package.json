@@ -68,7 +68,8 @@
     "@mui/icons-material": "^7.3.4",
     "@mui/material": "^5.14.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "@jupyter-widgets/base": "^6.0.0"
   },
   "devDependencies": {
     "@jupyterlab/builder": "^4.0.0",
@@ -110,10 +111,14 @@
       "@jupyterlab/notebook": {
         "bundled": false,
         "singleton": true
+      },
+      "@jupyter-widgets/base": {
+        "bundled": false,
+        "singleton": true
       }
     },
     "_build": {
-      "load": "static/remoteEntry.70489e7bc2d58af6145e.js",
+      "load": "static/remoteEntry.cc843e2af6be38cc706f.js",
       "extension": "./extension",
       "style": "./style"
     }

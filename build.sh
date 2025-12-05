@@ -10,11 +10,28 @@ cd "$(dirname "$0")"
 echo "📂 Working directory: $(pwd)"
 echo ""
 
+# [추가됨] Step 0: Clean previous builds (필수!)
+# 기존에 남아있는 컴파일 결과물과 캐시를 강제로 삭제합니다.
+echo "0️⃣  Cleaning previous build artifacts..."
+rm -rf lib dist tsconfig.tsbuildinfo
+# 주피터랩 확장 빌드 캐시도 청소
+poetry run jupyter lab clean
+echo "✅ Clean complete"
+echo ""
+
 # Step 1: TypeScript compilation
 echo "1️⃣  Compiling TypeScript..."
 npx tsc
 echo "✅ TypeScript compilation complete"
 echo ""
+
+# [확인 절차] 정말로 JS 파일이 변했는지 확인 (디버깅용, 나중에 주석 처리 가능)
+if grep -q "PageConfig" lib/services/ApiService.js; then
+    echo "✅ Verified: ApiService.js contains PageConfig logic."
+else
+    echo "❌ Error: ApiService.js does NOT contain PageConfig logic. Check source file."
+    exit 1
+fi
 
 echo "📂 Copying static assets..."
 # frontend/styles 폴더를 lib/styles로 통째로 복사합니다.
@@ -43,5 +60,5 @@ echo ""
 echo "📝 To install in another environment:"
 echo "   poetry add $(pwd)/dist/hdsp_agent-0.1.0-py3-none-any.whl"
 echo ""
-echo "   Or:"
-echo "   poetry run pip install $(pwd)/dist/hdsp_agent-0.1.0-py3-none-any.whl"
+echo "   Or (Force Reinstall Recommended):"
+echo "   poetry run pip install --force-reinstall --no-cache-dir $(pwd)/dist/hdsp_agent-0.1.0-py3-none-any.whl"

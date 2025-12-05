@@ -68,7 +68,8 @@
     "@mui/icons-material": "^7.3.4",
     "@mui/material": "^5.14.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "@jupyter-widgets/base": "^6.0.0"
   },
   "devDependencies": {
     "@jupyterlab/builder": "^4.0.0",
@@ -108,6 +109,10 @@
         "singleton": true
       },
       "@jupyterlab/notebook": {
+        "bundled": false,
+        "singleton": true
+      },
+      "@jupyter-widgets/base": {
         "bundled": false,
         "singleton": true
       }

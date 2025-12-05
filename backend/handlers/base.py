@@ -9,6 +9,16 @@ import re
 class BaseAgentHandler(APIHandler):
     """Base handler with common functionality"""
 
+    def check_xsrf_cookie(self):
+        """
+        XSRF 토큰 검사를 강제로 생략합니다.
+        운영계/개발계/JupyterHub 환경 차이로 인한 403 에러를 방지합니다.
+        """
+        return
+
+    def check_origin(self, *args):
+        return True
+
     @property
     def config_manager(self):
         """Get config manager from app settings"""

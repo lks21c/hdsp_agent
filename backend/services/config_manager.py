@@ -4,6 +4,7 @@ Configuration Manager - Handle extension settings persistence
 
 import json
 import os
+import tempfile
 from pathlib import Path
 from typing import Dict, Any
 
@@ -14,13 +15,43 @@ class ConfigManager:
     _config_file = None
 
     def __init__(self):
-        # Default config file location
-        jupyter_config_dir = os.environ.get('JUPYTER_CONFIG_DIR')
-        if not jupyter_config_dir:
-            jupyter_config_dir = os.path.expanduser('~/.jupyter')
+        # ▼▼▼▼▼▼ [여기부터 __init__ 전체 교체] ▼▼▼▼▼▼
+        try:
+            # 1순위: 환경변수
+            jupyter_config_dir = os.environ.get('JUPYTER_CONFIG_DIR')
 
-        self._config_file = Path(jupyter_config_dir) / 'hdsp_agent_config.json'
+            # 2순위: 홈 디렉토리 ~/.jupyter
+            if not jupyter_config_dir:
+                # expanduser가 실패할 경우를 대비
+                try:
+                    jupyter_config_dir = os.path.expanduser('~/.jupyter')
+                except Exception:
+                    jupyter_config_dir = None
+
+            # 경로가 유효한지 체크하고, 없으면 생성 시도
+            if jupyter_config_dir:
+                config_path = Path(jupyter_config_dir)
+                try:
+                    config_path.mkdir(parents=True, exist_ok=True)
+                    self._config_file = config_path / 'hdsp_agent_config.json'
+                except Exception as e:
+                    print(f"Warning: Cannot write to {jupyter_config_dir}: {e}")
+                    self._config_file = None
+
+            # 3순위 (비상용): 쓰기 실패했거나 경로가 없으면 /tmp 사용
+            if not self._config_file:
+                tmp_dir = Path(tempfile.gettempdir()) / 'jupyter_hdsp_agent'
+                tmp_dir.mkdir(parents=True, exist_ok=True)
+                self._config_file = tmp_dir / 'hdsp_agent_config.json'
+                print(f"Using temporary config path: {self._config_file}")
+
+        except Exception as e:
+            # 최악의 경우: 메모리에서만 동작하도록 가짜 경로 설정 (서버 다운 방지)
+            print(f"Critical Error in ConfigManager init: {e}")
+            self._config_file = Path('/tmp/hdsp_agent_config_fallback.json')
+
         self._config = self._load_config()
+        # ▲▲▲▲▲▲ [교체 끝] ▲▲▲▲▲▲
 
     @classmethod
     def get_instance(cls):
