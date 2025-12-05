@@ -99,6 +99,7 @@ export type AgentPhase =
   | 'executing'
   | 'tool_calling'
   | 'self_healing'
+  | 'replanning'
   | 'completed'
   | 'failed';
 
@@ -206,6 +207,41 @@ export interface AutoAgentToolCallRequest {
   context?: NotebookContext;
 }
 
+// Adaptive Replanning Types
+export type ReplanDecision = 'refine' | 'insert_steps' | 'replace_step' | 'replan_remaining';
+
+export interface AutoAgentReplanRequest {
+  originalRequest: string;
+  executedSteps: PlanStep[];
+  failedStep: PlanStep;
+  error: ExecutionError;
+  executionOutput?: string;
+}
+
+export interface ReplanAnalysis {
+  root_cause: string;
+  is_approach_problem: boolean;
+  missing_prerequisites: string[];
+}
+
+export interface ReplanChanges {
+  // decision이 "refine"인 경우
+  refined_code?: string;
+  // decision이 "insert_steps"인 경우
+  new_steps?: PlanStep[];
+  // decision이 "replace_step"인 경우
+  replacement?: PlanStep;
+  // decision이 "replan_remaining"인 경우
+  new_plan?: PlanStep[];
+}
+
+export interface AutoAgentReplanResponse {
+  analysis: ReplanAnalysis;
+  decision: ReplanDecision;
+  reasoning: string;
+  changes: ReplanChanges;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // UI Component Props
 // ═══════════════════════════════════════════════════════════════════════════
@@ -218,16 +254,36 @@ export interface AutoAgentPanelProps {
   config?: AutoAgentConfig;
 }
 
+export type ExecutionSpeed = 'instant' | 'fast' | 'normal' | 'slow' | 'step-by-step';
+
 export interface AutoAgentConfig {
   maxRetriesPerStep: number;
   executionTimeout: number;  // ms
   enableSafetyCheck: boolean;
   showDetailedProgress: boolean;
+  // 실행 속도 제어
+  executionSpeed: ExecutionSpeed;
+  stepDelay: number;  // ms - 각 스텝 사이 지연
+  autoScrollToCell: boolean;  // 실행 중인 셀로 자동 스크롤
+  highlightCurrentCell: boolean;  // 현재 실행 중인 셀 하이라이트
 }
+
+// 속도 프리셋 (ms 단위 지연)
+export const EXECUTION_SPEED_DELAYS: Record<ExecutionSpeed, number> = {
+  'instant': 0,
+  'fast': 300,
+  'normal': 800,
+  'slow': 1500,
+  'step-by-step': -1,  // -1은 수동 진행 의미
+};
 
 export const DEFAULT_AUTO_AGENT_CONFIG: AutoAgentConfig = {
   maxRetriesPerStep: 3,
   executionTimeout: 30000,
   enableSafetyCheck: true,
   showDetailedProgress: true,
+  executionSpeed: 'normal',
+  stepDelay: 800,
+  autoScrollToCell: true,
+  highlightCurrentCell: true,
 };

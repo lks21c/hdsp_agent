@@ -17,7 +17,8 @@ from .notebook_generation import (
 from .auto_agent import (
     AutoAgentPlanHandler,
     AutoAgentRefineHandler,
-    AutoAgentPlanStreamHandler
+    AutoAgentPlanStreamHandler,
+    AutoAgentReplanHandler
 )
 
 from jupyter_server.utils import url_path_join
@@ -47,6 +48,7 @@ def setup_handlers(web_app):
         # Auto-Agent routes
         (url_path_join(base_url, 'hdsp-agent', 'auto-agent', 'plan'), AutoAgentPlanHandler),
         (url_path_join(base_url, 'hdsp-agent', 'auto-agent', 'refine'), AutoAgentRefineHandler),
+        (url_path_join(base_url, 'hdsp-agent', 'auto-agent', 'replan'), AutoAgentReplanHandler),
         (url_path_join(base_url, 'hdsp-agent', 'auto-agent', 'plan', 'stream'), AutoAgentPlanStreamHandler),
     ]
 

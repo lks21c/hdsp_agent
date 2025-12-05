@@ -13,6 +13,7 @@ from ..prompts.auto_agent_prompts import (
     format_plan_prompt,
     format_refine_prompt,
     format_final_answer_prompt,
+    format_replan_prompt,
 )
 
 logger = logging.getLogger(__name__)
@@ -82,30 +83,14 @@ class AutoAgentPlanHandler(BaseAgentHandler):
         return await call_llm(prompt, config)
 
     def _parse_json_response(self, response: str) -> dict:
-        """LLM 응답에서 JSON 추출"""
-        # JSON 블록 추출 시도
-        json_match = re.search(r'```json\s*([\s\S]*?)\s*```', response)
-        if json_match:
-            try:
-                return json.loads(json_match.group(1))
-            except json.JSONDecodeError:
-                pass
-
-        # 전체 응답이 JSON인지 시도
-        try:
-            return json.loads(response)
-        except json.JSONDecodeError:
-            pass
-
-        # { } 사이 추출 시도
-        brace_match = re.search(r'\{[\s\S]*\}', response)
-        if brace_match:
-            try:
-                return json.loads(brace_match.group(0))
-            except json.JSONDecodeError:
-                pass
-
-        return None
+        """LLM 응답에서 JSON 추출 - 부모 클래스의 공통 메서드 사용"""
+        print(f"[AutoAgent] Parsing response, total length: {len(response)}", flush=True)
+        result = self.parse_llm_json_response(response)
+        if result:
+            print(f"[AutoAgent] JSON parse SUCCESS", flush=True)
+        else:
+            print("[AutoAgent] All JSON parsing attempts failed", flush=True)
+        return result
 
 
 class AutoAgentRefineHandler(BaseAgentHandler):
@@ -199,27 +184,8 @@ class AutoAgentRefineHandler(BaseAgentHandler):
         return await call_llm(prompt, config)
 
     def _parse_json_response(self, response: str) -> dict:
-        """LLM 응답에서 JSON 추출"""
-        json_match = re.search(r'```json\s*([\s\S]*?)\s*```', response)
-        if json_match:
-            try:
-                return json.loads(json_match.group(1))
-            except json.JSONDecodeError:
-                pass
-
-        try:
-            return json.loads(response)
-        except json.JSONDecodeError:
-            pass
-
-        brace_match = re.search(r'\{[\s\S]*\}', response)
-        if brace_match:
-            try:
-                return json.loads(brace_match.group(0))
-            except json.JSONDecodeError:
-                pass
-
-        return None
+        """LLM 응답에서 JSON 추출 - 부모 클래스의 공통 메서드 사용"""
+        return self.parse_llm_json_response(response)
 
     def _extract_code(self, response: str) -> str:
         """응답에서 Python 코드 추출"""
@@ -311,23 +277,87 @@ class AutoAgentPlanStreamHandler(BaseAgentHandler):
 
     def _parse_json_response(self, response: str) -> dict:
         """LLM 응답에서 JSON 추출"""
-        json_match = re.search(r'```json\s*([\s\S]*?)\s*```', response)
-        if json_match:
-            try:
-                return json.loads(json_match.group(1))
-            except json.JSONDecodeError:
-                pass
+        return self.parse_llm_json_response(response)
 
+
+class AutoAgentReplanHandler(BaseAgentHandler):
+    """Adaptive Replanning 핸들러 - 에러 발생 시 계획 재수립"""
+
+    @web.authenticated
+    async def post(self):
+        """POST /hdsp-agent/auto-agent/replan"""
         try:
-            return json.loads(response)
-        except json.JSONDecodeError:
-            pass
+            print("=== [AutoAgent] Replan Request Received ===", flush=True)
+            body = self.get_json_body()
 
-        brace_match = re.search(r'\{[\s\S]*\}', response)
-        if brace_match:
+            original_request = body.get('originalRequest', '')
+            executed_steps = body.get('executedSteps', [])
+            failed_step = body.get('failedStep', {})
+            error_info = body.get('error', {})
+            execution_output = body.get('executionOutput', '')
+
+            print(f"[AutoAgent] Original request: {original_request[:50]}...", flush=True)
+            print(f"[AutoAgent] Executed steps: {len(executed_steps)}", flush=True)
+            print(f"[AutoAgent] Failed step: {failed_step.get('stepNumber', '?')}", flush=True)
+            print(f"[AutoAgent] Error: {error_info.get('message', 'Unknown')[:100]}", flush=True)
+
+            if not failed_step or not error_info:
+                return self.write_error_json(400, 'failedStep and error are required')
+
+            # 프롬프트 생성
+            prompt = format_replan_prompt(
+                original_request=original_request,
+                executed_steps=executed_steps,
+                failed_step=failed_step,
+                error_info=error_info,
+                execution_output=execution_output
+            )
+
+            # LLM 호출
+            print("[AutoAgent] Calling LLM for replan...", flush=True)
             try:
-                return json.loads(brace_match.group(0))
-            except json.JSONDecodeError:
-                pass
+                response = await self._call_llm(prompt)
+                print(f"[AutoAgent] LLM replan response length: {len(response)}", flush=True)
+                print(f"[AutoAgent] LLM replan response preview: {response[:300]}...", flush=True)
+            except Exception as llm_error:
+                print(f"[AutoAgent] LLM replan call failed: {llm_error}", flush=True)
+                raise
 
-        return None
+            # JSON 파싱
+            print("[AutoAgent] Parsing replan JSON...", flush=True)
+            replan_data = self._parse_json_response(response)
+
+            if not replan_data:
+                error_msg = f"Replan JSON 파싱 실패. Response preview: {response[:200]}"
+                print(f"[AutoAgent] {error_msg}", flush=True)
+                return self.write_error_json(500, error_msg)
+
+            # 필수 필드 검증
+            decision = replan_data.get('decision')
+            if decision not in ['refine', 'insert_steps', 'replace_step', 'replan_remaining']:
+                print(f"[AutoAgent] Invalid decision: {decision}", flush=True)
+                return self.write_error_json(500, f"Invalid decision: {decision}")
+
+            print(f"[AutoAgent] Replan success! Decision: {decision}", flush=True)
+            self.write_json({
+                'analysis': replan_data.get('analysis', {}),
+                'decision': decision,
+                'reasoning': replan_data.get('reasoning', ''),
+                'changes': replan_data.get('changes', {})
+            })
+
+        except Exception as e:
+            print(f"[AutoAgent] Replan Exception: {str(e)}", flush=True)
+            import traceback
+            traceback.print_exc()
+            self.write_error_json(500, str(e))
+
+    async def _call_llm(self, prompt: str) -> str:
+        """LLM 호출"""
+        from ..llm_service import call_llm
+        config = self.config_manager.get_config()
+        return await call_llm(prompt, config)
+
+    def _parse_json_response(self, response: str) -> dict:
+        """LLM 응답에서 JSON 추출 - 부모 클래스의 공통 메서드 사용"""
+        return self.parse_llm_json_response(response)

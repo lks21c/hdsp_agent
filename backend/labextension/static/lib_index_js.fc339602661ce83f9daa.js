@@ -87,8 +87,8 @@ const ChatPanel = (0,react__WEBPACK_IMPORTED_MODULE_0__.forwardRef)(({ apiServic
                     },
                     vllm: {
                         endpoint: 'http://localhost:8000',
-                        apiKey: '',
-                        model: 'meta-llama/Llama-2-7b-chat-hf'
+                        apiKey: 'test',
+                        model: 'gpt-oss-120b'
                     },
                     openai: {
                         apiKey: '',
@@ -1043,8 +1043,10 @@ __webpack_require__.r(__webpack_exports__);
 
 
 
-const ExecutionPlanView = ({ plan, currentStep, completedSteps, failedSteps, }) => {
+const ExecutionPlanView = ({ plan, currentStep, completedSteps, failedSteps, isReplanning, originalStepCount, }) => {
     const getStepStatus = (stepNumber) => {
+        if (isReplanning && currentStep === stepNumber)
+            return 'replanning';
         if (failedSteps.includes(stepNumber))
             return 'failed';
         if (completedSteps.includes(stepNumber))
@@ -1053,26 +1055,48 @@ const ExecutionPlanView = ({ plan, currentStep, completedSteps, failedSteps, }) 
             return 'current';
         return 'pending';
     };
-    return (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-plan" },
+    // 새로 추가된 스텝인지 확인
+    const isNewStep = (stepNumber) => {
+        return originalStepCount !== undefined && stepNumber > originalStepCount;
+    };
+    const progressPercent = (completedSteps.length / plan.totalSteps) * 100;
+    return (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: `aa-plan ${isReplanning ? 'aa-plan--replanning' : ''}` },
         react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-plan-header" },
-            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "aa-plan-title" }, "\uC2E4\uD589 \uACC4\uD68D"),
+            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "aa-plan-title" }, isReplanning ? '계획 수정 중...' : '실행 계획'),
             react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "aa-plan-progress" },
                 completedSteps.length,
                 " / ",
-                plan.totalSteps)),
+                plan.totalSteps,
+                originalStepCount !== undefined && plan.totalSteps !== originalStepCount && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "aa-plan-changed" },
+                    "(",
+                    plan.totalSteps > originalStepCount ? '+' : '',
+                    plan.totalSteps - originalStepCount,
+                    ")")))),
+        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-progress-bar" },
+            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-progress-fill", style: { width: `${progressPercent}%` } })),
         react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-plan-steps" }, plan.steps.map((step) => {
             const status = getStepStatus(step.stepNumber);
-            return (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { key: step.stepNumber, className: `aa-step aa-step--${status}` },
+            const isNew = isNewStep(step.stepNumber);
+            return (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { key: step.stepNumber, className: `aa-step aa-step--${status} ${isNew ? 'aa-step--new' : ''}` },
                 react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-step-indicator" },
                     status === 'completed' && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("svg", { viewBox: "0 0 16 16", fill: "currentColor" },
                         react__WEBPACK_IMPORTED_MODULE_0___default().createElement("path", { d: "M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z" }))),
                     status === 'failed' && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("svg", { viewBox: "0 0 16 16", fill: "currentColor" },
                         react__WEBPACK_IMPORTED_MODULE_0___default().createElement("path", { d: "M3.72 3.72a.75.75 0 011.06 0L8 6.94l3.22-3.22a.75.75 0 111.06 1.06L9.06 8l3.22 3.22a.75.75 0 11-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 01-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 010-1.06z" }))),
+                    status === 'replanning' && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("svg", { viewBox: "0 0 16 16", fill: "currentColor", className: "aa-icon-spin" },
+                        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("path", { d: "M8 3a5 5 0 104.546 2.914.5.5 0 01.908-.418A6 6 0 118 2v1z" }),
+                        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("path", { d: "M8 4.466V.534a.25.25 0 01.41-.192l2.36 1.966a.25.25 0 010 .384L8.41 4.658A.25.25 0 018 4.466z" }))),
                     status === 'current' && react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-step-spinner" }),
-                    status === 'pending' && react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "aa-step-number" }, step.stepNumber)),
+                    status === 'pending' && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "aa-step-number" },
+                        isNew ? '+' : '',
+                        step.stepNumber))),
                 react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-step-content" },
-                    react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "aa-step-desc" }, step.description),
-                    react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-step-tools" }, step.toolCalls.map((tc, i) => (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { key: i, className: "aa-tool-tag" }, tc.tool)))))));
+                    react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: `aa-step-desc ${status === 'completed' ? 'aa-step-desc--done' : ''} ${isNew ? 'aa-step-desc--new' : ''}` },
+                        isNew && react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "aa-new-badge" }, "NEW"),
+                        step.description),
+                    status === 'current' && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "aa-step-executing" }, "\uC2E4\uD589 \uC911...")),
+                    status === 'replanning' && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "aa-step-replanning" }, "\uACC4\uD68D \uC218\uC815 \uC911...")),
+                    react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-step-tools" }, step.toolCalls.map((tc, i) => (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { key: i, className: `aa-tool-tag ${status === 'completed' ? 'aa-tool-tag--done' : ''}` }, tc.tool)))))));
         }))));
 };
 const StatusIndicator = ({ status }) => {
@@ -1084,12 +1108,13 @@ const StatusIndicator = ({ status }) => {
             case 'executing': return `실행 중 (${status.currentStep}/${status.totalSteps})`;
             case 'tool_calling': return `${status.tool} 실행 중`;
             case 'self_healing': return `재시도 중 (${status.attempt}/3)`;
+            case 'replanning': return `계획 수정 중 (Step ${status.currentStep})`;
             case 'completed': return '완료';
             case 'failed': return '실패';
             default: return '처리 중...';
         }
     };
-    const isActive = ['planning', 'executing', 'tool_calling', 'self_healing'].includes(status.phase);
+    const isActive = ['planning', 'executing', 'tool_calling', 'self_healing', 'replanning'].includes(status.phase);
     return (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: `aa-status aa-status--${status.phase}` },
         isActive && react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-status-spinner" }),
         react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "aa-status-text" }, getMessage()),
@@ -1106,9 +1131,12 @@ const AutoAgentPanel = ({ notebook: propNotebook, sessionContext: propSessionCon
     const [result, setResult] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null);
     const [completedSteps, setCompletedSteps] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)([]);
     const [failedSteps, setFailedSteps] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)([]);
+    const [originalStepCount, setOriginalStepCount] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(undefined);
+    const [executionSpeed, setExecutionSpeed] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)('normal');
+    const [isPaused, setIsPaused] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false);
     const orchestratorRef = (0,react__WEBPACK_IMPORTED_MODULE_0__.useRef)(null);
     const textareaRef = (0,react__WEBPACK_IMPORTED_MODULE_0__.useRef)(null);
-    const mergedConfig = { ..._types_auto_agent__WEBPACK_IMPORTED_MODULE_3__.DEFAULT_AUTO_AGENT_CONFIG, ...config };
+    const mergedConfig = { ..._types_auto_agent__WEBPACK_IMPORTED_MODULE_3__.DEFAULT_AUTO_AGENT_CONFIG, ...config, executionSpeed };
     const notebook = propNotebook || notebookTracker?.currentWidget;
     const sessionContext = propSessionContext || notebook?.sessionContext;
     const apiService = propApiService || new _services_ApiService__WEBPACK_IMPORTED_MODULE_1__.ApiService();
@@ -1118,17 +1146,39 @@ const AutoAgentPanel = ({ notebook: propNotebook, sessionContext: propSessionCon
         }
         return () => { orchestratorRef.current = null; };
     }, [notebook, sessionContext, apiService]);
+    // 일시정지 상태 폴링 (step-by-step 모드용)
+    (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
+        if (!isRunning)
+            return;
+        const interval = setInterval(() => {
+            if (orchestratorRef.current) {
+                setIsPaused(orchestratorRef.current.getIsPaused());
+            }
+        }, 100);
+        return () => clearInterval(interval);
+    }, [isRunning]);
+    // 속도 변경 시 오케스트레이터 설정 업데이트
+    (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
+        if (orchestratorRef.current) {
+            orchestratorRef.current.updateConfig({ executionSpeed });
+        }
+    }, [executionSpeed]);
     const handleProgress = (0,react__WEBPACK_IMPORTED_MODULE_0__.useCallback)((newStatus) => {
         setStatus(newStatus);
-        if (newStatus.plan)
+        if (newStatus.plan) {
             setPlan(newStatus.plan);
+            // 첫 계획이면 원래 스텝 수 저장
+            if (newStatus.phase === 'planned' && originalStepCount === undefined) {
+                setOriginalStepCount(newStatus.plan.totalSteps);
+            }
+        }
         if (newStatus.phase === 'executing' && newStatus.currentStep && newStatus.currentStep > 1) {
             setCompletedSteps(Array.from({ length: newStatus.currentStep - 1 }, (_, i) => i + 1));
         }
         if (newStatus.phase === 'failed' && newStatus.currentStep) {
             setFailedSteps(prev => [...prev, newStatus.currentStep]);
         }
-    }, []);
+    }, [originalStepCount]);
     const handleExecute = (0,react__WEBPACK_IMPORTED_MODULE_0__.useCallback)(async () => {
         if (!orchestratorRef.current || !notebook || !request.trim())
             return;
@@ -1137,6 +1187,7 @@ const AutoAgentPanel = ({ notebook: propNotebook, sessionContext: propSessionCon
         setPlan(null);
         setCompletedSteps([]);
         setFailedSteps([]);
+        setOriginalStepCount(undefined);
         setStatus({ phase: 'planning', message: 'Creating execution plan...' });
         try {
             const taskResult = await orchestratorRef.current.executeTask(request.trim(), notebook, handleProgress);
@@ -1167,7 +1218,16 @@ const AutoAgentPanel = ({ notebook: propNotebook, sessionContext: propSessionCon
         setResult(null);
         setCompletedSteps([]);
         setFailedSteps([]);
+        setIsPaused(false);
         textareaRef.current?.focus();
+    }, []);
+    const handleNextStep = (0,react__WEBPACK_IMPORTED_MODULE_0__.useCallback)(() => {
+        if (orchestratorRef.current) {
+            orchestratorRef.current.proceedToNextStep();
+        }
+    }, []);
+    const handleSpeedChange = (0,react__WEBPACK_IMPORTED_MODULE_0__.useCallback)((e) => {
+        setExecutionSpeed(e.target.value);
     }, []);
     const handleKeyDown = (0,react__WEBPACK_IMPORTED_MODULE_0__.useCallback)((e) => {
         if (e.key === 'Enter' && !e.shiftKey && !isRunning && request.trim()) {
@@ -1186,8 +1246,21 @@ const AutoAgentPanel = ({ notebook: propNotebook, sessionContext: propSessionCon
             react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-actions" },
                 !isRunning ? (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", { className: "aa-btn aa-btn--primary", onClick: handleExecute, disabled: !request.trim() }, "\uC2E4\uD589")) : (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", { className: "aa-btn aa-btn--cancel", onClick: handleCancel }, "\uCDE8\uC18C")),
                 result && !isRunning && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", { className: "aa-btn aa-btn--secondary", onClick: handleReset }, "\uCD08\uAE30\uD654")))),
+        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-speed-control" },
+            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "aa-speed-label" }, "\uC2E4\uD589 \uC18D\uB3C4:"),
+            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("select", { className: "aa-speed-select", value: executionSpeed, onChange: handleSpeedChange, disabled: isRunning && executionSpeed !== 'step-by-step' },
+                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("option", { value: "instant" }, "\uC989\uC2DC (\uC9C0\uC5F0 \uC5C6\uC74C)"),
+                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("option", { value: "fast" }, "\uBE60\uB984 (0.3\uCD08)"),
+                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("option", { value: "normal" }, "\uBCF4\uD1B5 (0.8\uCD08)"),
+                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("option", { value: "slow" }, "\uB290\uB9BC (1.5\uCD08)"),
+                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("option", { value: "step-by-step" }, "\uB2E8\uACC4\uBCC4 (\uC218\uB3D9)"))),
+        isPaused && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-paused-indicator" },
+            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("svg", { className: "aa-paused-icon", viewBox: "0 0 16 16", fill: "currentColor" },
+                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("path", { d: "M5.5 3.5A1.5 1.5 0 017 5v6a1.5 1.5 0 01-3 0V5a1.5 1.5 0 011.5-1.5zm5 0A1.5 1.5 0 0112 5v6a1.5 1.5 0 01-3 0V5a1.5 1.5 0 011.5-1.5z" })),
+            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", null, "\uB2E4\uC74C \uB2E8\uACC4 \uB300\uAE30 \uC911..."),
+            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", { className: "aa-btn aa-btn--next", onClick: handleNextStep }, "\uB2E4\uC74C \uB2E8\uACC4"))),
         status.phase !== 'idle' && react__WEBPACK_IMPORTED_MODULE_0___default().createElement(StatusIndicator, { status: status }),
-        plan && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement(ExecutionPlanView, { plan: plan, currentStep: status.currentStep, completedSteps: completedSteps, failedSteps: failedSteps })),
+        plan && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement(ExecutionPlanView, { plan: plan, currentStep: status.currentStep, completedSteps: completedSteps, failedSteps: failedSteps, isReplanning: status.phase === 'replanning', originalStepCount: originalStepCount })),
         result && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: `aa-result aa-result--${result.success ? 'success' : 'error'}` },
             react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-result-header" },
                 react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "aa-result-title" }, result.success ? '완료' : '실패'),
@@ -1620,7 +1693,6 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _plugins_cell_buttons_plugin__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./plugins/cell-buttons-plugin */ "./lib/plugins/cell-buttons-plugin.js");
 /* harmony import */ var _plugins_prompt_generation_plugin__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./plugins/prompt-generation-plugin */ "./lib/plugins/prompt-generation-plugin.js");
 /* harmony import */ var _plugins_save_interceptor_plugin__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./plugins/save-interceptor-plugin */ "./lib/plugins/save-interceptor-plugin.js");
-/* harmony import */ var _style_index_css__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ../style/index.css */ "./style/index.css");
 /**
  * Jupyter Agent Extension Entry Point
  */
@@ -1630,7 +1702,7 @@ __webpack_require__.r(__webpack_exports__);
 
 
 // Import styles
-
+// import '../style/index.css';
 /**
  * The main plugin export
  * Note: sidebarPlugin must load before cellButtonsPlugin
@@ -2484,7 +2556,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_5___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_5__);
 /* harmony import */ var _mui_material__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(/*! @mui/material */ "webpack/sharing/consume/default/@mui/material/@mui/material");
 /* harmony import */ var _mui_material__WEBPACK_IMPORTED_MODULE_6___default = /*#__PURE__*/__webpack_require__.n(_mui_material__WEBPACK_IMPORTED_MODULE_6__);
-/* harmony import */ var _style_icons_hdsp_icon_svg__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(/*! ../../style/icons/hdsp-icon.svg */ "./style/icons/hdsp-icon.svg");
+/* harmony import */ var _styles_icons_hdsp_icon_svg__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(/*! ../styles/icons/hdsp-icon.svg */ "./lib/styles/icons/hdsp-icon.svg");
 /* harmony import */ var _components_PromptGenerationDialog__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(/*! ../components/PromptGenerationDialog */ "./lib/components/PromptGenerationDialog.js");
 /* harmony import */ var _components_TaskProgressWidget__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(/*! ../components/TaskProgressWidget */ "./lib/components/TaskProgressWidget.js");
 /* harmony import */ var _services_TaskService__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(/*! ../services/TaskService */ "./lib/services/TaskService.js");
@@ -2514,7 +2586,7 @@ const CATEGORY = 'HDSP Agent';
  */
 const hdspIcon = new _jupyterlab_ui_components__WEBPACK_IMPORTED_MODULE_3__.LabIcon({
     name: 'hdsp-agent:hdsp-icon',
-    svgstr: _style_icons_hdsp_icon_svg__WEBPACK_IMPORTED_MODULE_7__
+    svgstr: _styles_icons_hdsp_icon_svg__WEBPACK_IMPORTED_MODULE_7__
 });
 /**
  * Task Manager Widget
@@ -3423,6 +3495,10 @@ class AgentOrchestrator {
     constructor(notebook, sessionContext, apiService, config) {
         this.abortController = null;
         this.isRunning = false;
+        // Step-by-step 모드를 위한 상태
+        this.stepByStepResolver = null;
+        this.isPaused = false;
+        this.notebook = notebook;
         this.apiService = apiService || new _ApiService__WEBPACK_IMPORTED_MODULE_0__.ApiService();
         this.toolExecutor = new _ToolExecutor__WEBPACK_IMPORTED_MODULE_1__.ToolExecutor(notebook, sessionContext);
         this.safetyChecker = new _utils_SafetyChecker__WEBPACK_IMPORTED_MODULE_2__.SafetyChecker({
@@ -3470,14 +3546,21 @@ class AgentOrchestrator {
                 message: `${plan.totalSteps}단계 실행 계획 생성됨`,
             });
             // ═══════════════════════════════════════════════════════════════════════
-            // PHASE 2: EXECUTION - 단계별 실행 (Self-Healing 포함)
+            // PHASE 2: EXECUTION - 단계별 실행 (Adaptive Replanning 포함)
             // ═══════════════════════════════════════════════════════════════════════
-            for (const step of plan.steps) {
+            console.log('[Orchestrator] Starting execution phase with', plan.steps.length, 'steps');
+            let currentPlan = plan;
+            let stepIndex = 0;
+            let replanAttempts = 0;
+            const MAX_REPLAN_ATTEMPTS = 3;
+            while (stepIndex < currentPlan.steps.length) {
+                const step = currentPlan.steps[stepIndex];
+                console.log('[Orchestrator] Executing step', step.stepNumber, ':', step.description);
                 // 중단 요청 확인
                 if (this.abortController.signal.aborted) {
                     return {
                         success: false,
-                        plan,
+                        plan: currentPlan,
                         executedSteps,
                         createdCells,
                         modifiedCells,
@@ -3489,12 +3572,11 @@ class AgentOrchestrator {
                 onProgress({
                     phase: 'executing',
                     currentStep: step.stepNumber,
-                    totalSteps: plan.totalSteps,
+                    totalSteps: currentPlan.totalSteps,
                     description: step.description,
                 });
                 const stepResult = await this.executeStepWithRetry(step, notebook, onProgress);
-                executedSteps.push(stepResult);
-                // 생성/수정된 셀 추적
+                // 생성/수정된 셀 추적 및 하이라이트/스크롤
                 stepResult.toolResults.forEach((tr) => {
                     if (tr.cellIndex !== undefined) {
                         if (tr.wasModified) {
@@ -3503,25 +3585,85 @@ class AgentOrchestrator {
                         else {
                             createdCells.push(tr.cellIndex);
                         }
+                        // 셀 하이라이트 및 스크롤
+                        this.scrollToAndHighlightCell(tr.cellIndex);
                     }
                 });
-                // 단계 실패 시 중단
+                // 단계 실패 시 Adaptive Replanning 시도
                 if (!stepResult.success) {
+                    console.log('[Orchestrator] Step failed, attempting adaptive replanning');
+                    if (replanAttempts >= MAX_REPLAN_ATTEMPTS) {
+                        onProgress({
+                            phase: 'failed',
+                            message: `최대 재계획 시도 횟수(${MAX_REPLAN_ATTEMPTS})를 초과했습니다.`,
+                        });
+                        return {
+                            success: false,
+                            plan: currentPlan,
+                            executedSteps,
+                            createdCells,
+                            modifiedCells,
+                            error: `Step ${step.stepNumber} 실패: ${stepResult.error}`,
+                            totalAttempts: this.countTotalAttempts(executedSteps),
+                            executionTime: Date.now() - startTime,
+                        };
+                    }
                     onProgress({
-                        phase: 'failed',
-                        message: `Step ${step.stepNumber} 실패: ${stepResult.error}`,
+                        phase: 'replanning',
+                        message: '계획 수정 중...',
+                        currentStep: step.stepNumber,
                     });
-                    return {
-                        success: false,
-                        plan,
-                        executedSteps,
-                        createdCells,
-                        modifiedCells,
-                        error: `Step ${step.stepNumber} 실패: ${stepResult.error}`,
-                        totalAttempts: this.countTotalAttempts(executedSteps),
-                        executionTime: Date.now() - startTime,
+                    // 실패 정보 구성
+                    const executionError = {
+                        type: 'runtime',
+                        message: stepResult.error || '알 수 없는 오류',
+                        traceback: stepResult.toolResults.find(r => r.traceback)?.traceback || [],
+                        recoverable: true,
                     };
+                    // 마지막 실행 출력
+                    const lastOutput = stepResult.toolResults
+                        .map(r => r.output)
+                        .filter(Boolean)
+                        .join('\n');
+                    try {
+                        const replanResponse = await this.apiService.replanExecution({
+                            originalRequest: userRequest,
+                            executedSteps: executedSteps.map(s => currentPlan.steps.find(p => p.stepNumber === s.stepNumber)).filter(Boolean),
+                            failedStep: step,
+                            error: executionError,
+                            executionOutput: lastOutput,
+                        });
+                        console.log('[Orchestrator] Replan decision:', replanResponse.decision);
+                        console.log('[Orchestrator] Replan reasoning:', replanResponse.reasoning);
+                        // Replan 결과에 따른 계획 수정
+                        currentPlan = this.applyReplanChanges(currentPlan, stepIndex, replanResponse);
+                        replanAttempts++;
+                        // stepIndex는 그대로 유지 (수정된 현재 단계를 다시 실행)
+                        continue;
+                    }
+                    catch (replanError) {
+                        console.error('[Orchestrator] Replan failed:', replanError);
+                        onProgress({
+                            phase: 'failed',
+                            message: `Step ${step.stepNumber} 실패 (재계획 실패): ${stepResult.error}`,
+                        });
+                        return {
+                            success: false,
+                            plan: currentPlan,
+                            executedSteps,
+                            createdCells,
+                            modifiedCells,
+                            error: `Step ${step.stepNumber} 실패: ${stepResult.error}`,
+                            totalAttempts: this.countTotalAttempts(executedSteps),
+                            executionTime: Date.now() - startTime,
+                        };
+                    }
                 }
+                // 성공한 단계 기록
+                executedSteps.push(stepResult);
+                replanAttempts = 0; // 성공 시 재계획 시도 횟수 리셋
+                // 다음 스텝 전에 지연 적용 (사용자가 결과를 확인할 시간)
+                await this.applyStepDelay();
                 // final_answer 도구 호출 시 완료
                 if (stepResult.isFinalAnswer) {
                     onProgress({
@@ -3530,7 +3672,7 @@ class AgentOrchestrator {
                     });
                     return {
                         success: true,
-                        plan,
+                        plan: currentPlan,
                         executedSteps,
                         createdCells,
                         modifiedCells,
@@ -3539,6 +3681,7 @@ class AgentOrchestrator {
                         executionTime: Date.now() - startTime,
                     };
                 }
+                stepIndex++;
             }
             // 모든 단계 성공
             onProgress({
@@ -3577,16 +3720,41 @@ class AgentOrchestrator {
         }
     }
     /**
+     * 환경/의존성 관련 에러인지 판단 (Adaptive Replanning으로 바로 보내야 하는 에러)
+     */
+    isEnvironmentError(errorMessage, traceback) {
+        const envErrorPatterns = [
+            /ModuleNotFoundError/i,
+            /ImportError/i,
+            /No module named/i,
+            /cannot import name/i,
+            /FileNotFoundError/i,
+            /PermissionError/i,
+            /OSError/i,
+            /ConnectionError/i,
+            /pip install/i,
+            /conda install/i,
+        ];
+        const fullText = [errorMessage, ...(traceback || [])].join('\n');
+        return envErrorPatterns.some(pattern => pattern.test(fullText));
+    }
+    /**
      * Self-Healing: 단계별 재시도 로직
+     * 환경/의존성 에러는 재시도하지 않고 바로 Adaptive Replanning으로 보냄
      */
     async executeStepWithRetry(step, notebook, onProgress) {
+        console.log('[Orchestrator] executeStepWithRetry called for step:', step.stepNumber);
+        console.log('[Orchestrator] Step toolCalls:', JSON.stringify(step.toolCalls, null, 2));
         let lastError = null;
         let currentStep = { ...step };
         for (let attempt = 0; attempt < this.config.maxRetriesPerStep; attempt++) {
+            console.log('[Orchestrator] Attempt', attempt + 1, 'of', this.config.maxRetriesPerStep);
             const toolResults = [];
             try {
                 // Tool Calling 실행
+                console.log('[Orchestrator] Processing', currentStep.toolCalls.length, 'tool calls');
                 for (const toolCall of currentStep.toolCalls) {
+                    console.log('[Orchestrator] Processing toolCall:', toolCall.tool);
                     // 중단 요청 확인
                     if (this.abortController?.signal.aborted) {
                         return {
@@ -3618,16 +3786,33 @@ class AgentOrchestrator {
                         }
                     }
                     // 타임아웃과 함께 실행
+                    console.log('[Orchestrator] Calling toolExecutor.executeTool for:', toolCall.tool);
+                    console.log('[Orchestrator] toolCall parameters:', JSON.stringify(toolCall.parameters));
                     const result = await this.executeWithTimeout(() => this.toolExecutor.executeTool(toolCall), this.config.executionTimeout);
+                    console.log('[Orchestrator] Tool execution result:', JSON.stringify(result));
                     toolResults.push(result);
-                    // jupyter_cell 실행 실패 시 재시도 준비
+                    // jupyter_cell 실행 실패 시
                     if (!result.success && toolCall.tool === 'jupyter_cell') {
+                        const errorMsg = result.error || '알 수 없는 오류';
+                        const isEnvError = this.isEnvironmentError(errorMsg, result.traceback);
                         lastError = {
-                            type: 'runtime',
-                            message: result.error || '알 수 없는 오류',
+                            type: isEnvError ? 'validation' : 'runtime',
+                            message: errorMsg,
                             traceback: result.traceback || [],
-                            recoverable: true,
+                            recoverable: !isEnvError, // 환경 에러는 Self-Healing으로 복구 불가
                         };
+                        // 환경/의존성 에러는 Self-Healing 재시도 없이 바로 실패 반환
+                        // → 메인 루프에서 Adaptive Replanning 호출
+                        if (isEnvError) {
+                            console.log('[Orchestrator] Environment error detected, skipping to Adaptive Replanning');
+                            return {
+                                success: false,
+                                stepNumber: step.stepNumber,
+                                toolResults,
+                                attempts: attempt + 1,
+                                error: errorMsg,
+                            };
+                        }
                         break;
                     }
                     // final_answer 도구 감지
@@ -3651,8 +3836,8 @@ class AgentOrchestrator {
                         attempts: attempt + 1,
                     };
                 }
-                // 에러 발생 시 LLM에게 수정 요청
-                if (lastError && attempt < this.config.maxRetriesPerStep - 1) {
+                // 일반 런타임 에러 발생 시 LLM에게 수정 요청 (Self-Healing)
+                if (lastError && lastError.recoverable && attempt < this.config.maxRetriesPerStep - 1) {
                     onProgress({
                         phase: 'self_healing',
                         attempt: attempt + 1,
@@ -3778,6 +3963,78 @@ class AgentOrchestrator {
         return Array.from(variables);
     }
     /**
+     * Adaptive Replanning 결과 적용
+     */
+    applyReplanChanges(plan, currentStepIndex, replanResponse) {
+        const { decision, changes } = replanResponse;
+        const steps = [...plan.steps];
+        const currentStep = steps[currentStepIndex];
+        console.log('[Orchestrator] Applying replan changes:', decision);
+        switch (decision) {
+            case 'refine':
+                // 현재 단계의 코드만 수정
+                if (changes.refined_code) {
+                    const newToolCalls = currentStep.toolCalls.map(tc => {
+                        if (tc.tool === 'jupyter_cell') {
+                            return {
+                                ...tc,
+                                parameters: {
+                                    ...tc.parameters,
+                                    code: changes.refined_code,
+                                },
+                            };
+                        }
+                        return tc;
+                    });
+                    steps[currentStepIndex] = {
+                        ...currentStep,
+                        toolCalls: newToolCalls,
+                    };
+                }
+                break;
+            case 'insert_steps':
+                // 현재 단계 전에 새로운 단계들 삽입
+                if (changes.new_steps && changes.new_steps.length > 0) {
+                    const newSteps = changes.new_steps.map((newStep, idx) => ({
+                        ...newStep,
+                        stepNumber: currentStep.stepNumber + idx * 0.1, // 임시 번호
+                    }));
+                    steps.splice(currentStepIndex, 0, ...newSteps);
+                    // 단계 번호 재정렬
+                    steps.forEach((step, idx) => {
+                        step.stepNumber = idx + 1;
+                    });
+                }
+                break;
+            case 'replace_step':
+                // 현재 단계를 완전히 교체
+                if (changes.replacement) {
+                    steps[currentStepIndex] = {
+                        ...changes.replacement,
+                        stepNumber: currentStep.stepNumber,
+                    };
+                }
+                break;
+            case 'replan_remaining':
+                // 현재 단계부터 끝까지 새로운 계획으로 교체
+                if (changes.new_plan && changes.new_plan.length > 0) {
+                    const existingSteps = steps.slice(0, currentStepIndex);
+                    const newPlanSteps = changes.new_plan.map((newStep, idx) => ({
+                        ...newStep,
+                        stepNumber: currentStepIndex + idx + 1,
+                    }));
+                    steps.length = 0;
+                    steps.push(...existingSteps, ...newPlanSteps);
+                }
+                break;
+        }
+        return {
+            ...plan,
+            steps,
+            totalSteps: steps.length,
+        };
+    }
+    /**
      * 총 시도 횟수 계산
      */
     countTotalAttempts(steps) {
@@ -3832,6 +4089,89 @@ class AgentOrchestrator {
             maxExecutionTime: this.config.executionTimeout / 1000,
         });
     }
+    /**
+     * 현재 실행 중인 셀로 스크롤 및 하이라이트
+     */
+    scrollToAndHighlightCell(cellIndex) {
+        if (!this.config.autoScrollToCell && !this.config.highlightCurrentCell) {
+            return;
+        }
+        const notebookContent = this.notebook.content;
+        const cell = notebookContent.widgets[cellIndex];
+        if (!cell)
+            return;
+        // 셀로 스크롤
+        if (this.config.autoScrollToCell) {
+            cell.node.scrollIntoView({
+                behavior: 'smooth',
+                block: 'center',
+            });
+        }
+        // 셀 하이라이트 (CSS 클래스 추가)
+        if (this.config.highlightCurrentCell) {
+            // 기존 하이라이트 제거
+            notebookContent.widgets.forEach((w) => {
+                w.node.classList.remove('aa-cell-executing');
+            });
+            // 새 하이라이트 추가
+            cell.node.classList.add('aa-cell-executing');
+            // 실행 완료 후 하이라이트 제거 (지연 후)
+            setTimeout(() => {
+                cell.node.classList.remove('aa-cell-executing');
+            }, this.getEffectiveDelay() + 500);
+        }
+    }
+    /**
+     * 현재 설정에 맞는 지연 시간 반환
+     */
+    getEffectiveDelay() {
+        // 명시적으로 설정된 stepDelay가 있으면 사용
+        if (this.config.stepDelay > 0) {
+            return this.config.stepDelay;
+        }
+        // 그렇지 않으면 executionSpeed 프리셋 사용
+        return _types_auto_agent__WEBPACK_IMPORTED_MODULE_3__.EXECUTION_SPEED_DELAYS[this.config.executionSpeed] || 0;
+    }
+    /**
+     * 스텝 사이 지연 적용 (step-by-step 모드 포함)
+     */
+    async applyStepDelay() {
+        const delay = this.getEffectiveDelay();
+        // step-by-step 모드: 사용자가 다음 버튼을 누를 때까지 대기
+        if (this.config.executionSpeed === 'step-by-step' || delay < 0) {
+            this.isPaused = true;
+            await new Promise((resolve) => {
+                this.stepByStepResolver = resolve;
+            });
+            this.isPaused = false;
+            this.stepByStepResolver = null;
+            return;
+        }
+        // 일반 지연
+        if (delay > 0) {
+            await this.delay(delay);
+        }
+    }
+    /**
+     * Step-by-step 모드에서 다음 스텝 진행
+     */
+    proceedToNextStep() {
+        if (this.stepByStepResolver) {
+            this.stepByStepResolver();
+        }
+    }
+    /**
+     * 일시 정지 상태 확인
+     */
+    getIsPaused() {
+        return this.isPaused;
+    }
+    /**
+     * 현재 실행 속도 설정 반환
+     */
+    getExecutionSpeed() {
+        return this.config.executionSpeed;
+    }
 }
 /* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (AgentOrchestrator);
 
@@ -3852,8 +4192,23 @@ __webpack_require__.r(__webpack_exports__);
  * API Service Layer for REST communication with backend
  */
 class ApiService {
-    constructor(baseUrl = '/hdsp-agent') {
-        this.baseUrl = baseUrl;
+    constructor(baseUrl) {
+        this.baseUrl = baseUrl || this.detectBaseUrl();
+    }
+    /**
+     * Detect base URL dynamically based on environment
+     * - JupyterHub: /user/{username}/{servername}/hdsp-agent
+     * - Local: /hdsp-agent
+     */
+    detectBaseUrl() {
+        const pathname = window.location.pathname;
+        // JupyterHub pattern: /user/username/servername/lab/...
+        const hubMatch = pathname.match(/^(\/user\/[^/]+\/[^/]+)/);
+        if (hubMatch) {
+            return `${hubMatch[1]}/hdsp-agent`;
+        }
+        // Local JupyterLab
+        return '/hdsp-agent';
     }
     /**
      * Get cookie value by name
@@ -3888,6 +4243,7 @@ class ApiService {
         const response = await fetch(`${this.baseUrl}/cell/action`, {
             method: 'POST',
             headers: this.getHeaders(),
+            credentials: 'include',
             body: JSON.stringify(request)
         });
         if (!response.ok) {
@@ -3903,6 +4259,7 @@ class ApiService {
         const response = await fetch(`${this.baseUrl}/chat/message`, {
             method: 'POST',
             headers: this.getHeaders(),
+            credentials: 'include',
             body: JSON.stringify(request)
         });
         if (!response.ok) {
@@ -3924,6 +4281,7 @@ class ApiService {
         const response = await fetch(`${this.baseUrl}/chat/stream`, {
             method: 'POST',
             headers: this.getHeaders(),
+            credentials: 'include',
             body: JSON.stringify(request)
         });
         if (!response.ok) {
@@ -3997,6 +4355,7 @@ class ApiService {
         const response = await fetch(`${this.baseUrl}/config`, {
             method: 'POST',
             headers: this.getHeaders(),
+            credentials: 'include',
             body: JSON.stringify(config)
         });
         if (!response.ok) {
@@ -4099,6 +4458,38 @@ class ApiService {
         }
         const result = await response.json();
         console.log('[ApiService] Refine API Success:', result);
+        return result;
+    }
+    /**
+     * Adaptive Replanning - 에러 분석 후 계획 재수립
+     */
+    async replanExecution(request) {
+        console.log('[ApiService] replanExecution request:', request);
+        const response = await fetch(`${this.baseUrl}/auto-agent/replan`, {
+            method: 'POST',
+            headers: this.getHeaders(),
+            body: JSON.stringify(request)
+        });
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('[ApiService] Replan API Error:', {
+                status: response.status,
+                statusText: response.statusText,
+                body: errorText,
+                url: `${this.baseUrl}/auto-agent/replan`
+            });
+            let errorMessage = '계획 재수립 실패';
+            try {
+                const errorJson = JSON.parse(errorText);
+                errorMessage = errorJson.error || errorJson.message || errorMessage;
+            }
+            catch (e) {
+                errorMessage = errorText || errorMessage;
+            }
+            throw new Error(errorMessage);
+        }
+        const result = await response.json();
+        console.log('[ApiService] Replan API Success:', result);
         return result;
     }
     /**
@@ -4330,6 +4721,8 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   ToolExecutor: () => (/* binding */ ToolExecutor),
 /* harmony export */   "default": () => (__WEBPACK_DEFAULT_EXPORT__)
 /* harmony export */ });
+/* harmony import */ var _jupyterlab_notebook__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! @jupyterlab/notebook */ "webpack/sharing/consume/default/@jupyterlab/notebook");
+/* harmony import */ var _jupyterlab_notebook__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(_jupyterlab_notebook__WEBPACK_IMPORTED_MODULE_0__);
 /**
  * ToolExecutor - HF Jupyter Agent 스타일의 Tool 실행기
  *
@@ -4338,6 +4731,7 @@ __webpack_require__.r(__webpack_exports__);
  * - markdown: 마크다운 셀 생성/수정
  * - final_answer: 작업 완료 신호
  */
+
 class ToolExecutor {
     constructor(notebook, sessionContext) {
         this.notebook = notebook;
@@ -4347,40 +4741,58 @@ class ToolExecutor {
      * Tool 실행 라우터
      */
     async executeTool(call) {
+        console.log('[ToolExecutor] executeTool called:', JSON.stringify(call, null, 2));
+        let result;
         switch (call.tool) {
             case 'jupyter_cell':
-                return this.executeJupyterCell(call.parameters);
+                console.log('[ToolExecutor] Executing jupyter_cell tool');
+                result = await this.executeJupyterCell(call.parameters);
+                break;
             case 'markdown':
-                return this.executeMarkdown(call.parameters);
+                console.log('[ToolExecutor] Executing markdown tool');
+                result = await this.executeMarkdown(call.parameters);
+                break;
             case 'final_answer':
-                return this.executeFinalAnswer(call.parameters);
+                console.log('[ToolExecutor] Executing final_answer tool');
+                result = await this.executeFinalAnswer(call.parameters);
+                break;
             default:
-                return {
+                result = {
                     success: false,
                     error: `Unknown tool: ${call.tool}`,
                 };
         }
+        console.log('[ToolExecutor] Tool result:', JSON.stringify(result, null, 2));
+        return result;
     }
     /**
      * jupyter_cell 도구: 셀 생성/수정/실행
      */
     async executeJupyterCell(params) {
+        console.log('[ToolExecutor] executeJupyterCell params:', params);
         const notebookContent = this.notebook.content;
+        console.log('[ToolExecutor] notebook content available:', !!notebookContent);
+        console.log('[ToolExecutor] notebook model available:', !!notebookContent?.model);
         let cellIndex;
         let wasModified = false;
         try {
             if (params.cellIndex !== undefined) {
                 // 기존 셀 수정
+                console.log('[ToolExecutor] Modifying existing cell at index:', params.cellIndex);
                 cellIndex = params.cellIndex;
                 this.updateCellContent(cellIndex, params.code);
                 wasModified = true;
             }
             else {
                 // 새 셀 생성
+                console.log('[ToolExecutor] Creating new code cell');
                 cellIndex = await this.createCodeCell(params.code, params.insertAfter);
+                console.log('[ToolExecutor] Created cell at index:', cellIndex);
             }
             // 셀 실행 및 결과 캡처
+            console.log('[ToolExecutor] Executing cell at index:', cellIndex);
             const result = await this.executeCellAndCapture(cellIndex);
+            console.log('[ToolExecutor] Cell execution result:', result.status);
             return {
                 success: result.status === 'ok',
                 output: result.result || result.stdout,
@@ -4391,6 +4803,7 @@ class ToolExecutor {
             };
         }
         catch (error) {
+            console.error('[ToolExecutor] executeJupyterCell error:', error);
             return {
                 success: false,
                 error: error.message || 'Failed to execute jupyter_cell',
@@ -4437,7 +4850,7 @@ class ToolExecutor {
         };
     }
     /**
-     * 코드 셀 생성
+     * 코드 셀 생성 (빈 셀이 있으면 재사용)
      */
     async createCodeCell(code, insertAfter) {
         const notebookContent = this.notebook.content;
@@ -4445,15 +4858,29 @@ class ToolExecutor {
         if (!model) {
             throw new Error('Notebook model not available');
         }
-        // 삽입 위치 결정
+        // 노트북 맨 끝의 활성 셀이 빈 코드 셀이면 재사용 (첫 셀 생성 시에만)
+        const activeIndex = notebookContent.activeCellIndex;
+        const isAtEnd = activeIndex === model.cells.length - 1;
+        if (activeIndex >= 0 && insertAfter === undefined && isAtEnd) {
+            const activeCell = model.cells.get(activeIndex);
+            if (activeCell && activeCell.type === 'code') {
+                const source = activeCell.sharedModel.getSource().trim();
+                if (source === '') {
+                    // 빈 셀 재사용
+                    activeCell.sharedModel.setSource(code);
+                    return activeIndex;
+                }
+            }
+        }
+        // 삽입 위치 결정: 항상 노트북 맨 끝에 추가 (순서 보장)
+        // insertAfter가 지정되면 그 다음 위치, 아니면 맨 끝
         let insertIndex;
         if (insertAfter !== undefined) {
             insertIndex = insertAfter + 1;
         }
         else {
-            // 기본: 현재 활성 셀 다음 또는 맨 끝
-            const activeIndex = notebookContent.activeCellIndex;
-            insertIndex = activeIndex >= 0 ? activeIndex + 1 : model.cells.length;
+            // 맨 끝에 추가하여 순서 보장
+            insertIndex = model.cells.length;
         }
         // 새 코드 셀 생성
         const cellModel = model.sharedModel.insertCell(insertIndex, {
@@ -4474,14 +4901,15 @@ class ToolExecutor {
         if (!model) {
             throw new Error('Notebook model not available');
         }
-        // 삽입 위치 결정
+        // 삽입 위치 결정: 항상 노트북 맨 끝에 추가 (순서 보장)
+        // insertAfter가 지정되면 그 다음 위치, 아니면 맨 끝
         let insertIndex;
         if (insertAfter !== undefined) {
             insertIndex = insertAfter + 1;
         }
         else {
-            const activeIndex = notebookContent.activeCellIndex;
-            insertIndex = activeIndex >= 0 ? activeIndex + 1 : model.cells.length;
+            // 맨 끝에 추가하여 순서 보장
+            insertIndex = model.cells.length;
         }
         // 새 마크다운 셀 생성
         model.sharedModel.insertCell(insertIndex, {
@@ -4494,6 +4922,8 @@ class ToolExecutor {
         if (cell && cell.rendered !== undefined) {
             cell.rendered = true;
         }
+        // 새 셀로 활성 셀 업데이트 (다음 셀이 이 셀 다음에 삽입되도록)
+        notebookContent.activeCellIndex = insertIndex;
         return insertIndex;
     }
     /**
@@ -4509,6 +4939,7 @@ class ToolExecutor {
     }
     /**
      * 셀 실행 및 결과 캡처
+     * NotebookActions.run()을 사용하여 정식으로 셀 실행 (execution_count 업데이트 포함)
      */
     async executeCellAndCapture(cellIndex) {
         const notebookContent = this.notebook.content;
@@ -4516,63 +4947,56 @@ class ToolExecutor {
         if (!cell) {
             throw new Error(`Cell at index ${cellIndex} not found`);
         }
-        const code = cell.model.sharedModel.getSource();
-        const kernel = this.sessionContext.session?.kernel;
-        if (!kernel) {
-            throw new Error('Kernel not available');
-        }
         const startTime = Date.now();
-        return new Promise((resolve, reject) => {
-            const future = kernel.requestExecute({ code });
-            let stdout = '';
-            let stderr = '';
-            let result = null;
-            let error = undefined;
-            future.onIOPub = (msg) => {
-                const msgType = msg.header.msg_type;
-                const content = msg.content;
-                switch (msgType) {
-                    case 'stream':
-                        if (content.name === 'stdout') {
-                            stdout += content.text;
-                        }
-                        else if (content.name === 'stderr') {
-                            stderr += content.text;
-                        }
-                        break;
-                    case 'execute_result':
-                        result = content.data;
-                        break;
-                    case 'display_data':
-                        // 이미지나 다른 출력 형식 처리
-                        if (!result) {
-                            result = content.data;
-                        }
-                        break;
-                    case 'error':
-                        error = {
-                            ename: content.ename,
-                            evalue: content.evalue,
-                            traceback: content.traceback,
-                        };
-                        break;
+        // 해당 셀 선택
+        notebookContent.activeCellIndex = cellIndex;
+        // NotebookActions.run()을 사용하여 정식 실행 (execution_count 업데이트됨)
+        const success = await _jupyterlab_notebook__WEBPACK_IMPORTED_MODULE_0__.NotebookActions.run(notebookContent, this.sessionContext);
+        // 실행 완료 후 결과 캡처
+        const executionTime = Date.now() - startTime;
+        // 셀 출력 분석
+        let stdout = '';
+        let stderr = '';
+        let result = null;
+        let error = undefined;
+        if (cell.model.outputs) {
+            for (let i = 0; i < cell.model.outputs.length; i++) {
+                const output = cell.model.outputs.get(i);
+                if (output.type === 'stream') {
+                    const streamOutput = output;
+                    if (streamOutput.name === 'stdout') {
+                        stdout += streamOutput.text || '';
+                    }
+                    else if (streamOutput.name === 'stderr') {
+                        stderr += streamOutput.text || '';
+                    }
                 }
-            };
-            future.done.then((reply) => {
-                const status = reply.content.status;
-                resolve({
-                    status,
-                    stdout,
-                    stderr,
-                    result,
-                    error,
-                    executionTime: Date.now() - startTime,
-                    cellIndex,
-                });
-            }).catch((err) => {
-                reject(err);
-            });
-        });
+                else if (output.type === 'execute_result' || output.type === 'display_data') {
+                    const data = output.data;
+                    if (!result) {
+                        result = data;
+                    }
+                }
+                else if (output.type === 'error') {
+                    const errorOutput = output;
+                    error = {
+                        ename: errorOutput.ename,
+                        evalue: errorOutput.evalue,
+                        traceback: errorOutput.traceback,
+                    };
+                }
+            }
+        }
+        const status = error ? 'error' : 'ok';
+        return {
+            status,
+            stdout,
+            stderr,
+            result,
+            error,
+            executionTime,
+            cellIndex,
+        };
     }
     /**
      * 현재 노트북의 셀 개수 반환
@@ -4652,6 +5076,16 @@ class ToolExecutor {
 
 /***/ }),
 
+/***/ "./lib/styles/icons/hdsp-icon.svg":
+/*!****************************************!*\
+  !*** ./lib/styles/icons/hdsp-icon.svg ***!
+  \****************************************/
+/***/ ((module) => {
+
+module.exports = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\">\n  <path fill=\"currentColor\" d=\"M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z\"/>\n</svg>\n";
+
+/***/ }),
+
 /***/ "./lib/types/auto-agent.js":
 /*!*********************************!*\
   !*** ./lib/types/auto-agent.js ***!
@@ -4660,17 +5094,30 @@ class ToolExecutor {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   DEFAULT_AUTO_AGENT_CONFIG: () => (/* binding */ DEFAULT_AUTO_AGENT_CONFIG)
+/* harmony export */   DEFAULT_AUTO_AGENT_CONFIG: () => (/* binding */ DEFAULT_AUTO_AGENT_CONFIG),
+/* harmony export */   EXECUTION_SPEED_DELAYS: () => (/* binding */ EXECUTION_SPEED_DELAYS)
 /* harmony export */ });
 /**
  * Auto-Agent Type Definitions
  * HuggingFace Jupyter Agent 패턴 기반 Tool Calling 구조
  */
+// 속도 프리셋 (ms 단위 지연)
+const EXECUTION_SPEED_DELAYS = {
+    'instant': 0,
+    'fast': 300,
+    'normal': 800,
+    'slow': 1500,
+    'step-by-step': -1, // -1은 수동 진행 의미
+};
 const DEFAULT_AUTO_AGENT_CONFIG = {
     maxRetriesPerStep: 3,
     executionTimeout: 30000,
     enableSafetyCheck: true,
     showDetailedProgress: true,
+    executionSpeed: 'normal',
+    stepDelay: 800,
+    autoScrollToCell: true,
+    highlightCurrentCell: true,
 };
 
 
@@ -5576,15 +6023,159 @@ function formatMarkdownToHtml(text) {
 
 /***/ }),
 
-/***/ "./style/icons/hdsp-icon.svg":
-/*!***********************************!*\
-  !*** ./style/icons/hdsp-icon.svg ***!
-  \***********************************/
-/***/ ((module) => {
+/***/ "./node_modules/@mui/icons-material/esm/AutoFixHigh.js":
+/*!*************************************************************!*\
+  !*** ./node_modules/@mui/icons-material/esm/AutoFixHigh.js ***!
+  \*************************************************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
-module.exports = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\" width=\"100\" height=\"100\">\n  <rect width=\"100\" height=\"100\" fill=\"#f97316\" rx=\"12\"/>\n  <text x=\"50\" y=\"62\" font-family=\"Arial, sans-serif\" font-size=\"28\" font-weight=\"bold\" fill=\"white\" text-anchor=\"middle\">HDSP</text>\n</svg>\n";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "default": () => (__WEBPACK_DEFAULT_EXPORT__)
+/* harmony export */ });
+/* harmony import */ var _utils_createSvgIcon_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./utils/createSvgIcon.js */ "./node_modules/@mui/material/utils/createSvgIcon.js");
+/* harmony import */ var react_jsx_runtime__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! react/jsx-runtime */ "./node_modules/react/jsx-runtime.js");
+"use client";
+
+
+
+/* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = ((0,_utils_createSvgIcon_js__WEBPACK_IMPORTED_MODULE_0__["default"])(/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_1__.jsx)("path", {
+  d: "M7.5 5.6 10 7 8.6 4.5 10 2 7.5 3.4 5 2l1.4 2.5L5 7zm12 9.8L17 14l1.4 2.5L17 19l2.5-1.4L22 19l-1.4-2.5L22 14zM22 2l-2.5 1.4L17 2l1.4 2.5L17 7l2.5-1.4L22 7l-1.4-2.5zm-7.63 5.29a.996.996 0 0 0-1.41 0L1.29 18.96c-.39.39-.39 1.02 0 1.41l2.34 2.34c.39.39 1.02.39 1.41 0L16.7 11.05c.39-.39.39-1.02 0-1.41zm-1.03 5.49-2.12-2.12 2.44-2.44 2.12 2.12z"
+}), 'AutoFixHigh'));
+
+/***/ }),
+
+/***/ "./node_modules/@mui/icons-material/esm/Cancel.js":
+/*!********************************************************!*\
+  !*** ./node_modules/@mui/icons-material/esm/Cancel.js ***!
+  \********************************************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "default": () => (__WEBPACK_DEFAULT_EXPORT__)
+/* harmony export */ });
+/* harmony import */ var _utils_createSvgIcon_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./utils/createSvgIcon.js */ "./node_modules/@mui/material/utils/createSvgIcon.js");
+/* harmony import */ var react_jsx_runtime__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! react/jsx-runtime */ "./node_modules/react/jsx-runtime.js");
+"use client";
+
+
+
+/* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = ((0,_utils_createSvgIcon_js__WEBPACK_IMPORTED_MODULE_0__["default"])(/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_1__.jsx)("path", {
+  d: "M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2m5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12z"
+}), 'Cancel'));
+
+/***/ }),
+
+/***/ "./node_modules/@mui/icons-material/esm/CheckCircle.js":
+/*!*************************************************************!*\
+  !*** ./node_modules/@mui/icons-material/esm/CheckCircle.js ***!
+  \*************************************************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "default": () => (__WEBPACK_DEFAULT_EXPORT__)
+/* harmony export */ });
+/* harmony import */ var _utils_createSvgIcon_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./utils/createSvgIcon.js */ "./node_modules/@mui/material/utils/createSvgIcon.js");
+/* harmony import */ var react_jsx_runtime__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! react/jsx-runtime */ "./node_modules/react/jsx-runtime.js");
+"use client";
+
+
+
+/* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = ((0,_utils_createSvgIcon_js__WEBPACK_IMPORTED_MODULE_0__["default"])(/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_1__.jsx)("path", {
+  d: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2m-2 15-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8z"
+}), 'CheckCircle'));
+
+/***/ }),
+
+/***/ "./node_modules/@mui/icons-material/esm/Close.js":
+/*!*******************************************************!*\
+  !*** ./node_modules/@mui/icons-material/esm/Close.js ***!
+  \*******************************************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "default": () => (__WEBPACK_DEFAULT_EXPORT__)
+/* harmony export */ });
+/* harmony import */ var _utils_createSvgIcon_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./utils/createSvgIcon.js */ "./node_modules/@mui/material/utils/createSvgIcon.js");
+/* harmony import */ var react_jsx_runtime__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! react/jsx-runtime */ "./node_modules/react/jsx-runtime.js");
+"use client";
+
+
+
+/* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = ((0,_utils_createSvgIcon_js__WEBPACK_IMPORTED_MODULE_0__["default"])(/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_1__.jsx)("path", {
+  d: "M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+}), 'Close'));
+
+/***/ }),
+
+/***/ "./node_modules/@mui/icons-material/esm/Error.js":
+/*!*******************************************************!*\
+  !*** ./node_modules/@mui/icons-material/esm/Error.js ***!
+  \*******************************************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "default": () => (__WEBPACK_DEFAULT_EXPORT__)
+/* harmony export */ });
+/* harmony import */ var _utils_createSvgIcon_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./utils/createSvgIcon.js */ "./node_modules/@mui/material/utils/createSvgIcon.js");
+/* harmony import */ var react_jsx_runtime__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! react/jsx-runtime */ "./node_modules/react/jsx-runtime.js");
+"use client";
+
+
+
+/* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = ((0,_utils_createSvgIcon_js__WEBPACK_IMPORTED_MODULE_0__["default"])(/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_1__.jsx)("path", {
+  d: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2m1 15h-2v-2h2zm0-4h-2V7h2z"
+}), 'Error'));
+
+/***/ }),
+
+/***/ "./node_modules/@mui/icons-material/esm/ExpandLess.js":
+/*!************************************************************!*\
+  !*** ./node_modules/@mui/icons-material/esm/ExpandLess.js ***!
+  \************************************************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "default": () => (__WEBPACK_DEFAULT_EXPORT__)
+/* harmony export */ });
+/* harmony import */ var _utils_createSvgIcon_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./utils/createSvgIcon.js */ "./node_modules/@mui/material/utils/createSvgIcon.js");
+/* harmony import */ var react_jsx_runtime__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! react/jsx-runtime */ "./node_modules/react/jsx-runtime.js");
+"use client";
+
+
+
+/* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = ((0,_utils_createSvgIcon_js__WEBPACK_IMPORTED_MODULE_0__["default"])(/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_1__.jsx)("path", {
+  d: "m12 8-6 6 1.41 1.41L12 10.83l4.59 4.58L18 14z"
+}), 'ExpandLess'));
+
+/***/ }),
+
+/***/ "./node_modules/@mui/icons-material/esm/ExpandMore.js":
+/*!************************************************************!*\
+  !*** ./node_modules/@mui/icons-material/esm/ExpandMore.js ***!
+  \************************************************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "default": () => (__WEBPACK_DEFAULT_EXPORT__)
+/* harmony export */ });
+/* harmony import */ var _utils_createSvgIcon_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./utils/createSvgIcon.js */ "./node_modules/@mui/material/utils/createSvgIcon.js");
+/* harmony import */ var react_jsx_runtime__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! react/jsx-runtime */ "./node_modules/react/jsx-runtime.js");
+"use client";
+
+
+
+/* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = ((0,_utils_createSvgIcon_js__WEBPACK_IMPORTED_MODULE_0__["default"])(/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_1__.jsx)("path", {
+  d: "M16.59 8.59 12 13.17 7.41 8.59 6 10l6 6 6-6z"
+}), 'ExpandMore'));
 
 /***/ })
 
 }]);
-//# sourceMappingURL=lib_index_js.680a96ef0967fb68f169.js.map
+//# sourceMappingURL=lib_index_js.fc339602661ce83f9daa.js.map

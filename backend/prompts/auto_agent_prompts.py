@@ -176,6 +176,100 @@ JSON만 출력하세요.'''
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Adaptive Replanning 프롬프트 (계획 수정)
+# ═══════════════════════════════════════════════════════════════════════════
+
+ADAPTIVE_REPLAN_PROMPT = '''에러가 발생했습니다. 출력과 에러를 분석하여 계획을 수정하거나 새로운 접근법을 제시하세요.
+
+## 원래 요청
+
+{original_request}
+
+## 현재까지 실행된 단계
+
+{executed_steps}
+
+## 실패한 단계
+
+- 단계 번호: {failed_step_number}
+- 설명: {failed_step_description}
+- 실행된 코드:
+```python
+{failed_code}
+```
+
+## 에러 정보
+
+- 오류 유형: {error_type}
+- 오류 메시지: {error_message}
+- 트레이스백:
+```
+{traceback}
+```
+
+## 실행 출력 (stdout/stderr)
+
+```
+{execution_output}
+```
+
+## 분석 지침
+
+1. **근본 원인 분석**: 단순 코드 버그인가, 접근법 자체의 문제인가?
+2. **필요한 선행 작업**: 누락된 import, 데이터 변환, 환경 설정이 있는가?
+3. **대안적 접근법**: 다른 라이브러리나 방법을 사용해야 하는가?
+
+## 결정 옵션
+
+1. **refine**: 같은 접근법으로 코드만 수정 (단순 버그)
+2. **insert_steps**: 현재 단계 전에 필요한 단계 추가 (선행 작업 필요)
+3. **replace_step**: 현재 단계를 완전히 다른 접근법으로 교체
+4. **replan_remaining**: 남은 모든 단계를 새로 계획
+
+## 출력 형식 (JSON)
+
+```json
+{{
+  "analysis": {{
+    "root_cause": "근본 원인 분석 (한국어)",
+    "is_approach_problem": true/false,
+    "missing_prerequisites": ["누락된 선행 작업들"]
+  }},
+  "decision": "refine | insert_steps | replace_step | replan_remaining",
+  "reasoning": "결정 이유 설명 (한국어)",
+  "changes": {{
+    // decision이 "refine"인 경우:
+    "refined_code": "수정된 코드",
+
+    // decision이 "insert_steps"인 경우:
+    "new_steps": [
+      {{
+        "description": "새 단계 설명",
+        "toolCalls": [{{"tool": "jupyter_cell", "parameters": {{"code": "코드"}}}}]
+      }}
+    ],
+
+    // decision이 "replace_step"인 경우:
+    "replacement": {{
+      "description": "새 단계 설명",
+      "toolCalls": [{{"tool": "jupyter_cell", "parameters": {{"code": "코드"}}}}]
+    }},
+
+    // decision이 "replan_remaining"인 경우:
+    "new_plan": [
+      {{
+        "description": "단계 설명",
+        "toolCalls": [{{"tool": "jupyter_cell", "parameters": {{"code": "코드"}}}}]
+      }}
+    ]
+  }}
+}}
+```
+
+JSON만 출력하세요.'''
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # 최종 답변 생성 프롬프트
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -275,4 +369,46 @@ def format_final_answer_prompt(
         original_request=original_request,
         executed_steps=steps_text if steps_text else "없음",
         outputs=outputs_text if outputs_text else "없음"
+    )
+
+
+def format_replan_prompt(
+    original_request: str,
+    executed_steps: list,
+    failed_step: dict,
+    error_info: dict,
+    execution_output: str = ""
+) -> str:
+    """Adaptive Replanning 프롬프트 포맷팅"""
+    # 실행된 단계 텍스트
+    executed_text = "\n".join([
+        f"- Step {s.get('stepNumber', i+1)}: {s.get('description', '완료')} ✅"
+        for i, s in enumerate(executed_steps)
+    ]) if executed_steps else "없음"
+
+    # 실패한 코드 추출
+    failed_code = ""
+    if failed_step.get('toolCalls'):
+        for tc in failed_step['toolCalls']:
+            if tc.get('tool') == 'jupyter_cell':
+                failed_code = tc.get('parameters', {}).get('code', '')
+                break
+
+    # traceback 처리
+    traceback_data = error_info.get('traceback', [])
+    if isinstance(traceback_data, list):
+        traceback_str = '\n'.join(traceback_data)
+    else:
+        traceback_str = str(traceback_data) if traceback_data else ''
+
+    return ADAPTIVE_REPLAN_PROMPT.format(
+        original_request=original_request,
+        executed_steps=executed_text,
+        failed_step_number=failed_step.get('stepNumber', '?'),
+        failed_step_description=failed_step.get('description', ''),
+        failed_code=failed_code,
+        error_type=error_info.get('type', 'runtime'),
+        error_message=error_info.get('message', 'Unknown error'),
+        traceback=traceback_str,
+        execution_output=execution_output if execution_output else "없음"
     )

@@ -17,6 +17,8 @@ import {
   AutoAgentPlanResponse,
   AutoAgentRefineRequest,
   AutoAgentRefineResponse,
+  AutoAgentReplanRequest,
+  AutoAgentReplanResponse,
   ExecutionPlan,
   PlanStep,
   ExecutionError,
@@ -26,8 +28,24 @@ import {
 export class ApiService {
   private baseUrl: string;
 
-  constructor(baseUrl: string = '/user/453467/pl2wadmprj/hdsp-agent') {
-    this.baseUrl = baseUrl;
+  constructor(baseUrl?: string) {
+    this.baseUrl = baseUrl || this.detectBaseUrl();
+  }
+
+  /**
+   * Detect base URL dynamically based on environment
+   * - JupyterHub: /user/{username}/{servername}/hdsp-agent
+   * - Local: /hdsp-agent
+   */
+  private detectBaseUrl(): string {
+    const pathname = window.location.pathname;
+    // JupyterHub pattern: /user/username/servername/lab/...
+    const hubMatch = pathname.match(/^(\/user\/[^/]+\/[^/]+)/);
+    if (hubMatch) {
+      return `${hubMatch[1]}/hdsp-agent`;
+    }
+    // Local JupyterLab
+    return '/hdsp-agent';
   }
 
   /**
@@ -320,6 +338,43 @@ export class ApiService {
 
     const result = await response.json();
     console.log('[ApiService] Refine API Success:', result);
+    return result;
+  }
+
+  /**
+   * Adaptive Replanning - 에러 분석 후 계획 재수립
+   */
+  async replanExecution(request: AutoAgentReplanRequest): Promise<AutoAgentReplanResponse> {
+    console.log('[ApiService] replanExecution request:', request);
+
+    const response = await fetch(`${this.baseUrl}/auto-agent/replan`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(request)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[ApiService] Replan API Error:', {
+        status: response.status,
+        statusText: response.statusText,
+        body: errorText,
+        url: `${this.baseUrl}/auto-agent/replan`
+      });
+
+      let errorMessage = '계획 재수립 실패';
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error || errorJson.message || errorMessage;
+      } catch (e) {
+        errorMessage = errorText || errorMessage;
+      }
+
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    console.log('[ApiService] Replan API Success:', result);
     return result;
   }
 

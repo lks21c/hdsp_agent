@@ -8,6 +8,7 @@
  */
 
 import type { NotebookPanel, Notebook } from '@jupyterlab/notebook';
+import { NotebookActions } from '@jupyterlab/notebook';
 import type { ISessionContext } from '@jupyterlab/apputils';
 import type { Cell, CodeCell, MarkdownCell } from '@jupyterlab/cells';
 import { CodeCellModel, MarkdownCellModel } from '@jupyterlab/cells';
@@ -151,7 +152,7 @@ export class ToolExecutor {
   }
 
   /**
-   * 코드 셀 생성
+   * 코드 셀 생성 (빈 셀이 있으면 재사용)
    */
   private async createCodeCell(code: string, insertAfter?: number): Promise<number> {
     const notebookContent = this.notebook.content;
@@ -161,14 +162,29 @@ export class ToolExecutor {
       throw new Error('Notebook model not available');
     }
 
-    // 삽입 위치 결정
+    // 노트북 맨 끝의 활성 셀이 빈 코드 셀이면 재사용 (첫 셀 생성 시에만)
+    const activeIndex = notebookContent.activeCellIndex;
+    const isAtEnd = activeIndex === model.cells.length - 1;
+    if (activeIndex >= 0 && insertAfter === undefined && isAtEnd) {
+      const activeCell = model.cells.get(activeIndex);
+      if (activeCell && activeCell.type === 'code') {
+        const source = activeCell.sharedModel.getSource().trim();
+        if (source === '') {
+          // 빈 셀 재사용
+          activeCell.sharedModel.setSource(code);
+          return activeIndex;
+        }
+      }
+    }
+
+    // 삽입 위치 결정: 항상 노트북 맨 끝에 추가 (순서 보장)
+    // insertAfter가 지정되면 그 다음 위치, 아니면 맨 끝
     let insertIndex: number;
     if (insertAfter !== undefined) {
       insertIndex = insertAfter + 1;
     } else {
-      // 기본: 현재 활성 셀 다음 또는 맨 끝
-      const activeIndex = notebookContent.activeCellIndex;
-      insertIndex = activeIndex >= 0 ? activeIndex + 1 : model.cells.length;
+      // 맨 끝에 추가하여 순서 보장
+      insertIndex = model.cells.length;
     }
 
     // 새 코드 셀 생성
@@ -195,13 +211,14 @@ export class ToolExecutor {
       throw new Error('Notebook model not available');
     }
 
-    // 삽입 위치 결정
+    // 삽입 위치 결정: 항상 노트북 맨 끝에 추가 (순서 보장)
+    // insertAfter가 지정되면 그 다음 위치, 아니면 맨 끝
     let insertIndex: number;
     if (insertAfter !== undefined) {
       insertIndex = insertAfter + 1;
     } else {
-      const activeIndex = notebookContent.activeCellIndex;
-      insertIndex = activeIndex >= 0 ? activeIndex + 1 : model.cells.length;
+      // 맨 끝에 추가하여 순서 보장
+      insertIndex = model.cells.length;
     }
 
     // 새 마크다운 셀 생성
@@ -216,6 +233,9 @@ export class ToolExecutor {
     if (cell && cell.rendered !== undefined) {
       cell.rendered = true;
     }
+
+    // 새 셀로 활성 셀 업데이트 (다음 셀이 이 셀 다음에 삽입되도록)
+    notebookContent.activeCellIndex = insertIndex;
 
     return insertIndex;
   }
@@ -236,6 +256,7 @@ export class ToolExecutor {
 
   /**
    * 셀 실행 및 결과 캡처
+   * NotebookActions.run()을 사용하여 정식으로 셀 실행 (execution_count 업데이트 포함)
    */
   private async executeCellAndCapture(cellIndex: number): Promise<ExecutionResult> {
     const notebookContent = this.notebook.content;
@@ -245,72 +266,61 @@ export class ToolExecutor {
       throw new Error(`Cell at index ${cellIndex} not found`);
     }
 
-    const code = cell.model.sharedModel.getSource();
-    const kernel = this.sessionContext.session?.kernel;
-
-    if (!kernel) {
-      throw new Error('Kernel not available');
-    }
-
     const startTime = Date.now();
 
-    return new Promise((resolve, reject) => {
-      const future = kernel.requestExecute({ code });
+    // 해당 셀 선택
+    notebookContent.activeCellIndex = cellIndex;
 
-      let stdout = '';
-      let stderr = '';
-      let result: any = null;
-      let error: ExecutionResult['error'] = undefined;
+    // NotebookActions.run()을 사용하여 정식 실행 (execution_count 업데이트됨)
+    const success = await NotebookActions.run(notebookContent, this.sessionContext);
 
-      future.onIOPub = (msg) => {
-        const msgType = msg.header.msg_type;
-        const content = msg.content as any;
+    // 실행 완료 후 결과 캡처
+    const executionTime = Date.now() - startTime;
 
-        switch (msgType) {
-          case 'stream':
-            if (content.name === 'stdout') {
-              stdout += content.text;
-            } else if (content.name === 'stderr') {
-              stderr += content.text;
-            }
-            break;
+    // 셀 출력 분석
+    let stdout = '';
+    let stderr = '';
+    let result: any = null;
+    let error: ExecutionResult['error'] = undefined;
 
-          case 'execute_result':
-            result = content.data;
-            break;
+    if (cell.model.outputs) {
+      for (let i = 0; i < cell.model.outputs.length; i++) {
+        const output = cell.model.outputs.get(i);
 
-          case 'display_data':
-            // 이미지나 다른 출력 형식 처리
-            if (!result) {
-              result = content.data;
-            }
-            break;
-
-          case 'error':
-            error = {
-              ename: content.ename,
-              evalue: content.evalue,
-              traceback: content.traceback,
-            };
-            break;
+        if (output.type === 'stream') {
+          const streamOutput = output as any;
+          if (streamOutput.name === 'stdout') {
+            stdout += streamOutput.text || '';
+          } else if (streamOutput.name === 'stderr') {
+            stderr += streamOutput.text || '';
+          }
+        } else if (output.type === 'execute_result' || output.type === 'display_data') {
+          const data = (output as any).data;
+          if (!result) {
+            result = data;
+          }
+        } else if (output.type === 'error') {
+          const errorOutput = output as any;
+          error = {
+            ename: errorOutput.ename,
+            evalue: errorOutput.evalue,
+            traceback: errorOutput.traceback,
+          };
         }
-      };
+      }
+    }
 
-      future.done.then((reply) => {
-        const status = (reply.content as any).status as 'ok' | 'error';
-        resolve({
-          status,
-          stdout,
-          stderr,
-          result,
-          error,
-          executionTime: Date.now() - startTime,
-          cellIndex,
-        });
-      }).catch((err) => {
-        reject(err);
-      });
-    });
+    const status = error ? 'error' : 'ok';
+
+    return {
+      status,
+      stdout,
+      stderr,
+      result,
+      error,
+      executionTime,
+      cellIndex,
+    };
   }
 
   /**

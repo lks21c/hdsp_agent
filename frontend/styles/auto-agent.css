@@ -149,6 +149,89 @@
   border-left-color: var(--jp-warn-color1);
 }
 
+.aa-status--replanning {
+  border-left-color: var(--jp-info-color1, #2196f3);
+  background: rgba(33, 150, 243, 0.06);
+}
+
+/* Replanning indicator for step */
+.aa-step--replanning {
+  background: rgba(33, 150, 243, 0.08);
+  border-left: 2px solid var(--jp-info-color1, #2196f3);
+}
+
+.aa-step--replanning .aa-step-indicator {
+  color: var(--jp-info-color1, #2196f3);
+}
+
+.aa-step-replanning {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--jp-info-color1, #2196f3);
+  margin-left: 8px;
+  animation: aa-pulse 1.5s ease-in-out infinite;
+}
+
+/* Spinning icon for replanning */
+.aa-icon-spin {
+  animation: aa-spin 1s linear infinite;
+}
+
+/* Plan replanning state */
+.aa-plan--replanning {
+  border-color: var(--jp-info-color1, #2196f3);
+}
+
+.aa-plan--replanning .aa-plan-header {
+  background: rgba(33, 150, 243, 0.1);
+}
+
+.aa-plan--replanning .aa-plan-title {
+  color: var(--jp-info-color1, #2196f3);
+}
+
+/* Plan changed indicator */
+.aa-plan-changed {
+  margin-left: 6px;
+  font-weight: 600;
+  color: var(--jp-info-color1, #2196f3);
+}
+
+/* New step styles */
+.aa-step--new {
+  background: rgba(34, 197, 94, 0.06);
+  border-left: 2px solid var(--jp-success-color1, #22c55e);
+  animation: aa-slide-in 0.3s ease-out;
+}
+
+.aa-step-desc--new {
+  color: var(--jp-success-color1, #22c55e);
+}
+
+.aa-new-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  color: white;
+  background: var(--jp-success-color1, #22c55e);
+  padding: 1px 4px;
+  border-radius: 3px;
+  margin-right: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+@keyframes aa-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 .aa-status--completed {
   border-left-color: var(--jp-success-color1);
 }
@@ -213,6 +296,19 @@
   font-size: 12px;
   color: var(--jp-ui-font-color3);
   font-variant-numeric: tabular-nums;
+}
+
+/* Progress Bar */
+.aa-progress-bar {
+  height: 3px;
+  background: var(--jp-border-color2);
+  overflow: hidden;
+}
+
+.aa-progress-fill {
+  height: 100%;
+  background: var(--jp-brand-color1);
+  transition: width 0.3s ease;
 }
 
 .aa-plan-steps {
@@ -298,6 +394,27 @@
   color: var(--jp-ui-font-color1);
   line-height: 1.4;
   margin-bottom: 4px;
+  transition: all 0.2s ease;
+}
+
+/* Completed step: strikethrough effect */
+.aa-step-desc--done {
+  text-decoration: line-through;
+  color: var(--jp-ui-font-color3);
+}
+
+/* Currently executing step indicator */
+.aa-step-executing {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--jp-brand-color1);
+  margin-left: 8px;
+  animation: aa-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes aa-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 .aa-step-tools {
@@ -314,6 +431,13 @@
   padding: 2px 6px;
   border-radius: 3px;
   font-family: var(--jp-code-font-family);
+  transition: all 0.2s ease;
+}
+
+/* Completed tool tag */
+.aa-tool-tag--done {
+  text-decoration: line-through;
+  opacity: 0.6;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -426,4 +550,124 @@
 
 .aa-panel::-webkit-scrollbar-thumb:hover {
   background: var(--jp-border-color1);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Cell Execution Highlight (노트북 내 셀)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* 현재 실행 중인 셀 하이라이트 */
+.aa-cell-executing {
+  position: relative;
+  animation: aa-cell-pulse 1.5s ease-in-out infinite;
+}
+
+.aa-cell-executing::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -4px;
+  width: 4px;
+  height: 100%;
+  background: var(--jp-brand-color1);
+  border-radius: 2px;
+  animation: aa-glow 1.5s ease-in-out infinite;
+}
+
+@keyframes aa-cell-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.15);
+  }
+}
+
+@keyframes aa-glow {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Speed Control
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.aa-speed-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--jp-layout-color2);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.aa-speed-label {
+  color: var(--jp-ui-font-color2);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.aa-speed-select {
+  flex: 1;
+  padding: 4px 8px;
+  border: 1px solid var(--jp-border-color2);
+  border-radius: 4px;
+  background: var(--jp-layout-color0);
+  color: var(--jp-ui-font-color1);
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+}
+
+.aa-speed-select:focus {
+  border-color: var(--jp-brand-color1);
+}
+
+.aa-speed-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Step-by-step 모드 다음 버튼 */
+.aa-btn--next {
+  background: var(--jp-brand-color1);
+  color: white;
+  animation: aa-pulse-btn 1.5s ease-in-out infinite;
+}
+
+.aa-btn--next:hover:not(:disabled) {
+  background: var(--jp-brand-color0);
+}
+
+@keyframes aa-pulse-btn {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+}
+
+/* 일시정지 상태 표시 */
+.aa-paused-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid var(--jp-brand-color1);
+  border-radius: 6px;
+  color: var(--jp-brand-color1);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.aa-paused-icon {
+  width: 16px;
+  height: 16px;
 }

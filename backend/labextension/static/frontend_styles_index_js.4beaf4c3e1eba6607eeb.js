@@ -1,5 +1,72 @@
 "use strict";
-(self["webpackChunk_hdsp_agent_extension"] = self["webpackChunk_hdsp_agent_extension"] || []).push([["style_index_css"],{
+(self["webpackChunk_hdsp_agent_extension"] = self["webpackChunk_hdsp_agent_extension"] || []).push([["frontend_styles_index_js"],{
+
+/***/ "./frontend/styles/index.css":
+/*!***********************************!*\
+  !*** ./frontend/styles/index.css ***!
+  \***********************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "default": () => (__WEBPACK_DEFAULT_EXPORT__)
+/* harmony export */ });
+/* harmony import */ var _node_modules_style_loader_dist_runtime_injectStylesIntoStyleTag_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! !../../node_modules/style-loader/dist/runtime/injectStylesIntoStyleTag.js */ "./node_modules/style-loader/dist/runtime/injectStylesIntoStyleTag.js");
+/* harmony import */ var _node_modules_style_loader_dist_runtime_injectStylesIntoStyleTag_js__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(_node_modules_style_loader_dist_runtime_injectStylesIntoStyleTag_js__WEBPACK_IMPORTED_MODULE_0__);
+/* harmony import */ var _node_modules_style_loader_dist_runtime_styleDomAPI_js__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! !../../node_modules/style-loader/dist/runtime/styleDomAPI.js */ "./node_modules/style-loader/dist/runtime/styleDomAPI.js");
+/* harmony import */ var _node_modules_style_loader_dist_runtime_styleDomAPI_js__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(_node_modules_style_loader_dist_runtime_styleDomAPI_js__WEBPACK_IMPORTED_MODULE_1__);
+/* harmony import */ var _node_modules_style_loader_dist_runtime_insertBySelector_js__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! !../../node_modules/style-loader/dist/runtime/insertBySelector.js */ "./node_modules/style-loader/dist/runtime/insertBySelector.js");
+/* harmony import */ var _node_modules_style_loader_dist_runtime_insertBySelector_js__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__webpack_require__.n(_node_modules_style_loader_dist_runtime_insertBySelector_js__WEBPACK_IMPORTED_MODULE_2__);
+/* harmony import */ var _node_modules_style_loader_dist_runtime_setAttributesWithoutAttributes_js__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! !../../node_modules/style-loader/dist/runtime/setAttributesWithoutAttributes.js */ "./node_modules/style-loader/dist/runtime/setAttributesWithoutAttributes.js");
+/* harmony import */ var _node_modules_style_loader_dist_runtime_setAttributesWithoutAttributes_js__WEBPACK_IMPORTED_MODULE_3___default = /*#__PURE__*/__webpack_require__.n(_node_modules_style_loader_dist_runtime_setAttributesWithoutAttributes_js__WEBPACK_IMPORTED_MODULE_3__);
+/* harmony import */ var _node_modules_style_loader_dist_runtime_insertStyleElement_js__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! !../../node_modules/style-loader/dist/runtime/insertStyleElement.js */ "./node_modules/style-loader/dist/runtime/insertStyleElement.js");
+/* harmony import */ var _node_modules_style_loader_dist_runtime_insertStyleElement_js__WEBPACK_IMPORTED_MODULE_4___default = /*#__PURE__*/__webpack_require__.n(_node_modules_style_loader_dist_runtime_insertStyleElement_js__WEBPACK_IMPORTED_MODULE_4__);
+/* harmony import */ var _node_modules_style_loader_dist_runtime_styleTagTransform_js__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! !../../node_modules/style-loader/dist/runtime/styleTagTransform.js */ "./node_modules/style-loader/dist/runtime/styleTagTransform.js");
+/* harmony import */ var _node_modules_style_loader_dist_runtime_styleTagTransform_js__WEBPACK_IMPORTED_MODULE_5___default = /*#__PURE__*/__webpack_require__.n(_node_modules_style_loader_dist_runtime_styleTagTransform_js__WEBPACK_IMPORTED_MODULE_5__);
+/* harmony import */ var _node_modules_css_loader_dist_cjs_js_index_css__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(/*! !!../../node_modules/css-loader/dist/cjs.js!./index.css */ "./node_modules/css-loader/dist/cjs.js!./frontend/styles/index.css");
+
+      
+      
+      
+      
+      
+      
+      
+      
+      
+
+var options = {};
+
+options.styleTagTransform = (_node_modules_style_loader_dist_runtime_styleTagTransform_js__WEBPACK_IMPORTED_MODULE_5___default());
+options.setAttributes = (_node_modules_style_loader_dist_runtime_setAttributesWithoutAttributes_js__WEBPACK_IMPORTED_MODULE_3___default());
+
+      options.insert = _node_modules_style_loader_dist_runtime_insertBySelector_js__WEBPACK_IMPORTED_MODULE_2___default().bind(null, "head");
+    
+options.domAPI = (_node_modules_style_loader_dist_runtime_styleDomAPI_js__WEBPACK_IMPORTED_MODULE_1___default());
+options.insertStyleElement = (_node_modules_style_loader_dist_runtime_insertStyleElement_js__WEBPACK_IMPORTED_MODULE_4___default());
+
+var update = _node_modules_style_loader_dist_runtime_injectStylesIntoStyleTag_js__WEBPACK_IMPORTED_MODULE_0___default()(_node_modules_css_loader_dist_cjs_js_index_css__WEBPACK_IMPORTED_MODULE_6__["default"], options);
+
+
+
+
+       /* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (_node_modules_css_loader_dist_cjs_js_index_css__WEBPACK_IMPORTED_MODULE_6__["default"] && _node_modules_css_loader_dist_cjs_js_index_css__WEBPACK_IMPORTED_MODULE_6__["default"].locals ? _node_modules_css_loader_dist_cjs_js_index_css__WEBPACK_IMPORTED_MODULE_6__["default"].locals : undefined);
+
+
+/***/ }),
+
+/***/ "./frontend/styles/index.js":
+/*!**********************************!*\
+  !*** ./frontend/styles/index.js ***!
+  \**********************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony import */ var _index_css__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./index.css */ "./frontend/styles/index.css");
+
+
+
+/***/ }),
 
 /***/ "./node_modules/css-loader/dist/cjs.js!./frontend/styles/agent-panel.css":
 /*!*******************************************************************************!*\
@@ -952,6 +1019,89 @@ ___CSS_LOADER_EXPORT___.push([module.id, `/**
   border-left-color: var(--jp-warn-color1);
 }
 
+.aa-status--replanning {
+  border-left-color: var(--jp-info-color1, #2196f3);
+  background: rgba(33, 150, 243, 0.06);
+}
+
+/* Replanning indicator for step */
+.aa-step--replanning {
+  background: rgba(33, 150, 243, 0.08);
+  border-left: 2px solid var(--jp-info-color1, #2196f3);
+}
+
+.aa-step--replanning .aa-step-indicator {
+  color: var(--jp-info-color1, #2196f3);
+}
+
+.aa-step-replanning {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--jp-info-color1, #2196f3);
+  margin-left: 8px;
+  animation: aa-pulse 1.5s ease-in-out infinite;
+}
+
+/* Spinning icon for replanning */
+.aa-icon-spin {
+  animation: aa-spin 1s linear infinite;
+}
+
+/* Plan replanning state */
+.aa-plan--replanning {
+  border-color: var(--jp-info-color1, #2196f3);
+}
+
+.aa-plan--replanning .aa-plan-header {
+  background: rgba(33, 150, 243, 0.1);
+}
+
+.aa-plan--replanning .aa-plan-title {
+  color: var(--jp-info-color1, #2196f3);
+}
+
+/* Plan changed indicator */
+.aa-plan-changed {
+  margin-left: 6px;
+  font-weight: 600;
+  color: var(--jp-info-color1, #2196f3);
+}
+
+/* New step styles */
+.aa-step--new {
+  background: rgba(34, 197, 94, 0.06);
+  border-left: 2px solid var(--jp-success-color1, #22c55e);
+  animation: aa-slide-in 0.3s ease-out;
+}
+
+.aa-step-desc--new {
+  color: var(--jp-success-color1, #22c55e);
+}
+
+.aa-new-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  color: white;
+  background: var(--jp-success-color1, #22c55e);
+  padding: 1px 4px;
+  border-radius: 3px;
+  margin-right: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+@keyframes aa-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 .aa-status--completed {
   border-left-color: var(--jp-success-color1);
 }
@@ -1016,6 +1166,19 @@ ___CSS_LOADER_EXPORT___.push([module.id, `/**
   font-size: 12px;
   color: var(--jp-ui-font-color3);
   font-variant-numeric: tabular-nums;
+}
+
+/* Progress Bar */
+.aa-progress-bar {
+  height: 3px;
+  background: var(--jp-border-color2);
+  overflow: hidden;
+}
+
+.aa-progress-fill {
+  height: 100%;
+  background: var(--jp-brand-color1);
+  transition: width 0.3s ease;
 }
 
 .aa-plan-steps {
@@ -1101,6 +1264,27 @@ ___CSS_LOADER_EXPORT___.push([module.id, `/**
   color: var(--jp-ui-font-color1);
   line-height: 1.4;
   margin-bottom: 4px;
+  transition: all 0.2s ease;
+}
+
+/* Completed step: strikethrough effect */
+.aa-step-desc--done {
+  text-decoration: line-through;
+  color: var(--jp-ui-font-color3);
+}
+
+/* Currently executing step indicator */
+.aa-step-executing {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--jp-brand-color1);
+  margin-left: 8px;
+  animation: aa-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes aa-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 .aa-step-tools {
@@ -1117,6 +1301,13 @@ ___CSS_LOADER_EXPORT___.push([module.id, `/**
   padding: 2px 6px;
   border-radius: 3px;
   font-family: var(--jp-code-font-family);
+  transition: all 0.2s ease;
+}
+
+/* Completed tool tag */
+.aa-tool-tag--done {
+  text-decoration: line-through;
+  opacity: 0.6;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1230,7 +1421,127 @@ ___CSS_LOADER_EXPORT___.push([module.id, `/**
 .aa-panel::-webkit-scrollbar-thumb:hover {
   background: var(--jp-border-color1);
 }
-`, "",{"version":3,"sources":["webpack://./frontend/styles/auto-agent.css"],"names":[],"mappings":"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","sourcesContent":["/**\n * Auto-Agent Panel - Claude/Cursor Style\n * Minimal, matte design\n */\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Panel Container\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-panel {\n  display: flex;\n  flex-direction: column;\n  gap: 12px;\n  padding: 16px;\n  height: 100%;\n  overflow-y: auto;\n  background: var(--jp-layout-color1);\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Empty State\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-empty {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 48px 16px;\n  color: var(--jp-ui-font-color3);\n}\n\n.aa-empty-text {\n  font-size: 13px;\n  font-weight: 500;\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Input Section\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-input-section {\n  display: flex;\n  flex-direction: column;\n  gap: 8px;\n}\n\n.aa-textarea {\n  width: 100%;\n  min-height: 72px;\n  max-height: 180px;\n  padding: 12px;\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 6px;\n  background: var(--jp-layout-color0);\n  color: var(--jp-ui-font-color1);\n  font-family: var(--jp-ui-font-family);\n  font-size: 13px;\n  line-height: 1.5;\n  resize: vertical;\n  outline: none;\n  transition: border-color 0.15s ease;\n}\n\n.aa-textarea:focus {\n  border-color: var(--jp-brand-color1);\n}\n\n.aa-textarea:disabled {\n  opacity: 0.5;\n  cursor: not-allowed;\n}\n\n.aa-textarea::placeholder {\n  color: var(--jp-ui-font-color3);\n}\n\n/* Actions */\n.aa-actions {\n  display: flex;\n  gap: 8px;\n}\n\n.aa-btn {\n  padding: 8px 16px;\n  border: none;\n  border-radius: 6px;\n  font-size: 13px;\n  font-weight: 500;\n  cursor: pointer;\n  transition: background 0.15s ease, opacity 0.15s ease;\n}\n\n.aa-btn:disabled {\n  opacity: 0.4;\n  cursor: not-allowed;\n}\n\n.aa-btn--primary {\n  background: var(--jp-brand-color1);\n  color: white;\n}\n\n.aa-btn--primary:hover:not(:disabled) {\n  background: var(--jp-brand-color0);\n}\n\n.aa-btn--secondary {\n  background: var(--jp-layout-color2);\n  color: var(--jp-ui-font-color1);\n}\n\n.aa-btn--secondary:hover:not(:disabled) {\n  background: var(--jp-layout-color3);\n}\n\n.aa-btn--cancel {\n  background: transparent;\n  color: var(--jp-error-color1);\n  border: 1px solid var(--jp-error-color1);\n}\n\n.aa-btn--cancel:hover {\n  background: var(--jp-error-color1);\n  color: white;\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Status Indicator\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-status {\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  padding: 10px 12px;\n  border-radius: 6px;\n  font-size: 13px;\n  background: var(--jp-layout-color2);\n  border-left: 3px solid var(--jp-border-color1);\n}\n\n.aa-status--planning,\n.aa-status--executing,\n.aa-status--tool_calling {\n  border-left-color: var(--jp-brand-color1);\n}\n\n.aa-status--self_healing {\n  border-left-color: var(--jp-warn-color1);\n}\n\n.aa-status--completed {\n  border-left-color: var(--jp-success-color1);\n}\n\n.aa-status--failed {\n  border-left-color: var(--jp-error-color1);\n}\n\n.aa-status-spinner {\n  width: 14px;\n  height: 14px;\n  border: 2px solid var(--jp-border-color2);\n  border-top-color: var(--jp-brand-color1);\n  border-radius: 50%;\n  animation: aa-spin 0.8s linear infinite;\n}\n\n.aa-status-text {\n  flex: 1;\n  color: var(--jp-ui-font-color1);\n}\n\n.aa-status-error {\n  font-size: 12px;\n  color: var(--jp-error-color1);\n  margin-left: auto;\n}\n\n@keyframes aa-spin {\n  to { transform: rotate(360deg); }\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Execution Plan\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-plan {\n  background: var(--jp-layout-color0);\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 6px;\n  overflow: hidden;\n}\n\n.aa-plan-header {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  padding: 10px 12px;\n  background: var(--jp-layout-color2);\n  border-bottom: 1px solid var(--jp-border-color2);\n}\n\n.aa-plan-title {\n  font-size: 12px;\n  font-weight: 600;\n  color: var(--jp-ui-font-color2);\n  text-transform: uppercase;\n  letter-spacing: 0.5px;\n}\n\n.aa-plan-progress {\n  font-size: 12px;\n  color: var(--jp-ui-font-color3);\n  font-variant-numeric: tabular-nums;\n}\n\n.aa-plan-steps {\n  display: flex;\n  flex-direction: column;\n}\n\n.aa-step {\n  display: flex;\n  align-items: flex-start;\n  gap: 12px;\n  padding: 10px 12px;\n  border-bottom: 1px solid var(--jp-border-color3);\n  transition: background 0.15s ease;\n}\n\n.aa-step:last-child {\n  border-bottom: none;\n}\n\n.aa-step--current {\n  background: rgba(99, 102, 241, 0.06);\n}\n\n.aa-step--completed {\n  opacity: 0.7;\n}\n\n.aa-step--failed {\n  background: rgba(239, 68, 68, 0.06);\n}\n\n.aa-step--pending {\n  opacity: 0.5;\n}\n\n.aa-step-indicator {\n  width: 20px;\n  height: 20px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n  margin-top: 1px;\n}\n\n.aa-step-indicator svg {\n  width: 14px;\n  height: 14px;\n}\n\n.aa-step--completed .aa-step-indicator {\n  color: var(--jp-success-color1);\n}\n\n.aa-step--failed .aa-step-indicator {\n  color: var(--jp-error-color1);\n}\n\n.aa-step-spinner {\n  width: 14px;\n  height: 14px;\n  border: 2px solid var(--jp-border-color2);\n  border-top-color: var(--jp-brand-color1);\n  border-radius: 50%;\n  animation: aa-spin 0.8s linear infinite;\n}\n\n.aa-step-number {\n  font-size: 11px;\n  font-weight: 600;\n  color: var(--jp-ui-font-color3);\n}\n\n.aa-step-content {\n  flex: 1;\n  min-width: 0;\n}\n\n.aa-step-desc {\n  display: block;\n  font-size: 13px;\n  color: var(--jp-ui-font-color1);\n  line-height: 1.4;\n  margin-bottom: 4px;\n}\n\n.aa-step-tools {\n  display: flex;\n  gap: 6px;\n  flex-wrap: wrap;\n}\n\n.aa-tool-tag {\n  font-size: 10px;\n  font-weight: 500;\n  color: var(--jp-ui-font-color3);\n  background: var(--jp-layout-color2);\n  padding: 2px 6px;\n  border-radius: 3px;\n  font-family: var(--jp-code-font-family);\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Result Section\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-result {\n  padding: 12px;\n  border-radius: 6px;\n  border: 1px solid var(--jp-border-color2);\n}\n\n.aa-result--success {\n  border-left: 3px solid var(--jp-success-color1);\n  background: var(--jp-layout-color0);\n}\n\n.aa-result--error {\n  border-left: 3px solid var(--jp-error-color1);\n  background: var(--jp-layout-color0);\n}\n\n.aa-result-header {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  margin-bottom: 8px;\n}\n\n.aa-result-title {\n  font-size: 13px;\n  font-weight: 600;\n  color: var(--jp-ui-font-color1);\n}\n\n.aa-result--success .aa-result-title {\n  color: var(--jp-success-color1);\n}\n\n.aa-result--error .aa-result-title {\n  color: var(--jp-error-color1);\n}\n\n.aa-result-time {\n  font-size: 11px;\n  color: var(--jp-ui-font-color3);\n  font-variant-numeric: tabular-nums;\n}\n\n.aa-result-message {\n  font-size: 13px;\n  color: var(--jp-ui-font-color1);\n  line-height: 1.5;\n  margin: 0 0 8px 0;\n}\n\n.aa-result-error {\n  font-size: 12px;\n  color: var(--jp-error-color1);\n  line-height: 1.4;\n  margin: 0 0 8px 0;\n  word-break: break-word;\n}\n\n.aa-result-stats {\n  display: flex;\n  gap: 16px;\n  font-size: 11px;\n  color: var(--jp-ui-font-color3);\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Hint Section\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-hint {\n  padding: 16px;\n  text-align: center;\n}\n\n.aa-hint p {\n  margin: 0;\n  font-size: 13px;\n  color: var(--jp-ui-font-color2);\n  line-height: 1.5;\n}\n\n.aa-hint-sub {\n  margin-top: 4px !important;\n  font-size: 11px !important;\n  color: var(--jp-ui-font-color3) !important;\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Scrollbar\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-panel::-webkit-scrollbar {\n  width: 6px;\n}\n\n.aa-panel::-webkit-scrollbar-track {\n  background: transparent;\n}\n\n.aa-panel::-webkit-scrollbar-thumb {\n  background: var(--jp-border-color2);\n  border-radius: 3px;\n}\n\n.aa-panel::-webkit-scrollbar-thumb:hover {\n  background: var(--jp-border-color1);\n}\n"],"sourceRoot":""}]);
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Cell Execution Highlight (노트북 내 셀)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* 현재 실행 중인 셀 하이라이트 */
+.aa-cell-executing {
+  position: relative;
+  animation: aa-cell-pulse 1.5s ease-in-out infinite;
+}
+
+.aa-cell-executing::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -4px;
+  width: 4px;
+  height: 100%;
+  background: var(--jp-brand-color1);
+  border-radius: 2px;
+  animation: aa-glow 1.5s ease-in-out infinite;
+}
+
+@keyframes aa-cell-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.15);
+  }
+}
+
+@keyframes aa-glow {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Speed Control
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.aa-speed-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--jp-layout-color2);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.aa-speed-label {
+  color: var(--jp-ui-font-color2);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.aa-speed-select {
+  flex: 1;
+  padding: 4px 8px;
+  border: 1px solid var(--jp-border-color2);
+  border-radius: 4px;
+  background: var(--jp-layout-color0);
+  color: var(--jp-ui-font-color1);
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+}
+
+.aa-speed-select:focus {
+  border-color: var(--jp-brand-color1);
+}
+
+.aa-speed-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Step-by-step 모드 다음 버튼 */
+.aa-btn--next {
+  background: var(--jp-brand-color1);
+  color: white;
+  animation: aa-pulse-btn 1.5s ease-in-out infinite;
+}
+
+.aa-btn--next:hover:not(:disabled) {
+  background: var(--jp-brand-color0);
+}
+
+@keyframes aa-pulse-btn {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+}
+
+/* 일시정지 상태 표시 */
+.aa-paused-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid var(--jp-brand-color1);
+  border-radius: 6px;
+  color: var(--jp-brand-color1);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.aa-paused-icon {
+  width: 16px;
+  height: 16px;
+}
+`, "",{"version":3,"sources":["webpack://./frontend/styles/auto-agent.css"],"names":[],"mappings":"AAAA;;;EAGE;;AAEF;;gFAEgF;;AAEhF;EACE,aAAa;EACb,sBAAsB;EACtB,SAAS;EACT,aAAa;EACb,YAAY;EACZ,gBAAgB;EAChB,mCAAmC;AACrC;;AAEA;;gFAEgF;;AAEhF;EACE,aAAa;EACb,mBAAmB;EACnB,uBAAuB;EACvB,kBAAkB;EAClB,+BAA+B;AACjC;;AAEA;EACE,eAAe;EACf,gBAAgB;AAClB;;AAEA;;gFAEgF;;AAEhF;EACE,aAAa;EACb,sBAAsB;EACtB,QAAQ;AACV;;AAEA;EACE,WAAW;EACX,gBAAgB;EAChB,iBAAiB;EACjB,aAAa;EACb,yCAAyC;EACzC,kBAAkB;EAClB,mCAAmC;EACnC,+BAA+B;EAC/B,qCAAqC;EACrC,eAAe;EACf,gBAAgB;EAChB,gBAAgB;EAChB,aAAa;EACb,mCAAmC;AACrC;;AAEA;EACE,oCAAoC;AACtC;;AAEA;EACE,YAAY;EACZ,mBAAmB;AACrB;;AAEA;EACE,+BAA+B;AACjC;;AAEA,YAAY;AACZ;EACE,aAAa;EACb,QAAQ;AACV;;AAEA;EACE,iBAAiB;EACjB,YAAY;EACZ,kBAAkB;EAClB,eAAe;EACf,gBAAgB;EAChB,eAAe;EACf,qDAAqD;AACvD;;AAEA;EACE,YAAY;EACZ,mBAAmB;AACrB;;AAEA;EACE,kCAAkC;EAClC,YAAY;AACd;;AAEA;EACE,kCAAkC;AACpC;;AAEA;EACE,mCAAmC;EACnC,+BAA+B;AACjC;;AAEA;EACE,mCAAmC;AACrC;;AAEA;EACE,uBAAuB;EACvB,6BAA6B;EAC7B,wCAAwC;AAC1C;;AAEA;EACE,kCAAkC;EAClC,YAAY;AACd;;AAEA;;gFAEgF;;AAEhF;EACE,aAAa;EACb,mBAAmB;EACnB,SAAS;EACT,kBAAkB;EAClB,kBAAkB;EAClB,eAAe;EACf,mCAAmC;EACnC,8CAA8C;AAChD;;AAEA;;;EAGE,yCAAyC;AAC3C;;AAEA;EACE,wCAAwC;AAC1C;;AAEA;EACE,iDAAiD;EACjD,oCAAoC;AACtC;;AAEA,kCAAkC;AAClC;EACE,oCAAoC;EACpC,qDAAqD;AACvD;;AAEA;EACE,qCAAqC;AACvC;;AAEA;EACE,qBAAqB;EACrB,eAAe;EACf,qCAAqC;EACrC,gBAAgB;EAChB,6CAA6C;AAC/C;;AAEA,iCAAiC;AACjC;EACE,qCAAqC;AACvC;;AAEA,0BAA0B;AAC1B;EACE,4CAA4C;AAC9C;;AAEA;EACE,mCAAmC;AACrC;;AAEA;EACE,qCAAqC;AACvC;;AAEA,2BAA2B;AAC3B;EACE,gBAAgB;EAChB,gBAAgB;EAChB,qCAAqC;AACvC;;AAEA,oBAAoB;AACpB;EACE,mCAAmC;EACnC,wDAAwD;EACxD,oCAAoC;AACtC;;AAEA;EACE,wCAAwC;AAC1C;;AAEA;EACE,qBAAqB;EACrB,cAAc;EACd,gBAAgB;EAChB,YAAY;EACZ,6CAA6C;EAC7C,gBAAgB;EAChB,kBAAkB;EAClB,iBAAiB;EACjB,yBAAyB;EACzB,qBAAqB;AACvB;;AAEA;EACE;IACE,UAAU;IACV,4BAA4B;EAC9B;EACA;IACE,UAAU;IACV,wBAAwB;EAC1B;AACF;;AAEA;EACE,2CAA2C;AAC7C;;AAEA;EACE,yCAAyC;AAC3C;;AAEA;EACE,WAAW;EACX,YAAY;EACZ,yCAAyC;EACzC,wCAAwC;EACxC,kBAAkB;EAClB,uCAAuC;AACzC;;AAEA;EACE,OAAO;EACP,+BAA+B;AACjC;;AAEA;EACE,eAAe;EACf,6BAA6B;EAC7B,iBAAiB;AACnB;;AAEA;EACE,KAAK,yBAAyB,EAAE;AAClC;;AAEA;;gFAEgF;;AAEhF;EACE,mCAAmC;EACnC,yCAAyC;EACzC,kBAAkB;EAClB,gBAAgB;AAClB;;AAEA;EACE,aAAa;EACb,8BAA8B;EAC9B,mBAAmB;EACnB,kBAAkB;EAClB,mCAAmC;EACnC,gDAAgD;AAClD;;AAEA;EACE,eAAe;EACf,gBAAgB;EAChB,+BAA+B;EAC/B,yBAAyB;EACzB,qBAAqB;AACvB;;AAEA;EACE,eAAe;EACf,+BAA+B;EAC/B,kCAAkC;AACpC;;AAEA,iBAAiB;AACjB;EACE,WAAW;EACX,mCAAmC;EACnC,gBAAgB;AAClB;;AAEA;EACE,YAAY;EACZ,kCAAkC;EAClC,2BAA2B;AAC7B;;AAEA;EACE,aAAa;EACb,sBAAsB;AACxB;;AAEA;EACE,aAAa;EACb,uBAAuB;EACvB,SAAS;EACT,kBAAkB;EAClB,gDAAgD;EAChD,iCAAiC;AACnC;;AAEA;EACE,mBAAmB;AACrB;;AAEA;EACE,oCAAoC;AACtC;;AAEA;EACE,YAAY;AACd;;AAEA;EACE,mCAAmC;AACrC;;AAEA;EACE,YAAY;AACd;;AAEA;EACE,WAAW;EACX,YAAY;EACZ,aAAa;EACb,mBAAmB;EACnB,uBAAuB;EACvB,cAAc;EACd,eAAe;AACjB;;AAEA;EACE,WAAW;EACX,YAAY;AACd;;AAEA;EACE,+BAA+B;AACjC;;AAEA;EACE,6BAA6B;AAC/B;;AAEA;EACE,WAAW;EACX,YAAY;EACZ,yCAAyC;EACzC,wCAAwC;EACxC,kBAAkB;EAClB,uCAAuC;AACzC;;AAEA;EACE,eAAe;EACf,gBAAgB;EAChB,+BAA+B;AACjC;;AAEA;EACE,OAAO;EACP,YAAY;AACd;;AAEA;EACE,cAAc;EACd,eAAe;EACf,+BAA+B;EAC/B,gBAAgB;EAChB,kBAAkB;EAClB,yBAAyB;AAC3B;;AAEA,yCAAyC;AACzC;EACE,6BAA6B;EAC7B,+BAA+B;AACjC;;AAEA,uCAAuC;AACvC;EACE,qBAAqB;EACrB,eAAe;EACf,6BAA6B;EAC7B,gBAAgB;EAChB,6CAA6C;AAC/C;;AAEA;EACE,WAAW,UAAU,EAAE;EACvB,MAAM,YAAY,EAAE;AACtB;;AAEA;EACE,aAAa;EACb,QAAQ;EACR,eAAe;AACjB;;AAEA;EACE,eAAe;EACf,gBAAgB;EAChB,+BAA+B;EAC/B,mCAAmC;EACnC,gBAAgB;EAChB,kBAAkB;EAClB,uCAAuC;EACvC,yBAAyB;AAC3B;;AAEA,uBAAuB;AACvB;EACE,6BAA6B;EAC7B,YAAY;AACd;;AAEA;;gFAEgF;;AAEhF;EACE,aAAa;EACb,kBAAkB;EAClB,yCAAyC;AAC3C;;AAEA;EACE,+CAA+C;EAC/C,mCAAmC;AACrC;;AAEA;EACE,6CAA6C;EAC7C,mCAAmC;AACrC;;AAEA;EACE,aAAa;EACb,8BAA8B;EAC9B,mBAAmB;EACnB,kBAAkB;AACpB;;AAEA;EACE,eAAe;EACf,gBAAgB;EAChB,+BAA+B;AACjC;;AAEA;EACE,+BAA+B;AACjC;;AAEA;EACE,6BAA6B;AAC/B;;AAEA;EACE,eAAe;EACf,+BAA+B;EAC/B,kCAAkC;AACpC;;AAEA;EACE,eAAe;EACf,+BAA+B;EAC/B,gBAAgB;EAChB,iBAAiB;AACnB;;AAEA;EACE,eAAe;EACf,6BAA6B;EAC7B,gBAAgB;EAChB,iBAAiB;EACjB,sBAAsB;AACxB;;AAEA;EACE,aAAa;EACb,SAAS;EACT,eAAe;EACf,+BAA+B;AACjC;;AAEA;;gFAEgF;;AAEhF;EACE,aAAa;EACb,kBAAkB;AACpB;;AAEA;EACE,SAAS;EACT,eAAe;EACf,+BAA+B;EAC/B,gBAAgB;AAClB;;AAEA;EACE,0BAA0B;EAC1B,0BAA0B;EAC1B,0CAA0C;AAC5C;;AAEA;;gFAEgF;;AAEhF;EACE,UAAU;AACZ;;AAEA;EACE,uBAAuB;AACzB;;AAEA;EACE,mCAAmC;EACnC,kBAAkB;AACpB;;AAEA;EACE,mCAAmC;AACrC;;AAEA;;gFAEgF;;AAEhF,qBAAqB;AACrB;EACE,kBAAkB;EAClB,kDAAkD;AACpD;;AAEA;EACE,WAAW;EACX,kBAAkB;EAClB,MAAM;EACN,UAAU;EACV,UAAU;EACV,YAAY;EACZ,kCAAkC;EAClC,kBAAkB;EAClB,4CAA4C;AAC9C;;AAEA;EACE;IACE,yCAAyC;EAC3C;EACA;IACE,8CAA8C;EAChD;AACF;;AAEA;EACE;IACE,UAAU;EACZ;EACA;IACE,YAAY;EACd;AACF;;AAEA;;gFAEgF;;AAEhF;EACE,aAAa;EACb,mBAAmB;EACnB,QAAQ;EACR,iBAAiB;EACjB,mCAAmC;EACnC,kBAAkB;EAClB,eAAe;AACjB;;AAEA;EACE,+BAA+B;EAC/B,gBAAgB;EAChB,mBAAmB;AACrB;;AAEA;EACE,OAAO;EACP,gBAAgB;EAChB,yCAAyC;EACzC,kBAAkB;EAClB,mCAAmC;EACnC,+BAA+B;EAC/B,eAAe;EACf,eAAe;EACf,aAAa;AACf;;AAEA;EACE,oCAAoC;AACtC;;AAEA;EACE,YAAY;EACZ,mBAAmB;AACrB;;AAEA,0BAA0B;AAC1B;EACE,kCAAkC;EAClC,YAAY;EACZ,iDAAiD;AACnD;;AAEA;EACE,kCAAkC;AACpC;;AAEA;EACE;IACE,mBAAmB;EACrB;EACA;IACE,sBAAsB;EACxB;AACF;;AAEA,eAAe;AACf;EACE,aAAa;EACb,mBAAmB;EACnB,QAAQ;EACR,iBAAiB;EACjB,mCAAmC;EACnC,wCAAwC;EACxC,kBAAkB;EAClB,6BAA6B;EAC7B,eAAe;EACf,gBAAgB;AAClB;;AAEA;EACE,WAAW;EACX,YAAY;AACd","sourcesContent":["/**\n * Auto-Agent Panel - Claude/Cursor Style\n * Minimal, matte design\n */\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Panel Container\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-panel {\n  display: flex;\n  flex-direction: column;\n  gap: 12px;\n  padding: 16px;\n  height: 100%;\n  overflow-y: auto;\n  background: var(--jp-layout-color1);\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Empty State\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-empty {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 48px 16px;\n  color: var(--jp-ui-font-color3);\n}\n\n.aa-empty-text {\n  font-size: 13px;\n  font-weight: 500;\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Input Section\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-input-section {\n  display: flex;\n  flex-direction: column;\n  gap: 8px;\n}\n\n.aa-textarea {\n  width: 100%;\n  min-height: 72px;\n  max-height: 180px;\n  padding: 12px;\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 6px;\n  background: var(--jp-layout-color0);\n  color: var(--jp-ui-font-color1);\n  font-family: var(--jp-ui-font-family);\n  font-size: 13px;\n  line-height: 1.5;\n  resize: vertical;\n  outline: none;\n  transition: border-color 0.15s ease;\n}\n\n.aa-textarea:focus {\n  border-color: var(--jp-brand-color1);\n}\n\n.aa-textarea:disabled {\n  opacity: 0.5;\n  cursor: not-allowed;\n}\n\n.aa-textarea::placeholder {\n  color: var(--jp-ui-font-color3);\n}\n\n/* Actions */\n.aa-actions {\n  display: flex;\n  gap: 8px;\n}\n\n.aa-btn {\n  padding: 8px 16px;\n  border: none;\n  border-radius: 6px;\n  font-size: 13px;\n  font-weight: 500;\n  cursor: pointer;\n  transition: background 0.15s ease, opacity 0.15s ease;\n}\n\n.aa-btn:disabled {\n  opacity: 0.4;\n  cursor: not-allowed;\n}\n\n.aa-btn--primary {\n  background: var(--jp-brand-color1);\n  color: white;\n}\n\n.aa-btn--primary:hover:not(:disabled) {\n  background: var(--jp-brand-color0);\n}\n\n.aa-btn--secondary {\n  background: var(--jp-layout-color2);\n  color: var(--jp-ui-font-color1);\n}\n\n.aa-btn--secondary:hover:not(:disabled) {\n  background: var(--jp-layout-color3);\n}\n\n.aa-btn--cancel {\n  background: transparent;\n  color: var(--jp-error-color1);\n  border: 1px solid var(--jp-error-color1);\n}\n\n.aa-btn--cancel:hover {\n  background: var(--jp-error-color1);\n  color: white;\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Status Indicator\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-status {\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  padding: 10px 12px;\n  border-radius: 6px;\n  font-size: 13px;\n  background: var(--jp-layout-color2);\n  border-left: 3px solid var(--jp-border-color1);\n}\n\n.aa-status--planning,\n.aa-status--executing,\n.aa-status--tool_calling {\n  border-left-color: var(--jp-brand-color1);\n}\n\n.aa-status--self_healing {\n  border-left-color: var(--jp-warn-color1);\n}\n\n.aa-status--replanning {\n  border-left-color: var(--jp-info-color1, #2196f3);\n  background: rgba(33, 150, 243, 0.06);\n}\n\n/* Replanning indicator for step */\n.aa-step--replanning {\n  background: rgba(33, 150, 243, 0.08);\n  border-left: 2px solid var(--jp-info-color1, #2196f3);\n}\n\n.aa-step--replanning .aa-step-indicator {\n  color: var(--jp-info-color1, #2196f3);\n}\n\n.aa-step-replanning {\n  display: inline-block;\n  font-size: 11px;\n  color: var(--jp-info-color1, #2196f3);\n  margin-left: 8px;\n  animation: aa-pulse 1.5s ease-in-out infinite;\n}\n\n/* Spinning icon for replanning */\n.aa-icon-spin {\n  animation: aa-spin 1s linear infinite;\n}\n\n/* Plan replanning state */\n.aa-plan--replanning {\n  border-color: var(--jp-info-color1, #2196f3);\n}\n\n.aa-plan--replanning .aa-plan-header {\n  background: rgba(33, 150, 243, 0.1);\n}\n\n.aa-plan--replanning .aa-plan-title {\n  color: var(--jp-info-color1, #2196f3);\n}\n\n/* Plan changed indicator */\n.aa-plan-changed {\n  margin-left: 6px;\n  font-weight: 600;\n  color: var(--jp-info-color1, #2196f3);\n}\n\n/* New step styles */\n.aa-step--new {\n  background: rgba(34, 197, 94, 0.06);\n  border-left: 2px solid var(--jp-success-color1, #22c55e);\n  animation: aa-slide-in 0.3s ease-out;\n}\n\n.aa-step-desc--new {\n  color: var(--jp-success-color1, #22c55e);\n}\n\n.aa-new-badge {\n  display: inline-block;\n  font-size: 9px;\n  font-weight: 700;\n  color: white;\n  background: var(--jp-success-color1, #22c55e);\n  padding: 1px 4px;\n  border-radius: 3px;\n  margin-right: 6px;\n  text-transform: uppercase;\n  letter-spacing: 0.5px;\n}\n\n@keyframes aa-slide-in {\n  from {\n    opacity: 0;\n    transform: translateX(-10px);\n  }\n  to {\n    opacity: 1;\n    transform: translateX(0);\n  }\n}\n\n.aa-status--completed {\n  border-left-color: var(--jp-success-color1);\n}\n\n.aa-status--failed {\n  border-left-color: var(--jp-error-color1);\n}\n\n.aa-status-spinner {\n  width: 14px;\n  height: 14px;\n  border: 2px solid var(--jp-border-color2);\n  border-top-color: var(--jp-brand-color1);\n  border-radius: 50%;\n  animation: aa-spin 0.8s linear infinite;\n}\n\n.aa-status-text {\n  flex: 1;\n  color: var(--jp-ui-font-color1);\n}\n\n.aa-status-error {\n  font-size: 12px;\n  color: var(--jp-error-color1);\n  margin-left: auto;\n}\n\n@keyframes aa-spin {\n  to { transform: rotate(360deg); }\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Execution Plan\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-plan {\n  background: var(--jp-layout-color0);\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 6px;\n  overflow: hidden;\n}\n\n.aa-plan-header {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  padding: 10px 12px;\n  background: var(--jp-layout-color2);\n  border-bottom: 1px solid var(--jp-border-color2);\n}\n\n.aa-plan-title {\n  font-size: 12px;\n  font-weight: 600;\n  color: var(--jp-ui-font-color2);\n  text-transform: uppercase;\n  letter-spacing: 0.5px;\n}\n\n.aa-plan-progress {\n  font-size: 12px;\n  color: var(--jp-ui-font-color3);\n  font-variant-numeric: tabular-nums;\n}\n\n/* Progress Bar */\n.aa-progress-bar {\n  height: 3px;\n  background: var(--jp-border-color2);\n  overflow: hidden;\n}\n\n.aa-progress-fill {\n  height: 100%;\n  background: var(--jp-brand-color1);\n  transition: width 0.3s ease;\n}\n\n.aa-plan-steps {\n  display: flex;\n  flex-direction: column;\n}\n\n.aa-step {\n  display: flex;\n  align-items: flex-start;\n  gap: 12px;\n  padding: 10px 12px;\n  border-bottom: 1px solid var(--jp-border-color3);\n  transition: background 0.15s ease;\n}\n\n.aa-step:last-child {\n  border-bottom: none;\n}\n\n.aa-step--current {\n  background: rgba(99, 102, 241, 0.06);\n}\n\n.aa-step--completed {\n  opacity: 0.7;\n}\n\n.aa-step--failed {\n  background: rgba(239, 68, 68, 0.06);\n}\n\n.aa-step--pending {\n  opacity: 0.5;\n}\n\n.aa-step-indicator {\n  width: 20px;\n  height: 20px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n  margin-top: 1px;\n}\n\n.aa-step-indicator svg {\n  width: 14px;\n  height: 14px;\n}\n\n.aa-step--completed .aa-step-indicator {\n  color: var(--jp-success-color1);\n}\n\n.aa-step--failed .aa-step-indicator {\n  color: var(--jp-error-color1);\n}\n\n.aa-step-spinner {\n  width: 14px;\n  height: 14px;\n  border: 2px solid var(--jp-border-color2);\n  border-top-color: var(--jp-brand-color1);\n  border-radius: 50%;\n  animation: aa-spin 0.8s linear infinite;\n}\n\n.aa-step-number {\n  font-size: 11px;\n  font-weight: 600;\n  color: var(--jp-ui-font-color3);\n}\n\n.aa-step-content {\n  flex: 1;\n  min-width: 0;\n}\n\n.aa-step-desc {\n  display: block;\n  font-size: 13px;\n  color: var(--jp-ui-font-color1);\n  line-height: 1.4;\n  margin-bottom: 4px;\n  transition: all 0.2s ease;\n}\n\n/* Completed step: strikethrough effect */\n.aa-step-desc--done {\n  text-decoration: line-through;\n  color: var(--jp-ui-font-color3);\n}\n\n/* Currently executing step indicator */\n.aa-step-executing {\n  display: inline-block;\n  font-size: 11px;\n  color: var(--jp-brand-color1);\n  margin-left: 8px;\n  animation: aa-pulse 1.5s ease-in-out infinite;\n}\n\n@keyframes aa-pulse {\n  0%, 100% { opacity: 1; }\n  50% { opacity: 0.5; }\n}\n\n.aa-step-tools {\n  display: flex;\n  gap: 6px;\n  flex-wrap: wrap;\n}\n\n.aa-tool-tag {\n  font-size: 10px;\n  font-weight: 500;\n  color: var(--jp-ui-font-color3);\n  background: var(--jp-layout-color2);\n  padding: 2px 6px;\n  border-radius: 3px;\n  font-family: var(--jp-code-font-family);\n  transition: all 0.2s ease;\n}\n\n/* Completed tool tag */\n.aa-tool-tag--done {\n  text-decoration: line-through;\n  opacity: 0.6;\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Result Section\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-result {\n  padding: 12px;\n  border-radius: 6px;\n  border: 1px solid var(--jp-border-color2);\n}\n\n.aa-result--success {\n  border-left: 3px solid var(--jp-success-color1);\n  background: var(--jp-layout-color0);\n}\n\n.aa-result--error {\n  border-left: 3px solid var(--jp-error-color1);\n  background: var(--jp-layout-color0);\n}\n\n.aa-result-header {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  margin-bottom: 8px;\n}\n\n.aa-result-title {\n  font-size: 13px;\n  font-weight: 600;\n  color: var(--jp-ui-font-color1);\n}\n\n.aa-result--success .aa-result-title {\n  color: var(--jp-success-color1);\n}\n\n.aa-result--error .aa-result-title {\n  color: var(--jp-error-color1);\n}\n\n.aa-result-time {\n  font-size: 11px;\n  color: var(--jp-ui-font-color3);\n  font-variant-numeric: tabular-nums;\n}\n\n.aa-result-message {\n  font-size: 13px;\n  color: var(--jp-ui-font-color1);\n  line-height: 1.5;\n  margin: 0 0 8px 0;\n}\n\n.aa-result-error {\n  font-size: 12px;\n  color: var(--jp-error-color1);\n  line-height: 1.4;\n  margin: 0 0 8px 0;\n  word-break: break-word;\n}\n\n.aa-result-stats {\n  display: flex;\n  gap: 16px;\n  font-size: 11px;\n  color: var(--jp-ui-font-color3);\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Hint Section\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-hint {\n  padding: 16px;\n  text-align: center;\n}\n\n.aa-hint p {\n  margin: 0;\n  font-size: 13px;\n  color: var(--jp-ui-font-color2);\n  line-height: 1.5;\n}\n\n.aa-hint-sub {\n  margin-top: 4px !important;\n  font-size: 11px !important;\n  color: var(--jp-ui-font-color3) !important;\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Scrollbar\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-panel::-webkit-scrollbar {\n  width: 6px;\n}\n\n.aa-panel::-webkit-scrollbar-track {\n  background: transparent;\n}\n\n.aa-panel::-webkit-scrollbar-thumb {\n  background: var(--jp-border-color2);\n  border-radius: 3px;\n}\n\n.aa-panel::-webkit-scrollbar-thumb:hover {\n  background: var(--jp-border-color1);\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Cell Execution Highlight (노트북 내 셀)\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n/* 현재 실행 중인 셀 하이라이트 */\n.aa-cell-executing {\n  position: relative;\n  animation: aa-cell-pulse 1.5s ease-in-out infinite;\n}\n\n.aa-cell-executing::before {\n  content: '';\n  position: absolute;\n  top: 0;\n  left: -4px;\n  width: 4px;\n  height: 100%;\n  background: var(--jp-brand-color1);\n  border-radius: 2px;\n  animation: aa-glow 1.5s ease-in-out infinite;\n}\n\n@keyframes aa-cell-pulse {\n  0%, 100% {\n    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);\n  }\n  50% {\n    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.15);\n  }\n}\n\n@keyframes aa-glow {\n  0%, 100% {\n    opacity: 1;\n  }\n  50% {\n    opacity: 0.5;\n  }\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Speed Control\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-speed-control {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  padding: 8px 12px;\n  background: var(--jp-layout-color2);\n  border-radius: 6px;\n  font-size: 12px;\n}\n\n.aa-speed-label {\n  color: var(--jp-ui-font-color2);\n  font-weight: 500;\n  white-space: nowrap;\n}\n\n.aa-speed-select {\n  flex: 1;\n  padding: 4px 8px;\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 4px;\n  background: var(--jp-layout-color0);\n  color: var(--jp-ui-font-color1);\n  font-size: 12px;\n  cursor: pointer;\n  outline: none;\n}\n\n.aa-speed-select:focus {\n  border-color: var(--jp-brand-color1);\n}\n\n.aa-speed-select:disabled {\n  opacity: 0.5;\n  cursor: not-allowed;\n}\n\n/* Step-by-step 모드 다음 버튼 */\n.aa-btn--next {\n  background: var(--jp-brand-color1);\n  color: white;\n  animation: aa-pulse-btn 1.5s ease-in-out infinite;\n}\n\n.aa-btn--next:hover:not(:disabled) {\n  background: var(--jp-brand-color0);\n}\n\n@keyframes aa-pulse-btn {\n  0%, 100% {\n    transform: scale(1);\n  }\n  50% {\n    transform: scale(1.02);\n  }\n}\n\n/* 일시정지 상태 표시 */\n.aa-paused-indicator {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  padding: 8px 12px;\n  background: rgba(99, 102, 241, 0.1);\n  border: 1px solid var(--jp-brand-color1);\n  border-radius: 6px;\n  color: var(--jp-brand-color1);\n  font-size: 12px;\n  font-weight: 500;\n}\n\n.aa-paused-icon {\n  width: 16px;\n  height: 16px;\n}\n"],"sourceRoot":""}]);
 // Exports
 /* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (___CSS_LOADER_EXPORT___);
 
@@ -1841,87 +2152,424 @@ ___CSS_LOADER_EXPORT___.push([module.id, `/**
 
 /***/ }),
 
-/***/ "./node_modules/css-loader/dist/cjs.js!./style/index.css":
-/*!***************************************************************!*\
-  !*** ./node_modules/css-loader/dist/cjs.js!./style/index.css ***!
-  \***************************************************************/
-/***/ ((module, __webpack_exports__, __webpack_require__) => {
-
-__webpack_require__.r(__webpack_exports__);
-/* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   "default": () => (__WEBPACK_DEFAULT_EXPORT__)
-/* harmony export */ });
-/* harmony import */ var _node_modules_css_loader_dist_runtime_sourceMaps_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../node_modules/css-loader/dist/runtime/sourceMaps.js */ "./node_modules/css-loader/dist/runtime/sourceMaps.js");
-/* harmony import */ var _node_modules_css_loader_dist_runtime_sourceMaps_js__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(_node_modules_css_loader_dist_runtime_sourceMaps_js__WEBPACK_IMPORTED_MODULE_0__);
-/* harmony import */ var _node_modules_css_loader_dist_runtime_api_js__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ../node_modules/css-loader/dist/runtime/api.js */ "./node_modules/css-loader/dist/runtime/api.js");
-/* harmony import */ var _node_modules_css_loader_dist_runtime_api_js__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(_node_modules_css_loader_dist_runtime_api_js__WEBPACK_IMPORTED_MODULE_1__);
-/* harmony import */ var _node_modules_css_loader_dist_cjs_js_frontend_styles_index_css__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! -!../node_modules/css-loader/dist/cjs.js!../frontend/styles/index.css */ "./node_modules/css-loader/dist/cjs.js!./frontend/styles/index.css");
-// Imports
+/***/ "./node_modules/css-loader/dist/runtime/api.js":
+/*!*****************************************************!*\
+  !*** ./node_modules/css-loader/dist/runtime/api.js ***!
+  \*****************************************************/
+/***/ ((module) => {
 
 
 
-var ___CSS_LOADER_EXPORT___ = _node_modules_css_loader_dist_runtime_api_js__WEBPACK_IMPORTED_MODULE_1___default()((_node_modules_css_loader_dist_runtime_sourceMaps_js__WEBPACK_IMPORTED_MODULE_0___default()));
-___CSS_LOADER_EXPORT___.i(_node_modules_css_loader_dist_cjs_js_frontend_styles_index_css__WEBPACK_IMPORTED_MODULE_2__["default"]);
-// Module
-___CSS_LOADER_EXPORT___.push([module.id, `/* Import styles from frontend */
-`, "",{"version":3,"sources":["webpack://./style/index.css"],"names":[],"mappings":"AAAA,gCAAgC","sourcesContent":["/* Import styles from frontend */\n@import '../frontend/styles/index.css';\n"],"sourceRoot":""}]);
-// Exports
-/* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (___CSS_LOADER_EXPORT___);
+/*
+  MIT License http://www.opensource.org/licenses/mit-license.php
+  Author Tobias Koppers @sokra
+*/
+module.exports = function (cssWithMappingToString) {
+  var list = [];
 
+  // return the list of modules as css string
+  list.toString = function toString() {
+    return this.map(function (item) {
+      var content = "";
+      var needLayer = typeof item[5] !== "undefined";
+      if (item[4]) {
+        content += "@supports (".concat(item[4], ") {");
+      }
+      if (item[2]) {
+        content += "@media ".concat(item[2], " {");
+      }
+      if (needLayer) {
+        content += "@layer".concat(item[5].length > 0 ? " ".concat(item[5]) : "", " {");
+      }
+      content += cssWithMappingToString(item);
+      if (needLayer) {
+        content += "}";
+      }
+      if (item[2]) {
+        content += "}";
+      }
+      if (item[4]) {
+        content += "}";
+      }
+      return content;
+    }).join("");
+  };
+
+  // import a list of modules into the list
+  list.i = function i(modules, media, dedupe, supports, layer) {
+    if (typeof modules === "string") {
+      modules = [[null, modules, undefined]];
+    }
+    var alreadyImportedModules = {};
+    if (dedupe) {
+      for (var k = 0; k < this.length; k++) {
+        var id = this[k][0];
+        if (id != null) {
+          alreadyImportedModules[id] = true;
+        }
+      }
+    }
+    for (var _k = 0; _k < modules.length; _k++) {
+      var item = [].concat(modules[_k]);
+      if (dedupe && alreadyImportedModules[item[0]]) {
+        continue;
+      }
+      if (typeof layer !== "undefined") {
+        if (typeof item[5] === "undefined") {
+          item[5] = layer;
+        } else {
+          item[1] = "@layer".concat(item[5].length > 0 ? " ".concat(item[5]) : "", " {").concat(item[1], "}");
+          item[5] = layer;
+        }
+      }
+      if (media) {
+        if (!item[2]) {
+          item[2] = media;
+        } else {
+          item[1] = "@media ".concat(item[2], " {").concat(item[1], "}");
+          item[2] = media;
+        }
+      }
+      if (supports) {
+        if (!item[4]) {
+          item[4] = "".concat(supports);
+        } else {
+          item[1] = "@supports (".concat(item[4], ") {").concat(item[1], "}");
+          item[4] = supports;
+        }
+      }
+      list.push(item);
+    }
+  };
+  return list;
+};
 
 /***/ }),
 
-/***/ "./style/index.css":
-/*!*************************!*\
-  !*** ./style/index.css ***!
-  \*************************/
-/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
-
-__webpack_require__.r(__webpack_exports__);
-/* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   "default": () => (__WEBPACK_DEFAULT_EXPORT__)
-/* harmony export */ });
-/* harmony import */ var _node_modules_style_loader_dist_runtime_injectStylesIntoStyleTag_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! !../node_modules/style-loader/dist/runtime/injectStylesIntoStyleTag.js */ "./node_modules/style-loader/dist/runtime/injectStylesIntoStyleTag.js");
-/* harmony import */ var _node_modules_style_loader_dist_runtime_injectStylesIntoStyleTag_js__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(_node_modules_style_loader_dist_runtime_injectStylesIntoStyleTag_js__WEBPACK_IMPORTED_MODULE_0__);
-/* harmony import */ var _node_modules_style_loader_dist_runtime_styleDomAPI_js__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! !../node_modules/style-loader/dist/runtime/styleDomAPI.js */ "./node_modules/style-loader/dist/runtime/styleDomAPI.js");
-/* harmony import */ var _node_modules_style_loader_dist_runtime_styleDomAPI_js__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(_node_modules_style_loader_dist_runtime_styleDomAPI_js__WEBPACK_IMPORTED_MODULE_1__);
-/* harmony import */ var _node_modules_style_loader_dist_runtime_insertBySelector_js__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! !../node_modules/style-loader/dist/runtime/insertBySelector.js */ "./node_modules/style-loader/dist/runtime/insertBySelector.js");
-/* harmony import */ var _node_modules_style_loader_dist_runtime_insertBySelector_js__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__webpack_require__.n(_node_modules_style_loader_dist_runtime_insertBySelector_js__WEBPACK_IMPORTED_MODULE_2__);
-/* harmony import */ var _node_modules_style_loader_dist_runtime_setAttributesWithoutAttributes_js__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! !../node_modules/style-loader/dist/runtime/setAttributesWithoutAttributes.js */ "./node_modules/style-loader/dist/runtime/setAttributesWithoutAttributes.js");
-/* harmony import */ var _node_modules_style_loader_dist_runtime_setAttributesWithoutAttributes_js__WEBPACK_IMPORTED_MODULE_3___default = /*#__PURE__*/__webpack_require__.n(_node_modules_style_loader_dist_runtime_setAttributesWithoutAttributes_js__WEBPACK_IMPORTED_MODULE_3__);
-/* harmony import */ var _node_modules_style_loader_dist_runtime_insertStyleElement_js__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! !../node_modules/style-loader/dist/runtime/insertStyleElement.js */ "./node_modules/style-loader/dist/runtime/insertStyleElement.js");
-/* harmony import */ var _node_modules_style_loader_dist_runtime_insertStyleElement_js__WEBPACK_IMPORTED_MODULE_4___default = /*#__PURE__*/__webpack_require__.n(_node_modules_style_loader_dist_runtime_insertStyleElement_js__WEBPACK_IMPORTED_MODULE_4__);
-/* harmony import */ var _node_modules_style_loader_dist_runtime_styleTagTransform_js__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! !../node_modules/style-loader/dist/runtime/styleTagTransform.js */ "./node_modules/style-loader/dist/runtime/styleTagTransform.js");
-/* harmony import */ var _node_modules_style_loader_dist_runtime_styleTagTransform_js__WEBPACK_IMPORTED_MODULE_5___default = /*#__PURE__*/__webpack_require__.n(_node_modules_style_loader_dist_runtime_styleTagTransform_js__WEBPACK_IMPORTED_MODULE_5__);
-/* harmony import */ var _node_modules_css_loader_dist_cjs_js_index_css__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(/*! !!../node_modules/css-loader/dist/cjs.js!./index.css */ "./node_modules/css-loader/dist/cjs.js!./style/index.css");
-
-      
-      
-      
-      
-      
-      
-      
-      
-      
-
-var options = {};
-
-options.styleTagTransform = (_node_modules_style_loader_dist_runtime_styleTagTransform_js__WEBPACK_IMPORTED_MODULE_5___default());
-options.setAttributes = (_node_modules_style_loader_dist_runtime_setAttributesWithoutAttributes_js__WEBPACK_IMPORTED_MODULE_3___default());
-
-      options.insert = _node_modules_style_loader_dist_runtime_insertBySelector_js__WEBPACK_IMPORTED_MODULE_2___default().bind(null, "head");
-    
-options.domAPI = (_node_modules_style_loader_dist_runtime_styleDomAPI_js__WEBPACK_IMPORTED_MODULE_1___default());
-options.insertStyleElement = (_node_modules_style_loader_dist_runtime_insertStyleElement_js__WEBPACK_IMPORTED_MODULE_4___default());
-
-var update = _node_modules_style_loader_dist_runtime_injectStylesIntoStyleTag_js__WEBPACK_IMPORTED_MODULE_0___default()(_node_modules_css_loader_dist_cjs_js_index_css__WEBPACK_IMPORTED_MODULE_6__["default"], options);
+/***/ "./node_modules/css-loader/dist/runtime/getUrl.js":
+/*!********************************************************!*\
+  !*** ./node_modules/css-loader/dist/runtime/getUrl.js ***!
+  \********************************************************/
+/***/ ((module) => {
 
 
 
+module.exports = function (url, options) {
+  if (!options) {
+    options = {};
+  }
+  if (!url) {
+    return url;
+  }
+  url = String(url.__esModule ? url.default : url);
 
-       /* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (_node_modules_css_loader_dist_cjs_js_index_css__WEBPACK_IMPORTED_MODULE_6__["default"] && _node_modules_css_loader_dist_cjs_js_index_css__WEBPACK_IMPORTED_MODULE_6__["default"].locals ? _node_modules_css_loader_dist_cjs_js_index_css__WEBPACK_IMPORTED_MODULE_6__["default"].locals : undefined);
+  // If url is already wrapped in quotes, remove them
+  if (/^['"].*['"]$/.test(url)) {
+    url = url.slice(1, -1);
+  }
+  if (options.hash) {
+    url += options.hash;
+  }
 
+  // Should url be wrapped?
+  // See https://drafts.csswg.org/css-values-3/#urls
+  if (/["'() \t\n]|(%20)/.test(url) || options.needQuotes) {
+    return "\"".concat(url.replace(/"/g, '\\"').replace(/\n/g, "\\n"), "\"");
+  }
+  return url;
+};
+
+/***/ }),
+
+/***/ "./node_modules/css-loader/dist/runtime/sourceMaps.js":
+/*!************************************************************!*\
+  !*** ./node_modules/css-loader/dist/runtime/sourceMaps.js ***!
+  \************************************************************/
+/***/ ((module) => {
+
+
+
+module.exports = function (item) {
+  var content = item[1];
+  var cssMapping = item[3];
+  if (!cssMapping) {
+    return content;
+  }
+  if (typeof btoa === "function") {
+    var base64 = btoa(unescape(encodeURIComponent(JSON.stringify(cssMapping))));
+    var data = "sourceMappingURL=data:application/json;charset=utf-8;base64,".concat(base64);
+    var sourceMapping = "/*# ".concat(data, " */");
+    return [content].concat([sourceMapping]).join("\n");
+  }
+  return [content].join("\n");
+};
+
+/***/ }),
+
+/***/ "./node_modules/style-loader/dist/runtime/injectStylesIntoStyleTag.js":
+/*!****************************************************************************!*\
+  !*** ./node_modules/style-loader/dist/runtime/injectStylesIntoStyleTag.js ***!
+  \****************************************************************************/
+/***/ ((module) => {
+
+
+
+var stylesInDOM = [];
+function getIndexByIdentifier(identifier) {
+  var result = -1;
+  for (var i = 0; i < stylesInDOM.length; i++) {
+    if (stylesInDOM[i].identifier === identifier) {
+      result = i;
+      break;
+    }
+  }
+  return result;
+}
+function modulesToDom(list, options) {
+  var idCountMap = {};
+  var identifiers = [];
+  for (var i = 0; i < list.length; i++) {
+    var item = list[i];
+    var id = options.base ? item[0] + options.base : item[0];
+    var count = idCountMap[id] || 0;
+    var identifier = "".concat(id, " ").concat(count);
+    idCountMap[id] = count + 1;
+    var indexByIdentifier = getIndexByIdentifier(identifier);
+    var obj = {
+      css: item[1],
+      media: item[2],
+      sourceMap: item[3],
+      supports: item[4],
+      layer: item[5]
+    };
+    if (indexByIdentifier !== -1) {
+      stylesInDOM[indexByIdentifier].references++;
+      stylesInDOM[indexByIdentifier].updater(obj);
+    } else {
+      var updater = addElementStyle(obj, options);
+      options.byIndex = i;
+      stylesInDOM.splice(i, 0, {
+        identifier: identifier,
+        updater: updater,
+        references: 1
+      });
+    }
+    identifiers.push(identifier);
+  }
+  return identifiers;
+}
+function addElementStyle(obj, options) {
+  var api = options.domAPI(options);
+  api.update(obj);
+  var updater = function updater(newObj) {
+    if (newObj) {
+      if (newObj.css === obj.css && newObj.media === obj.media && newObj.sourceMap === obj.sourceMap && newObj.supports === obj.supports && newObj.layer === obj.layer) {
+        return;
+      }
+      api.update(obj = newObj);
+    } else {
+      api.remove();
+    }
+  };
+  return updater;
+}
+module.exports = function (list, options) {
+  options = options || {};
+  list = list || [];
+  var lastIdentifiers = modulesToDom(list, options);
+  return function update(newList) {
+    newList = newList || [];
+    for (var i = 0; i < lastIdentifiers.length; i++) {
+      var identifier = lastIdentifiers[i];
+      var index = getIndexByIdentifier(identifier);
+      stylesInDOM[index].references--;
+    }
+    var newLastIdentifiers = modulesToDom(newList, options);
+    for (var _i = 0; _i < lastIdentifiers.length; _i++) {
+      var _identifier = lastIdentifiers[_i];
+      var _index = getIndexByIdentifier(_identifier);
+      if (stylesInDOM[_index].references === 0) {
+        stylesInDOM[_index].updater();
+        stylesInDOM.splice(_index, 1);
+      }
+    }
+    lastIdentifiers = newLastIdentifiers;
+  };
+};
+
+/***/ }),
+
+/***/ "./node_modules/style-loader/dist/runtime/insertBySelector.js":
+/*!********************************************************************!*\
+  !*** ./node_modules/style-loader/dist/runtime/insertBySelector.js ***!
+  \********************************************************************/
+/***/ ((module) => {
+
+
+
+var memo = {};
+
+/* istanbul ignore next  */
+function getTarget(target) {
+  if (typeof memo[target] === "undefined") {
+    var styleTarget = document.querySelector(target);
+
+    // Special case to return head of iframe instead of iframe itself
+    if (window.HTMLIFrameElement && styleTarget instanceof window.HTMLIFrameElement) {
+      try {
+        // This will throw an exception if access to iframe is blocked
+        // due to cross-origin restrictions
+        styleTarget = styleTarget.contentDocument.head;
+      } catch (e) {
+        // istanbul ignore next
+        styleTarget = null;
+      }
+    }
+    memo[target] = styleTarget;
+  }
+  return memo[target];
+}
+
+/* istanbul ignore next  */
+function insertBySelector(insert, style) {
+  var target = getTarget(insert);
+  if (!target) {
+    throw new Error("Couldn't find a style target. This probably means that the value for the 'insert' parameter is invalid.");
+  }
+  target.appendChild(style);
+}
+module.exports = insertBySelector;
+
+/***/ }),
+
+/***/ "./node_modules/style-loader/dist/runtime/insertStyleElement.js":
+/*!**********************************************************************!*\
+  !*** ./node_modules/style-loader/dist/runtime/insertStyleElement.js ***!
+  \**********************************************************************/
+/***/ ((module) => {
+
+
+
+/* istanbul ignore next  */
+function insertStyleElement(options) {
+  var element = document.createElement("style");
+  options.setAttributes(element, options.attributes);
+  options.insert(element, options.options);
+  return element;
+}
+module.exports = insertStyleElement;
+
+/***/ }),
+
+/***/ "./node_modules/style-loader/dist/runtime/setAttributesWithoutAttributes.js":
+/*!**********************************************************************************!*\
+  !*** ./node_modules/style-loader/dist/runtime/setAttributesWithoutAttributes.js ***!
+  \**********************************************************************************/
+/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
+
+
+
+/* istanbul ignore next  */
+function setAttributesWithoutAttributes(styleElement) {
+  var nonce =  true ? __webpack_require__.nc : 0;
+  if (nonce) {
+    styleElement.setAttribute("nonce", nonce);
+  }
+}
+module.exports = setAttributesWithoutAttributes;
+
+/***/ }),
+
+/***/ "./node_modules/style-loader/dist/runtime/styleDomAPI.js":
+/*!***************************************************************!*\
+  !*** ./node_modules/style-loader/dist/runtime/styleDomAPI.js ***!
+  \***************************************************************/
+/***/ ((module) => {
+
+
+
+/* istanbul ignore next  */
+function apply(styleElement, options, obj) {
+  var css = "";
+  if (obj.supports) {
+    css += "@supports (".concat(obj.supports, ") {");
+  }
+  if (obj.media) {
+    css += "@media ".concat(obj.media, " {");
+  }
+  var needLayer = typeof obj.layer !== "undefined";
+  if (needLayer) {
+    css += "@layer".concat(obj.layer.length > 0 ? " ".concat(obj.layer) : "", " {");
+  }
+  css += obj.css;
+  if (needLayer) {
+    css += "}";
+  }
+  if (obj.media) {
+    css += "}";
+  }
+  if (obj.supports) {
+    css += "}";
+  }
+  var sourceMap = obj.sourceMap;
+  if (sourceMap && typeof btoa !== "undefined") {
+    css += "\n/*# sourceMappingURL=data:application/json;base64,".concat(btoa(unescape(encodeURIComponent(JSON.stringify(sourceMap)))), " */");
+  }
+
+  // For old IE
+  /* istanbul ignore if  */
+  options.styleTagTransform(css, styleElement, options.options);
+}
+function removeStyleElement(styleElement) {
+  // istanbul ignore if
+  if (styleElement.parentNode === null) {
+    return false;
+  }
+  styleElement.parentNode.removeChild(styleElement);
+}
+
+/* istanbul ignore next  */
+function domAPI(options) {
+  if (typeof document === "undefined") {
+    return {
+      update: function update() {},
+      remove: function remove() {}
+    };
+  }
+  var styleElement = options.insertStyleElement(options);
+  return {
+    update: function update(obj) {
+      apply(styleElement, options, obj);
+    },
+    remove: function remove() {
+      removeStyleElement(styleElement);
+    }
+  };
+}
+module.exports = domAPI;
+
+/***/ }),
+
+/***/ "./node_modules/style-loader/dist/runtime/styleTagTransform.js":
+/*!*********************************************************************!*\
+  !*** ./node_modules/style-loader/dist/runtime/styleTagTransform.js ***!
+  \*********************************************************************/
+/***/ ((module) => {
+
+
+
+/* istanbul ignore next  */
+function styleTagTransform(css, styleElement) {
+  if (styleElement.styleSheet) {
+    styleElement.styleSheet.cssText = css;
+  } else {
+    while (styleElement.firstChild) {
+      styleElement.removeChild(styleElement.firstChild);
+    }
+    styleElement.appendChild(document.createTextNode(css));
+  }
+}
+module.exports = styleTagTransform;
 
 /***/ }),
 
@@ -1956,4 +2604,4 @@ module.exports = "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYi
 /***/ })
 
 }]);
-//# sourceMappingURL=style_index_css.a65bee83f689db2b53ef.js.map
+//# sourceMappingURL=frontend_styles_index_js.4beaf4c3e1eba6607eeb.js.map

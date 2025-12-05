@@ -16,6 +16,8 @@ import {
   PlanStep,
   AutoAgentConfig,
   DEFAULT_AUTO_AGENT_CONFIG,
+  ExecutionSpeed,
+  EXECUTION_SPEED_DELAYS,
 } from '../types/auto-agent';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -41,6 +43,8 @@ interface ExecutionPlanViewProps {
   currentStep?: number;
   completedSteps: number[];
   failedSteps: number[];
+  isReplanning?: boolean;
+  originalStepCount?: number; // 원래 계획의 스텝 수
 }
 
 const ExecutionPlanView: React.FC<ExecutionPlanViewProps> = ({
@@ -48,27 +52,55 @@ const ExecutionPlanView: React.FC<ExecutionPlanViewProps> = ({
   currentStep,
   completedSteps,
   failedSteps,
+  isReplanning,
+  originalStepCount,
 }) => {
-  const getStepStatus = (stepNumber: number): 'failed' | 'completed' | 'current' | 'pending' => {
+  const getStepStatus = (stepNumber: number): 'failed' | 'completed' | 'current' | 'pending' | 'replanning' => {
+    if (isReplanning && currentStep === stepNumber) return 'replanning';
     if (failedSteps.includes(stepNumber)) return 'failed';
     if (completedSteps.includes(stepNumber)) return 'completed';
     if (currentStep === stepNumber) return 'current';
     return 'pending';
   };
 
+  // 새로 추가된 스텝인지 확인
+  const isNewStep = (stepNumber: number): boolean => {
+    return originalStepCount !== undefined && stepNumber > originalStepCount;
+  };
+
+  const progressPercent = (completedSteps.length / plan.totalSteps) * 100;
+
   return (
-    <div className="aa-plan">
+    <div className={`aa-plan ${isReplanning ? 'aa-plan--replanning' : ''}`}>
       <div className="aa-plan-header">
-        <span className="aa-plan-title">실행 계획</span>
+        <span className="aa-plan-title">
+          {isReplanning ? '계획 수정 중...' : '실행 계획'}
+        </span>
         <span className="aa-plan-progress">
           {completedSteps.length} / {plan.totalSteps}
+          {originalStepCount !== undefined && plan.totalSteps !== originalStepCount && (
+            <span className="aa-plan-changed">
+              ({plan.totalSteps > originalStepCount ? '+' : ''}{plan.totalSteps - originalStepCount})
+            </span>
+          )}
         </span>
+      </div>
+      {/* Progress Bar */}
+      <div className="aa-progress-bar">
+        <div
+          className="aa-progress-fill"
+          style={{ width: `${progressPercent}%` }}
+        />
       </div>
       <div className="aa-plan-steps">
         {plan.steps.map((step) => {
           const status = getStepStatus(step.stepNumber);
+          const isNew = isNewStep(step.stepNumber);
           return (
-            <div key={step.stepNumber} className={`aa-step aa-step--${status}`}>
+            <div
+              key={step.stepNumber}
+              className={`aa-step aa-step--${status} ${isNew ? 'aa-step--new' : ''}`}
+            >
               <div className="aa-step-indicator">
                 {status === 'completed' && (
                   <svg viewBox="0 0 16 16" fill="currentColor">
@@ -80,14 +112,35 @@ const ExecutionPlanView: React.FC<ExecutionPlanViewProps> = ({
                     <path d="M3.72 3.72a.75.75 0 011.06 0L8 6.94l3.22-3.22a.75.75 0 111.06 1.06L9.06 8l3.22 3.22a.75.75 0 11-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 01-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 010-1.06z"/>
                   </svg>
                 )}
+                {status === 'replanning' && (
+                  <svg viewBox="0 0 16 16" fill="currentColor" className="aa-icon-spin">
+                    <path d="M8 3a5 5 0 104.546 2.914.5.5 0 01.908-.418A6 6 0 118 2v1z"/>
+                    <path d="M8 4.466V.534a.25.25 0 01.41-.192l2.36 1.966a.25.25 0 010 .384L8.41 4.658A.25.25 0 018 4.466z"/>
+                  </svg>
+                )}
                 {status === 'current' && <div className="aa-step-spinner" />}
-                {status === 'pending' && <span className="aa-step-number">{step.stepNumber}</span>}
+                {status === 'pending' && (
+                  <span className="aa-step-number">
+                    {isNew ? '+' : ''}{step.stepNumber}
+                  </span>
+                )}
               </div>
               <div className="aa-step-content">
-                <span className="aa-step-desc">{step.description}</span>
+                <span className={`aa-step-desc ${status === 'completed' ? 'aa-step-desc--done' : ''} ${isNew ? 'aa-step-desc--new' : ''}`}>
+                  {isNew && <span className="aa-new-badge">NEW</span>}
+                  {step.description}
+                </span>
+                {status === 'current' && (
+                  <span className="aa-step-executing">실행 중...</span>
+                )}
+                {status === 'replanning' && (
+                  <span className="aa-step-replanning">계획 수정 중...</span>
+                )}
                 <div className="aa-step-tools">
                   {step.toolCalls.map((tc, i) => (
-                    <span key={i} className="aa-tool-tag">{tc.tool}</span>
+                    <span key={i} className={`aa-tool-tag ${status === 'completed' ? 'aa-tool-tag--done' : ''}`}>
+                      {tc.tool}
+                    </span>
                   ))}
                 </div>
               </div>
@@ -116,13 +169,14 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({ status }) => {
       case 'executing': return `실행 중 (${status.currentStep}/${status.totalSteps})`;
       case 'tool_calling': return `${status.tool} 실행 중`;
       case 'self_healing': return `재시도 중 (${status.attempt}/3)`;
+      case 'replanning': return `계획 수정 중 (Step ${status.currentStep})`;
       case 'completed': return '완료';
       case 'failed': return '실패';
       default: return '처리 중...';
     }
   };
 
-  const isActive = ['planning', 'executing', 'tool_calling', 'self_healing'].includes(status.phase);
+  const isActive = ['planning', 'executing', 'tool_calling', 'self_healing', 'replanning'].includes(status.phase);
 
   return (
     <div className={`aa-status aa-status--${status.phase}`}>
@@ -155,10 +209,13 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
   const [result, setResult] = useState<AutoAgentResult | null>(null);
   const [completedSteps, setCompletedSteps] = useState<number[]>([]);
   const [failedSteps, setFailedSteps] = useState<number[]>([]);
+  const [originalStepCount, setOriginalStepCount] = useState<number | undefined>(undefined);
+  const [executionSpeed, setExecutionSpeed] = useState<ExecutionSpeed>('normal');
+  const [isPaused, setIsPaused] = useState(false);
 
   const orchestratorRef = useRef<AgentOrchestrator | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const mergedConfig = { ...DEFAULT_AUTO_AGENT_CONFIG, ...config };
+  const mergedConfig = { ...DEFAULT_AUTO_AGENT_CONFIG, ...config, executionSpeed };
 
   const notebook = propNotebook || (notebookTracker?.currentWidget as NotebookPanel | null);
   const sessionContext = propSessionContext || (notebook?.sessionContext as ISessionContext | null);
@@ -171,16 +228,40 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
     return () => { orchestratorRef.current = null; };
   }, [notebook, sessionContext, apiService]);
 
+  // 일시정지 상태 폴링 (step-by-step 모드용)
+  useEffect(() => {
+    if (!isRunning) return;
+    const interval = setInterval(() => {
+      if (orchestratorRef.current) {
+        setIsPaused(orchestratorRef.current.getIsPaused());
+      }
+    }, 100);
+    return () => clearInterval(interval);
+  }, [isRunning]);
+
+  // 속도 변경 시 오케스트레이터 설정 업데이트
+  useEffect(() => {
+    if (orchestratorRef.current) {
+      orchestratorRef.current.updateConfig({ executionSpeed });
+    }
+  }, [executionSpeed]);
+
   const handleProgress = useCallback((newStatus: AgentStatus) => {
     setStatus(newStatus);
-    if (newStatus.plan) setPlan(newStatus.plan);
+    if (newStatus.plan) {
+      setPlan(newStatus.plan);
+      // 첫 계획이면 원래 스텝 수 저장
+      if (newStatus.phase === 'planned' && originalStepCount === undefined) {
+        setOriginalStepCount(newStatus.plan.totalSteps);
+      }
+    }
     if (newStatus.phase === 'executing' && newStatus.currentStep && newStatus.currentStep > 1) {
       setCompletedSteps(Array.from({ length: newStatus.currentStep - 1 }, (_, i) => i + 1));
     }
     if (newStatus.phase === 'failed' && newStatus.currentStep) {
       setFailedSteps(prev => [...prev, newStatus.currentStep!]);
     }
-  }, []);
+  }, [originalStepCount]);
 
   const handleExecute = useCallback(async () => {
     if (!orchestratorRef.current || !notebook || !request.trim()) return;
@@ -190,6 +271,7 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
     setPlan(null);
     setCompletedSteps([]);
     setFailedSteps([]);
+    setOriginalStepCount(undefined);
     setStatus({ phase: 'planning', message: 'Creating execution plan...' });
 
     try {
@@ -221,7 +303,18 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
     setResult(null);
     setCompletedSteps([]);
     setFailedSteps([]);
+    setIsPaused(false);
     textareaRef.current?.focus();
+  }, []);
+
+  const handleNextStep = useCallback(() => {
+    if (orchestratorRef.current) {
+      orchestratorRef.current.proceedToNextStep();
+    }
+  }, []);
+
+  const handleSpeedChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    setExecutionSpeed(e.target.value as ExecutionSpeed);
   }, []);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -277,6 +370,36 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
         </div>
       </div>
 
+      {/* Speed Control */}
+      <div className="aa-speed-control">
+        <span className="aa-speed-label">실행 속도:</span>
+        <select
+          className="aa-speed-select"
+          value={executionSpeed}
+          onChange={handleSpeedChange}
+          disabled={isRunning && executionSpeed !== 'step-by-step'}
+        >
+          <option value="instant">즉시 (지연 없음)</option>
+          <option value="fast">빠름 (0.3초)</option>
+          <option value="normal">보통 (0.8초)</option>
+          <option value="slow">느림 (1.5초)</option>
+          <option value="step-by-step">단계별 (수동)</option>
+        </select>
+      </div>
+
+      {/* Step-by-step 모드 일시정지 표시 */}
+      {isPaused && (
+        <div className="aa-paused-indicator">
+          <svg className="aa-paused-icon" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M5.5 3.5A1.5 1.5 0 017 5v6a1.5 1.5 0 01-3 0V5a1.5 1.5 0 011.5-1.5zm5 0A1.5 1.5 0 0112 5v6a1.5 1.5 0 01-3 0V5a1.5 1.5 0 011.5-1.5z"/>
+          </svg>
+          <span>다음 단계 대기 중...</span>
+          <button className="aa-btn aa-btn--next" onClick={handleNextStep}>
+            다음 단계
+          </button>
+        </div>
+      )}
+
       {/* Status */}
       {status.phase !== 'idle' && <StatusIndicator status={status} />}
 
@@ -287,6 +410,8 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
           currentStep={status.currentStep}
           completedSteps={completedSteps}
           failedSteps={failedSteps}
+          isReplanning={status.phase === 'replanning'}
+          originalStepCount={originalStepCount}
         />
       )}
 

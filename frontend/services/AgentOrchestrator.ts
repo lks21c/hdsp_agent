@@ -27,6 +27,9 @@ import {
   AutoAgentConfig,
   DEFAULT_AUTO_AGENT_CONFIG,
   JupyterCellParams,
+  AutoAgentReplanResponse,
+  ReplanDecision,
+  EXECUTION_SPEED_DELAYS,
 } from '../types/auto-agent';
 
 export class AgentOrchestrator {
@@ -36,6 +39,11 @@ export class AgentOrchestrator {
   private config: AutoAgentConfig;
   private abortController: AbortController | null = null;
   private isRunning: boolean = false;
+  private notebook: NotebookPanel;
+
+  // Step-by-step 모드를 위한 상태
+  private stepByStepResolver: (() => void) | null = null;
+  private isPaused: boolean = false;
 
   constructor(
     notebook: NotebookPanel,
@@ -43,6 +51,7 @@ export class AgentOrchestrator {
     apiService?: ApiService,
     config?: Partial<AutoAgentConfig>
   ) {
+    this.notebook = notebook;
     this.apiService = apiService || new ApiService();
     this.toolExecutor = new ToolExecutor(notebook, sessionContext);
     this.safetyChecker = new SafetyChecker({
@@ -102,16 +111,23 @@ export class AgentOrchestrator {
       });
 
       // ═══════════════════════════════════════════════════════════════════════
-      // PHASE 2: EXECUTION - 단계별 실행 (Self-Healing 포함)
+      // PHASE 2: EXECUTION - 단계별 실행 (Adaptive Replanning 포함)
       // ═══════════════════════════════════════════════════════════════════════
       console.log('[Orchestrator] Starting execution phase with', plan.steps.length, 'steps');
-      for (const step of plan.steps) {
+      let currentPlan = plan;
+      let stepIndex = 0;
+      let replanAttempts = 0;
+      const MAX_REPLAN_ATTEMPTS = 3;
+
+      while (stepIndex < currentPlan.steps.length) {
+        const step = currentPlan.steps[stepIndex];
         console.log('[Orchestrator] Executing step', step.stepNumber, ':', step.description);
+
         // 중단 요청 확인
         if (this.abortController.signal.aborted) {
           return {
             success: false,
-            plan,
+            plan: currentPlan,
             executedSteps,
             createdCells,
             modifiedCells,
@@ -124,7 +140,7 @@ export class AgentOrchestrator {
         onProgress({
           phase: 'executing',
           currentStep: step.stepNumber,
-          totalSteps: plan.totalSteps,
+          totalSteps: currentPlan.totalSteps,
           description: step.description,
         });
 
@@ -134,9 +150,7 @@ export class AgentOrchestrator {
           onProgress
         );
 
-        executedSteps.push(stepResult);
-
-        // 생성/수정된 셀 추적
+        // 생성/수정된 셀 추적 및 하이라이트/스크롤
         stepResult.toolResults.forEach((tr) => {
           if (tr.cellIndex !== undefined) {
             if (tr.wasModified) {
@@ -144,27 +158,99 @@ export class AgentOrchestrator {
             } else {
               createdCells.push(tr.cellIndex);
             }
+            // 셀 하이라이트 및 스크롤
+            this.scrollToAndHighlightCell(tr.cellIndex);
           }
         });
 
-        // 단계 실패 시 중단
+        // 단계 실패 시 Adaptive Replanning 시도
         if (!stepResult.success) {
+          console.log('[Orchestrator] Step failed, attempting adaptive replanning');
+
+          if (replanAttempts >= MAX_REPLAN_ATTEMPTS) {
+            onProgress({
+              phase: 'failed',
+              message: `최대 재계획 시도 횟수(${MAX_REPLAN_ATTEMPTS})를 초과했습니다.`,
+            });
+            return {
+              success: false,
+              plan: currentPlan,
+              executedSteps,
+              createdCells,
+              modifiedCells,
+              error: `Step ${step.stepNumber} 실패: ${stepResult.error}`,
+              totalAttempts: this.countTotalAttempts(executedSteps),
+              executionTime: Date.now() - startTime,
+            };
+          }
+
           onProgress({
-            phase: 'failed',
-            message: `Step ${step.stepNumber} 실패: ${stepResult.error}`,
+            phase: 'replanning',
+            message: '계획 수정 중...',
+            currentStep: step.stepNumber,
           });
 
-          return {
-            success: false,
-            plan,
-            executedSteps,
-            createdCells,
-            modifiedCells,
-            error: `Step ${step.stepNumber} 실패: ${stepResult.error}`,
-            totalAttempts: this.countTotalAttempts(executedSteps),
-            executionTime: Date.now() - startTime,
+          // 실패 정보 구성
+          const executionError: ExecutionError = {
+            type: 'runtime',
+            message: stepResult.error || '알 수 없는 오류',
+            traceback: stepResult.toolResults.find(r => r.traceback)?.traceback || [],
+            recoverable: true,
           };
+
+          // 마지막 실행 출력
+          const lastOutput = stepResult.toolResults
+            .map(r => r.output)
+            .filter(Boolean)
+            .join('\n');
+
+          try {
+            const replanResponse = await this.apiService.replanExecution({
+              originalRequest: userRequest,
+              executedSteps: executedSteps.map(s => currentPlan.steps.find(p => p.stepNumber === s.stepNumber)!).filter(Boolean),
+              failedStep: step,
+              error: executionError,
+              executionOutput: lastOutput,
+            });
+
+            console.log('[Orchestrator] Replan decision:', replanResponse.decision);
+            console.log('[Orchestrator] Replan reasoning:', replanResponse.reasoning);
+
+            // Replan 결과에 따른 계획 수정
+            currentPlan = this.applyReplanChanges(
+              currentPlan,
+              stepIndex,
+              replanResponse
+            );
+
+            replanAttempts++;
+            // stepIndex는 그대로 유지 (수정된 현재 단계를 다시 실행)
+            continue;
+          } catch (replanError: any) {
+            console.error('[Orchestrator] Replan failed:', replanError);
+            onProgress({
+              phase: 'failed',
+              message: `Step ${step.stepNumber} 실패 (재계획 실패): ${stepResult.error}`,
+            });
+            return {
+              success: false,
+              plan: currentPlan,
+              executedSteps,
+              createdCells,
+              modifiedCells,
+              error: `Step ${step.stepNumber} 실패: ${stepResult.error}`,
+              totalAttempts: this.countTotalAttempts(executedSteps),
+              executionTime: Date.now() - startTime,
+            };
+          }
         }
+
+        // 성공한 단계 기록
+        executedSteps.push(stepResult);
+        replanAttempts = 0; // 성공 시 재계획 시도 횟수 리셋
+
+        // 다음 스텝 전에 지연 적용 (사용자가 결과를 확인할 시간)
+        await this.applyStepDelay();
 
         // final_answer 도구 호출 시 완료
         if (stepResult.isFinalAnswer) {
@@ -175,7 +261,7 @@ export class AgentOrchestrator {
 
           return {
             success: true,
-            plan,
+            plan: currentPlan,
             executedSteps,
             createdCells,
             modifiedCells,
@@ -184,6 +270,8 @@ export class AgentOrchestrator {
             executionTime: Date.now() - startTime,
           };
         }
+
+        stepIndex++;
       }
 
       // 모든 단계 성공
@@ -224,7 +312,29 @@ export class AgentOrchestrator {
   }
 
   /**
+   * 환경/의존성 관련 에러인지 판단 (Adaptive Replanning으로 바로 보내야 하는 에러)
+   */
+  private isEnvironmentError(errorMessage: string, traceback?: string[]): boolean {
+    const envErrorPatterns = [
+      /ModuleNotFoundError/i,
+      /ImportError/i,
+      /No module named/i,
+      /cannot import name/i,
+      /FileNotFoundError/i,
+      /PermissionError/i,
+      /OSError/i,
+      /ConnectionError/i,
+      /pip install/i,
+      /conda install/i,
+    ];
+
+    const fullText = [errorMessage, ...(traceback || [])].join('\n');
+    return envErrorPatterns.some(pattern => pattern.test(fullText));
+  }
+
+  /**
    * Self-Healing: 단계별 재시도 로직
+   * 환경/의존성 에러는 재시도하지 않고 바로 Adaptive Replanning으로 보냄
    */
   private async executeStepWithRetry(
     step: PlanStep,
@@ -290,14 +400,31 @@ export class AgentOrchestrator {
 
           toolResults.push(result);
 
-          // jupyter_cell 실행 실패 시 재시도 준비
+          // jupyter_cell 실행 실패 시
           if (!result.success && toolCall.tool === 'jupyter_cell') {
+            const errorMsg = result.error || '알 수 없는 오류';
+            const isEnvError = this.isEnvironmentError(errorMsg, result.traceback);
+
             lastError = {
-              type: 'runtime',
-              message: result.error || '알 수 없는 오류',
+              type: isEnvError ? 'validation' : 'runtime', // 환경 에러는 validation 타입으로 표시
+              message: errorMsg,
               traceback: result.traceback || [],
-              recoverable: true,
+              recoverable: !isEnvError, // 환경 에러는 Self-Healing으로 복구 불가
             };
+
+            // 환경/의존성 에러는 Self-Healing 재시도 없이 바로 실패 반환
+            // → 메인 루프에서 Adaptive Replanning 호출
+            if (isEnvError) {
+              console.log('[Orchestrator] Environment error detected, skipping to Adaptive Replanning');
+              return {
+                success: false,
+                stepNumber: step.stepNumber,
+                toolResults,
+                attempts: attempt + 1,
+                error: errorMsg,
+              };
+            }
+
             break;
           }
 
@@ -324,8 +451,8 @@ export class AgentOrchestrator {
           };
         }
 
-        // 에러 발생 시 LLM에게 수정 요청
-        if (lastError && attempt < this.config.maxRetriesPerStep - 1) {
+        // 일반 런타임 에러 발생 시 LLM에게 수정 요청 (Self-Healing)
+        if (lastError && lastError.recoverable && attempt < this.config.maxRetriesPerStep - 1) {
           onProgress({
             phase: 'self_healing',
             attempt: attempt + 1,
@@ -468,6 +595,89 @@ export class AgentOrchestrator {
   }
 
   /**
+   * Adaptive Replanning 결과 적용
+   */
+  private applyReplanChanges(
+    plan: ExecutionPlan,
+    currentStepIndex: number,
+    replanResponse: AutoAgentReplanResponse
+  ): ExecutionPlan {
+    const { decision, changes } = replanResponse;
+    const steps = [...plan.steps];
+    const currentStep = steps[currentStepIndex];
+
+    console.log('[Orchestrator] Applying replan changes:', decision);
+
+    switch (decision) {
+      case 'refine':
+        // 현재 단계의 코드만 수정
+        if (changes.refined_code) {
+          const newToolCalls = currentStep.toolCalls.map(tc => {
+            if (tc.tool === 'jupyter_cell') {
+              return {
+                ...tc,
+                parameters: {
+                  ...(tc.parameters as JupyterCellParams),
+                  code: changes.refined_code!,
+                },
+              };
+            }
+            return tc;
+          });
+          steps[currentStepIndex] = {
+            ...currentStep,
+            toolCalls: newToolCalls,
+          };
+        }
+        break;
+
+      case 'insert_steps':
+        // 현재 단계 전에 새로운 단계들 삽입
+        if (changes.new_steps && changes.new_steps.length > 0) {
+          const newSteps = changes.new_steps.map((newStep, idx) => ({
+            ...newStep,
+            stepNumber: currentStep.stepNumber + idx * 0.1, // 임시 번호
+          }));
+          steps.splice(currentStepIndex, 0, ...newSteps);
+          // 단계 번호 재정렬
+          steps.forEach((step, idx) => {
+            step.stepNumber = idx + 1;
+          });
+        }
+        break;
+
+      case 'replace_step':
+        // 현재 단계를 완전히 교체
+        if (changes.replacement) {
+          steps[currentStepIndex] = {
+            ...changes.replacement,
+            stepNumber: currentStep.stepNumber,
+          };
+        }
+        break;
+
+      case 'replan_remaining':
+        // 현재 단계부터 끝까지 새로운 계획으로 교체
+        if (changes.new_plan && changes.new_plan.length > 0) {
+          const existingSteps = steps.slice(0, currentStepIndex);
+          const newPlanSteps = changes.new_plan.map((newStep, idx) => ({
+            ...newStep,
+            stepNumber: currentStepIndex + idx + 1,
+          }));
+          steps.length = 0;
+          steps.push(...existingSteps, ...newPlanSteps);
+        }
+        break;
+    }
+
+    return {
+      ...plan,
+      steps,
+      totalSteps: steps.length,
+    };
+  }
+
+  /**
    * 총 시도 횟수 계산
    */
   private countTotalAttempts(steps: StepResult[]): number {
@@ -530,6 +740,101 @@ export class AgentOrchestrator {
       enableSafetyCheck: this.config.enableSafetyCheck,
       maxExecutionTime: this.config.executionTimeout / 1000,
     });
+  }
+
+  /**
+   * 현재 실행 중인 셀로 스크롤 및 하이라이트
+   */
+  private scrollToAndHighlightCell(cellIndex: number): void {
+    if (!this.config.autoScrollToCell && !this.config.highlightCurrentCell) {
+      return;
+    }
+
+    const notebookContent = this.notebook.content;
+    const cell = notebookContent.widgets[cellIndex];
+
+    if (!cell) return;
+
+    // 셀로 스크롤
+    if (this.config.autoScrollToCell) {
+      cell.node.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    }
+
+    // 셀 하이라이트 (CSS 클래스 추가)
+    if (this.config.highlightCurrentCell) {
+      // 기존 하이라이트 제거
+      notebookContent.widgets.forEach((w) => {
+        w.node.classList.remove('aa-cell-executing');
+      });
+      // 새 하이라이트 추가
+      cell.node.classList.add('aa-cell-executing');
+
+      // 실행 완료 후 하이라이트 제거 (지연 후)
+      setTimeout(() => {
+        cell.node.classList.remove('aa-cell-executing');
+      }, this.getEffectiveDelay() + 500);
+    }
+  }
+
+  /**
+   * 현재 설정에 맞는 지연 시간 반환
+   */
+  private getEffectiveDelay(): number {
+    // 명시적으로 설정된 stepDelay가 있으면 사용
+    if (this.config.stepDelay > 0) {
+      return this.config.stepDelay;
+    }
+    // 그렇지 않으면 executionSpeed 프리셋 사용
+    return EXECUTION_SPEED_DELAYS[this.config.executionSpeed] || 0;
+  }
+
+  /**
+   * 스텝 사이 지연 적용 (step-by-step 모드 포함)
+   */
+  private async applyStepDelay(): Promise<void> {
+    const delay = this.getEffectiveDelay();
+
+    // step-by-step 모드: 사용자가 다음 버튼을 누를 때까지 대기
+    if (this.config.executionSpeed === 'step-by-step' || delay < 0) {
+      this.isPaused = true;
+      await new Promise<void>((resolve) => {
+        this.stepByStepResolver = resolve;
+      });
+      this.isPaused = false;
+      this.stepByStepResolver = null;
+      return;
+    }
+
+    // 일반 지연
+    if (delay > 0) {
+      await this.delay(delay);
+    }
+  }
+
+  /**
+   * Step-by-step 모드에서 다음 스텝 진행
+   */
+  proceedToNextStep(): void {
+    if (this.stepByStepResolver) {
+      this.stepByStepResolver();
+    }
+  }
+
+  /**
+   * 일시 정지 상태 확인
+   */
+  getIsPaused(): boolean {
+    return this.isPaused;
+  }
+
+  /**
+   * 현재 실행 속도 설정 반환
+   */
+  getExecutionSpeed(): string {
+    return this.config.executionSpeed;
   }
 }
 
