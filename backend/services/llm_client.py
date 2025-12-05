@@ -6,6 +6,8 @@ import os
 from typing import Dict, Any
 import aiohttp
 
+from ..prompts import DEFAULT_SYSTEM_PROMPT
+
 class LLMClient:
     """Client for LLM API communication"""
 
@@ -47,7 +49,7 @@ class LLMClient:
             'messages': [
                 {
                     'role': 'system',
-                    'content': self.config.get('systemPrompt', 'You are a helpful AI assistant.')
+                    'content': self.config.get('systemPrompt', DEFAULT_SYSTEM_PROMPT)
                 },
                 {
                     'role': 'user',
