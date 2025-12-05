@@ -26,10 +26,36 @@ import {
 export class ToolExecutor {
   private notebook: NotebookPanel;
   private sessionContext: ISessionContext;
+  private autoScrollEnabled: boolean = true;
 
   constructor(notebook: NotebookPanel, sessionContext: ISessionContext) {
     this.notebook = notebook;
     this.sessionContext = sessionContext;
+  }
+
+  /**
+   * 자동 스크롤 설정
+   */
+  setAutoScroll(enabled: boolean): void {
+    this.autoScrollEnabled = enabled;
+  }
+
+  /**
+   * 특정 셀로 스크롤 및 포커스
+   */
+  scrollToCell(cellIndex: number): void {
+    if (!this.autoScrollEnabled) return;
+
+    const notebookContent = this.notebook.content;
+    const cell = notebookContent.widgets[cellIndex];
+
+    if (cell) {
+      // 셀로 부드럽게 스크롤
+      cell.node.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    }
   }
 
   /**
@@ -88,6 +114,9 @@ export class ToolExecutor {
         console.log('[ToolExecutor] Created cell at index:', cellIndex);
       }
 
+      // 셀 생성/수정 후 해당 셀로 스크롤 (실행 전)
+      this.scrollToCell(cellIndex);
+
       // 셀 실행 및 결과 캡처
       console.log('[ToolExecutor] Executing cell at index:', cellIndex);
       const result = await this.executeCellAndCapture(cellIndex);
@@ -127,6 +156,9 @@ export class ToolExecutor {
       } else {
         cellIndex = await this.createMarkdownCell(params.content);
       }
+
+      // 마크다운 셀도 생성 후 스크롤
+      this.scrollToCell(cellIndex);
 
       return {
         success: true,

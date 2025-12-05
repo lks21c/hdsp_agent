@@ -1,16 +1,38 @@
 /**
  * Agent Panel - Main sidebar panel for Jupyter Agent
+ * Cursor AI Style: Unified Chat + Agent Interface
  */
 
-import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
+import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef, useCallback } from 'react';
 import { ReactWidget } from '@jupyterlab/ui-components';
 import { ApiService } from '../services/ApiService';
 import { IChatMessage } from '../types';
 import { SettingsPanel, LLMConfig } from './SettingsPanel';
-import { AutoAgentPanel } from './AutoAgentPanel';
+import { AgentOrchestrator } from '../services/AgentOrchestrator';
+import {
+  AgentStatus,
+  AutoAgentResult,
+  ExecutionPlan,
+  DEFAULT_AUTO_AGENT_CONFIG,
+  ExecutionSpeed,
+} from '../types/auto-agent';
 import { formatMarkdownToHtml, escapeHtml } from '../utils/markdownRenderer';
 
-type AgentMode = 'chat' | 'auto';
+// Agent 실행 메시지 타입 (채팅에 inline으로 표시)
+interface AgentExecutionMessage {
+  id: string;
+  type: 'agent_execution';
+  request: string;
+  status: AgentStatus;
+  plan: ExecutionPlan | null;
+  result: AutoAgentResult | null;
+  completedSteps: number[];
+  failedSteps: number[];
+  timestamp: number;
+}
+
+// 통합 메시지 타입 (Chat 메시지 또는 Agent 실행)
+type UnifiedMessage = IChatMessage | AgentExecutionMessage;
 
 interface AgentPanelProps {
   apiService: ApiService;
@@ -25,11 +47,39 @@ export interface ChatPanelHandle {
   setCurrentCellIndex: (cellIndex: number) => void;
 }
 
+// Agent 명령어 감지 함수
+const isAgentCommand = (input: string): boolean => {
+  const trimmed = input.trim().toLowerCase();
+  return trimmed.startsWith('/run ') ||
+         trimmed.startsWith('@agent ') ||
+         trimmed.startsWith('/agent ') ||
+         trimmed.startsWith('/execute ');
+};
+
+// Agent 명령어에서 실제 요청 추출
+const extractAgentRequest = (input: string): string => {
+  const trimmed = input.trim();
+  if (trimmed.toLowerCase().startsWith('/run ')) {
+    return trimmed.slice(5).trim();
+  }
+  if (trimmed.toLowerCase().startsWith('@agent ')) {
+    return trimmed.slice(7).trim();
+  }
+  if (trimmed.toLowerCase().startsWith('/agent ')) {
+    return trimmed.slice(7).trim();
+  }
+  if (trimmed.toLowerCase().startsWith('/execute ')) {
+    return trimmed.slice(9).trim();
+  }
+  return trimmed;
+};
+
 /**
- * Chat Panel Component
+ * Chat Panel Component - Cursor AI Style Unified Interface
  */
 const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, notebookTracker }, ref) => {
-  const [messages, setMessages] = useState<IChatMessage[]>([]);
+  // 통합 메시지 목록 (Chat + Agent 실행)
+  const [messages, setMessages] = useState<UnifiedMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -37,12 +87,17 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
   const [conversationId, setConversationId] = useState<string>('');
   const [showSettings, setShowSettings] = useState(false);
   const [llmConfig, setLlmConfig] = useState<LLMConfig | null>(null);
-  const [agentMode, setAgentMode] = useState<AgentMode>('chat');
+  // Agent 실행 상태
+  const [isAgentRunning, setIsAgentRunning] = useState(false);
+  const [currentAgentMessageId, setCurrentAgentMessageId] = useState<string | null>(null);
+  const [executionSpeed, setExecutionSpeed] = useState<ExecutionSpeed>('normal');
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const pendingLlmPromptRef = useRef<string | null>(null);
   const allCodeBlocksRef = useRef<Array<{ id: string; code: string; language: string }>>([]);
   const currentCellIdRef = useRef<string | null>(null);
   const currentCellIndexRef = useRef<number | null>(null);
+  const orchestratorRef = useRef<AgentOrchestrator | null>(null);
 
   // Expose handleSendMessage via ref
   useImperativeHandle(ref, () => ({
@@ -74,6 +129,113 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
   useEffect(() => {
     loadConfig();
   }, []);
+
+  // Initialize AgentOrchestrator when notebook is available
+  useEffect(() => {
+    const notebook = notebookTracker?.currentWidget;
+    const sessionContext = notebook?.sessionContext;
+
+    if (notebook && sessionContext) {
+      const config = { ...DEFAULT_AUTO_AGENT_CONFIG, executionSpeed };
+      orchestratorRef.current = new AgentOrchestrator(notebook, sessionContext, apiService, config);
+    }
+
+    return () => {
+      orchestratorRef.current = null;
+    };
+  }, [notebookTracker?.currentWidget, apiService, executionSpeed]);
+
+  // Agent 실행 핸들러
+  const handleAgentExecution = useCallback(async (request: string) => {
+    const notebook = notebookTracker?.currentWidget;
+    if (!orchestratorRef.current || !notebook) {
+      // 노트북이 없으면 에러 메시지 표시
+      const errorMessage: IChatMessage = {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: '노트북을 먼저 열어주세요. Agent 실행은 활성 노트북이 필요합니다.',
+        timestamp: Date.now(),
+      };
+      setMessages(prev => [...prev, errorMessage]);
+      return;
+    }
+
+    // Agent 실행 메시지 생성
+    const agentMessageId = `agent-${Date.now()}`;
+    const agentMessage: AgentExecutionMessage = {
+      id: agentMessageId,
+      type: 'agent_execution',
+      request,
+      status: { phase: 'planning', message: '실행 계획 생성 중...' },
+      plan: null,
+      result: null,
+      completedSteps: [],
+      failedSteps: [],
+      timestamp: Date.now(),
+    };
+
+    setMessages(prev => [...prev, agentMessage]);
+    setCurrentAgentMessageId(agentMessageId);
+    setIsAgentRunning(true);
+
+    try {
+      const result = await orchestratorRef.current.executeTask(
+        request,
+        notebook,
+        (newStatus: AgentStatus) => {
+          // 실시간 상태 업데이트
+          setMessages(prev =>
+            prev.map(msg =>
+              msg.id === agentMessageId && 'type' in msg && msg.type === 'agent_execution'
+                ? {
+                    ...msg,
+                    status: newStatus,
+                    plan: newStatus.plan || msg.plan,
+                    completedSteps: newStatus.currentStep && newStatus.currentStep > 1
+                      ? Array.from({ length: newStatus.currentStep - 1 }, (_, i) => i + 1)
+                      : msg.completedSteps,
+                    failedSteps: newStatus.phase === 'failed' && newStatus.currentStep
+                      ? [...msg.failedSteps, newStatus.currentStep]
+                      : msg.failedSteps,
+                  }
+                : msg
+            )
+          );
+        }
+      );
+
+      // 최종 결과 업데이트
+      setMessages(prev =>
+        prev.map(msg =>
+          msg.id === agentMessageId && 'type' in msg && msg.type === 'agent_execution'
+            ? {
+                ...msg,
+                status: {
+                  phase: result.success ? 'completed' : 'failed',
+                  message: result.finalAnswer || (result.success ? '작업 완료' : '작업 실패'),
+                },
+                result,
+                completedSteps: result.plan?.steps.map(s => s.stepNumber) || [],
+              }
+            : msg
+        )
+      );
+    } catch (error: any) {
+      setMessages(prev =>
+        prev.map(msg =>
+          msg.id === agentMessageId && 'type' in msg && msg.type === 'agent_execution'
+            ? {
+                ...msg,
+                status: { phase: 'failed', message: error.message || '실행 중 오류 발생' },
+              }
+            : msg
+        )
+      );
+    } finally {
+      setIsAgentRunning(false);
+      setCurrentAgentMessageId(null);
+    }
+  }, [notebookTracker, apiService]);
 
   const loadConfig = async () => {
     try {
@@ -746,7 +908,29 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
     const llmPrompt = pendingLlmPromptRef.current || textarea?.getAttribute('data-llm-prompt');
 
     // Allow execution if we have an LLM prompt even if input is empty (for auto-execution)
-    if ((!input.trim() && !llmPrompt) || isLoading || isStreaming) return;
+    if ((!input.trim() && !llmPrompt) || isLoading || isStreaming || isAgentRunning) return;
+
+    const currentInput = input.trim();
+
+    // Check if this is an Agent command
+    if (isAgentCommand(currentInput)) {
+      const agentRequest = extractAgentRequest(currentInput);
+      if (agentRequest) {
+        // User 메시지 추가
+        const userMessage: IChatMessage = {
+          id: Date.now().toString(),
+          role: 'user',
+          content: currentInput,
+          timestamp: Date.now(),
+        };
+        setMessages(prev => [...prev, userMessage]);
+        setInput('');
+
+        // Agent 실행
+        await handleAgentExecution(agentRequest);
+        return;
+      }
+    }
 
     // Check if API key is configured before sending
     if (!llmConfig) {
@@ -777,7 +961,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
       const errorMessage: IChatMessage = {
         id: Date.now().toString(),
         role: 'assistant',
-        content: `⚠️ API Key가 설정되지 않았습니다.\n\n${providerName === 'gemini' ? 'Gemini' : providerName === 'openai' ? 'OpenAI' : 'vLLM'} API Key를 먼저 설정해주세요.\n\n설정 버튼을 클릭하여 API Key를 입력하세요.`,
+        content: `API Key가 설정되지 않았습니다.\n\n${providerName === 'gemini' ? 'Gemini' : providerName === 'openai' ? 'OpenAI' : 'vLLM'} API Key를 먼저 설정해주세요.\n\n설정 버튼을 클릭하여 API Key를 입력하세요.`,
         timestamp: Date.now()
       };
       setMessages(prev => [...prev, errorMessage]);
@@ -786,7 +970,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
     }
 
     // Use the display prompt (input) for the user message, or use a fallback if input is empty
-    const displayContent = input.trim() || (llmPrompt ? '셀 분석 요청' : '');
+    const displayContent = currentInput || (llmPrompt ? '셀 분석 요청' : '');
     const userMessage: IChatMessage = {
       id: Date.now().toString(),
       role: 'user',
@@ -796,7 +980,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
 
     setMessages(prev => [...prev, userMessage]);
     // Only clear input if it was manually entered, keep it for auto-execution display
-    if (input.trim()) {
+    if (currentInput) {
       setInput('');
     }
     setIsLoading(true);
@@ -836,7 +1020,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
           streamedContent += chunk;
           setMessages(prev =>
             prev.map(msg =>
-              msg.id === assistantMessageId
+              msg.id === assistantMessageId && isChatMessage(msg)
                 ? { ...msg, content: streamedContent }
                 : msg
             )
@@ -850,7 +1034,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
           if (metadata.provider || metadata.model) {
             setMessages(prev =>
               prev.map(msg =>
-                msg.id === assistantMessageId
+                msg.id === assistantMessageId && isChatMessage(msg)
                   ? {
                       ...msg,
                       metadata: {
@@ -869,7 +1053,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
       // Update the assistant message with error
       setMessages(prev =>
         prev.map(msg =>
-          msg.id === assistantMessageId
+          msg.id === assistantMessageId && isChatMessage(msg)
             ? {
                 ...msg,
                 content: streamedContent + `\n\nError: ${error instanceof Error ? error.message : 'Failed to send message'}`
@@ -896,6 +1080,137 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
     setConversationId('');
   };
 
+  // Agent 실행 메시지 렌더링
+  const renderAgentExecutionMessage = (msg: AgentExecutionMessage) => {
+    const { status, plan, result, completedSteps, failedSteps, request } = msg;
+    const isActive = ['planning', 'executing', 'tool_calling', 'self_healing', 'replanning', 'validating', 'reflecting'].includes(status.phase);
+
+    const getStepStatus = (stepNumber: number): 'completed' | 'failed' | 'current' | 'pending' => {
+      if (failedSteps.includes(stepNumber)) return 'failed';
+      if (completedSteps.includes(stepNumber)) return 'completed';
+      if (status.currentStep === stepNumber) return 'current';
+      return 'pending';
+    };
+
+    const progressPercent = plan ? (completedSteps.length / plan.totalSteps) * 100 : 0;
+
+    return (
+      <div className="jp-agent-execution-message">
+        {/* Agent 요청 헤더 */}
+        <div className="jp-agent-execution-header">
+          <div className="jp-agent-execution-badge">
+            <svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12">
+              <path d="M8 0a8 8 0 100 16A8 8 0 008 0zm0 14.5a6.5 6.5 0 110-13 6.5 6.5 0 010 13z"/>
+              <path d="M8 3a.75.75 0 01.75.75v3.5h2.5a.75.75 0 010 1.5h-3.25a.75.75 0 01-.75-.75v-4.25A.75.75 0 018 3z"/>
+            </svg>
+            Agent
+          </div>
+          <span className="jp-agent-execution-request">{request}</span>
+        </div>
+
+        {/* 실행 상태 */}
+        <div className={`jp-agent-execution-status jp-agent-execution-status--${status.phase}`}>
+          {isActive && <div className="jp-agent-execution-spinner" />}
+          {status.phase === 'completed' && (
+            <svg viewBox="0 0 16 16" fill="currentColor" className="jp-agent-execution-icon--success">
+              <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
+            </svg>
+          )}
+          {status.phase === 'failed' && (
+            <svg viewBox="0 0 16 16" fill="currentColor" className="jp-agent-execution-icon--error">
+              <path d="M3.72 3.72a.75.75 0 011.06 0L8 6.94l3.22-3.22a.75.75 0 111.06 1.06L9.06 8l3.22 3.22a.75.75 0 11-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 01-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 010-1.06z"/>
+            </svg>
+          )}
+          <span className="jp-agent-execution-status-text">
+            {status.message || status.phase}
+          </span>
+          {status.confidenceScore !== undefined && (
+            <span className="jp-agent-execution-confidence">
+              {status.confidenceScore}%
+            </span>
+          )}
+        </div>
+
+        {/* 실행 계획 */}
+        {plan && (
+          <div className="jp-agent-execution-plan">
+            <div className="jp-agent-execution-plan-header">
+              <span>실행 계획</span>
+              <span className="jp-agent-execution-plan-progress">
+                {completedSteps.length} / {plan.totalSteps}
+              </span>
+            </div>
+            {/* Progress Bar */}
+            <div className="jp-agent-execution-progress-bar">
+              <div
+                className="jp-agent-execution-progress-fill"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+            {/* Steps */}
+            <div className="jp-agent-execution-steps">
+              {plan.steps.map((step) => {
+                const stepStatus = getStepStatus(step.stepNumber);
+                return (
+                  <div key={step.stepNumber} className={`jp-agent-execution-step jp-agent-execution-step--${stepStatus}`}>
+                    <div className="jp-agent-execution-step-indicator">
+                      {stepStatus === 'completed' && (
+                        <svg viewBox="0 0 16 16" fill="currentColor">
+                          <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
+                        </svg>
+                      )}
+                      {stepStatus === 'failed' && (
+                        <svg viewBox="0 0 16 16" fill="currentColor">
+                          <path d="M3.72 3.72a.75.75 0 011.06 0L8 6.94l3.22-3.22a.75.75 0 111.06 1.06L9.06 8l3.22 3.22a.75.75 0 11-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 01-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 010-1.06z"/>
+                        </svg>
+                      )}
+                      {stepStatus === 'current' && <div className="jp-agent-execution-step-spinner" />}
+                      {stepStatus === 'pending' && <span>{step.stepNumber}</span>}
+                    </div>
+                    <div className="jp-agent-execution-step-content">
+                      <span className={`jp-agent-execution-step-desc ${stepStatus === 'completed' ? 'jp-agent-execution-step-desc--done' : ''}`}>
+                        {step.description}
+                      </span>
+                      <div className="jp-agent-execution-step-tools">
+                        {step.toolCalls.map((tc, i) => (
+                          <span key={i} className="jp-agent-execution-tool-tag">{tc.tool}</span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* 최종 결과 */}
+        {result && (
+          <div className={`jp-agent-execution-result jp-agent-execution-result--${result.success ? 'success' : 'error'}`}>
+            {result.finalAnswer && (
+              <p className="jp-agent-execution-result-message">{result.finalAnswer}</p>
+            )}
+            {result.error && (
+              <p className="jp-agent-execution-result-error">{result.error}</p>
+            )}
+            <div className="jp-agent-execution-result-stats">
+              <span>{result.createdCells.length}개 셀 생성</span>
+              <span>{result.modifiedCells.length}개 셀 수정</span>
+              {result.executionTime && (
+                <span>{(result.executionTime / 1000).toFixed(1)}초</span>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // 메시지가 Chat 메시지인지 확인
+  const isChatMessage = (msg: UnifiedMessage): msg is IChatMessage => {
+    return !('type' in msg) || msg.type !== 'agent_execution';
+  };
+
   return (
     <div className="jp-agent-panel">
       {/* Settings Dialog */}
@@ -911,20 +1226,18 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
       <div className="jp-agent-header">
         <h2>HDSP Agent</h2>
         <div className="jp-agent-header-buttons">
-          {agentMode === 'chat' && (
-            <button
-              className="jp-agent-clear-button"
-              onClick={clearChat}
-              title="대화 초기화"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="3 6 5 6 21 6"></polyline>
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                <line x1="10" y1="11" x2="10" y2="17"></line>
-                <line x1="14" y1="11" x2="14" y2="17"></line>
-              </svg>
-            </button>
-          )}
+          <button
+            className="jp-agent-clear-button"
+            onClick={clearChat}
+            title="대화 초기화"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              <line x1="10" y1="11" x2="10" y2="17"></line>
+              <line x1="14" y1="11" x2="14" y2="17"></line>
+            </svg>
+          </button>
           <button
             className="jp-agent-settings-button-icon"
             onClick={() => setShowSettings(true)}
@@ -945,111 +1258,90 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
         </div>
       </div>
 
-      {/* Chat Mode - Messages */}
-      {agentMode === 'chat' && (
-        <div className="jp-agent-messages">
-          {messages.length === 0 ? (
-            <div className="jp-agent-empty-state">
-              <p>안녕하세요! HDSP Agent입니다.</p>
-            </div>
-          ) : (
-            messages.map(msg => (
-              <div key={msg.id} className={`jp-agent-message jp-agent-message-${msg.role}`}>
-                <div className="jp-agent-message-header">
-                  <span className="jp-agent-message-role">
-                    {msg.role === 'user' ? '사용자' : 'Agent'}
-                  </span>
-                  <span className="jp-agent-message-time">
-                    {new Date(msg.timestamp).toLocaleTimeString()}
-                  </span>
+      {/* Unified Messages (Chat + Agent Execution) */}
+      <div className="jp-agent-messages">
+        {messages.length === 0 ? (
+          <div className="jp-agent-empty-state">
+            <p>안녕하세요! HDSP Agent입니다.</p>
+            <p className="jp-agent-empty-hint">
+              채팅으로 대화하거나, <code>/run</code> 또는 <code>@agent</code>로 작업을 실행하세요.
+            </p>
+          </div>
+        ) : (
+          messages.map(msg => {
+            if (isChatMessage(msg)) {
+              // 일반 Chat 메시지
+              return (
+                <div key={msg.id} className={`jp-agent-message jp-agent-message-${msg.role}`}>
+                  <div className="jp-agent-message-header">
+                    <span className="jp-agent-message-role">
+                      {msg.role === 'user' ? '사용자' : 'Agent'}
+                    </span>
+                    <span className="jp-agent-message-time">
+                      {new Date(msg.timestamp).toLocaleTimeString()}
+                    </span>
+                  </div>
+                  <div
+                    className={`jp-agent-message-content${streamingMessageId === msg.id ? ' streaming' : ''}`}
+                    dangerouslySetInnerHTML={{
+                      __html: msg.role === 'assistant'
+                        ? formatMarkdownToHtml(msg.content)
+                        : escapeHtml(msg.content).replace(/\n/g, '<br>')
+                    }}
+                  />
                 </div>
-                <div
-                  className={`jp-agent-message-content${streamingMessageId === msg.id ? ' streaming' : ''}`}
-                  dangerouslySetInnerHTML={{
-                    __html: msg.role === 'assistant'
-                      ? formatMarkdownToHtml(msg.content)
-                      : escapeHtml(msg.content).replace(/\n/g, '<br>')
-                  }}
-                />
-              </div>
-            ))
-          )}
-          {isLoading && !isStreaming && (
-            <div className="jp-agent-message jp-agent-message-assistant">
-              <div className="jp-agent-message-header">
-                <span className="jp-agent-message-role">Agent</span>
-              </div>
-              <div className="jp-agent-message-content jp-agent-loading">
-                <span className="jp-agent-loading-dot">.</span>
-                <span className="jp-agent-loading-dot">.</span>
-                <span className="jp-agent-loading-dot">.</span>
-              </div>
+              );
+            } else {
+              // Agent 실행 메시지
+              return (
+                <div key={msg.id} className="jp-agent-message jp-agent-message-agent-execution">
+                  {renderAgentExecutionMessage(msg)}
+                </div>
+              );
+            }
+          })
+        )}
+        {isLoading && !isStreaming && !isAgentRunning && (
+          <div className="jp-agent-message jp-agent-message-assistant">
+            <div className="jp-agent-message-header">
+              <span className="jp-agent-message-role">Agent</span>
             </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-      )}
-
-      {/* Auto Agent Mode Content */}
-      {agentMode === 'auto' && (
-        <AutoAgentPanel
-          apiService={apiService}
-          notebookTracker={notebookTracker}
-          onComplete={(result) => {
-            console.log('[AgentPanel] Auto-Agent completed:', result);
-          }}
-        />
-      )}
-
-      {/* Input Container - Always Visible */}
-      {agentMode === 'chat' && (
-        <div className="jp-agent-input-container">
-          {/* Mode Selector - Bottom Left */}
-          <div className="jp-agent-mode-selector">
-            <select
-              className="jp-agent-mode-select"
-              value={agentMode}
-              onChange={(e) => setAgentMode(e.target.value as AgentMode)}
-            >
-              <option value="chat">Chat</option>
-              <option value="auto">Agent</option>
-            </select>
+            <div className="jp-agent-message-content jp-agent-loading">
+              <span className="jp-agent-loading-dot">.</span>
+              <span className="jp-agent-loading-dot">.</span>
+              <span className="jp-agent-loading-dot">.</span>
+            </div>
           </div>
-          <div className="jp-agent-input-wrapper">
-            <textarea
-              className="jp-agent-input"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="코드에 대해 무엇이든 물어보세요..."
-              rows={3}
-              disabled={isLoading}
-            />
-            <button
-              className="jp-agent-send-button"
-              onClick={handleSendMessage}
-              disabled={!input.trim() || isLoading || isStreaming}
-              title="메시지 전송 (Enter)"
-            >
-              전송
-            </button>
-          </div>
-        </div>
-      )}
+        )}
+        <div ref={messagesEndRef} />
+      </div>
 
-      {/* Mode Selector for Auto Agent Mode */}
-      {agentMode === 'auto' && (
-        <div className="jp-agent-mode-selector-standalone">
-          <select
-            className="jp-agent-mode-select"
-            value={agentMode}
-            onChange={(e) => setAgentMode(e.target.value as AgentMode)}
+      {/* Unified Input Container */}
+      <div className="jp-agent-input-container">
+        <div className="jp-agent-input-wrapper">
+          <textarea
+            className="jp-agent-input"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="메시지 입력 또는 /run, @agent로 작업 실행..."
+            rows={3}
+            disabled={isLoading || isAgentRunning}
+          />
+          <button
+            className="jp-agent-send-button"
+            onClick={handleSendMessage}
+            disabled={!input.trim() || isLoading || isStreaming || isAgentRunning}
+            title="전송 (Enter)"
           >
-            <option value="chat">Chat</option>
-            <option value="auto">Agent</option>
-          </select>
+            {isAgentRunning ? '실행 중...' : '전송'}
+          </button>
         </div>
-      )}
+        {/* 힌트 */}
+        <div className="jp-agent-input-hint">
+          <code>/run</code> 또는 <code>@agent</code>: 노트북 작업 자동 실행
+        </div>
+      </div>
     </div>
   );
 });

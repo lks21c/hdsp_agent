@@ -15,6 +15,8 @@ from ..prompts.auto_agent_prompts import (
     format_final_answer_prompt,
     format_replan_prompt,
 )
+from ..services.code_validator import CodeValidator
+from ..services.reflection_engine import ReflectionEngine
 
 logger = logging.getLogger(__name__)
 
@@ -361,3 +363,94 @@ class AutoAgentReplanHandler(BaseAgentHandler):
     def _parse_json_response(self, response: str) -> dict:
         """LLM 응답에서 JSON 추출 - 부모 클래스의 공통 메서드 사용"""
         return self.parse_llm_json_response(response)
+
+
+class AutoAgentValidateHandler(BaseAgentHandler):
+    """코드 검증 핸들러 - 실행 전 코드 품질 검사 (Pyflakes/AST 기반)"""
+
+    @web.authenticated
+    async def post(self):
+        """POST /hdsp-agent/auto-agent/validate"""
+        try:
+            logger.info("=== Auto-Agent Validate Request ===")
+            body = self.get_json_body()
+
+            code = body.get('code', '')
+            notebook_context = body.get('notebookContext', {})
+
+            if not code:
+                return self.write_error_json(400, 'code is required')
+
+            logger.info(f"Validating code (length: {len(code)})")
+
+            # CodeValidator 인스턴스 생성 (노트북 컨텍스트 포함)
+            validator = CodeValidator(notebook_context)
+
+            # 전체 검증 수행
+            result = validator.full_validation(code)
+
+            logger.info(f"Validation result: valid={result.is_valid}, "
+                       f"errors={result.has_errors}, warnings={result.has_warnings}")
+
+            self.write_json({
+                'valid': result.is_valid,
+                'issues': [issue.to_dict() for issue in result.issues],
+                'dependencies': result.dependencies.to_dict() if result.dependencies else None,
+                'hasErrors': result.has_errors,
+                'hasWarnings': result.has_warnings,
+                'summary': result.summary
+            })
+
+        except Exception as e:
+            logger.error(f"Auto-Agent validate error: {str(e)}", exc_info=True)
+            self.write_error_json(500, str(e))
+
+
+class AutoAgentReflectHandler(BaseAgentHandler):
+    """Reflection 핸들러 - 실행 결과 분석 및 적응적 조정"""
+
+    @web.authenticated
+    async def post(self):
+        """POST /hdsp-agent/auto-agent/reflect"""
+        try:
+            logger.info("=== Auto-Agent Reflect Request ===")
+            body = self.get_json_body()
+
+            step_number = body.get('stepNumber', 0)
+            step_description = body.get('stepDescription', '')
+            executed_code = body.get('executedCode', '')
+            execution_status = body.get('executionStatus', 'ok')
+            execution_output = body.get('executionOutput', '')
+            error_message = body.get('errorMessage')
+            expected_outcome = body.get('expectedOutcome')
+            validation_criteria = body.get('validationCriteria', [])
+            remaining_steps = body.get('remainingSteps', [])
+
+            logger.info(f"Reflecting on step {step_number}: {step_description[:50]}...")
+
+            # ReflectionEngine 인스턴스 생성
+            engine = ReflectionEngine()
+
+            # Reflection 수행
+            result = engine.reflect(
+                step_number=step_number,
+                step_description=step_description,
+                executed_code=executed_code,
+                execution_status=execution_status,
+                execution_output=execution_output,
+                error_message=error_message,
+                expected_outcome=expected_outcome,
+                validation_criteria=validation_criteria,
+                remaining_steps=remaining_steps
+            )
+
+            logger.info(f"Reflection result: checkpoint_passed={result.evaluation.checkpoint_passed}, "
+                       f"action={result.recommendations.action.value}")
+
+            self.write_json({
+                'reflection': result.to_dict()
+            })
+
+        except Exception as e:
+            logger.error(f"Auto-Agent reflect error: {str(e)}", exc_info=True)
+            self.write_error_json(500, str(e))

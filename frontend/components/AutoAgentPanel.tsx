@@ -168,20 +168,83 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({ status }) => {
       case 'planned': return status.message || '계획 완료';
       case 'executing': return `실행 중 (${status.currentStep}/${status.totalSteps})`;
       case 'tool_calling': return `${status.tool} 실행 중`;
+      case 'validating': return status.message || '코드 검증 중...';
       case 'self_healing': return `재시도 중 (${status.attempt}/3)`;
       case 'replanning': return `계획 수정 중 (Step ${status.currentStep})`;
+      case 'reflecting': return status.message || '결과 분석 중...';
       case 'completed': return '완료';
       case 'failed': return '실패';
       default: return '처리 중...';
     }
   };
 
-  const isActive = ['planning', 'executing', 'tool_calling', 'self_healing', 'replanning'].includes(status.phase);
+  const isActive = ['planning', 'executing', 'tool_calling', 'self_healing', 'replanning', 'validating', 'reflecting'].includes(status.phase);
+
+  // Validation/Reflection 상태 아이콘
+  const getStatusIcon = () => {
+    if (status.phase === 'validating') {
+      switch (status.validationStatus) {
+        case 'checking':
+          return <div className="aa-status-spinner" />;
+        case 'passed':
+          return (
+            <svg className="aa-status-icon aa-status-icon--success" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
+            </svg>
+          );
+        case 'warning':
+          return (
+            <svg className="aa-status-icon aa-status-icon--warning" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M8.22 1.754a.25.25 0 00-.44 0L1.698 13.132a.25.25 0 00.22.368h12.164a.25.25 0 00.22-.368L8.22 1.754zm-1.763-.707c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0114.082 15H1.918a1.75 1.75 0 01-1.543-2.575L6.457 1.047zM9 11a1 1 0 11-2 0 1 1 0 012 0zm-.25-5.25a.75.75 0 00-1.5 0v2.5a.75.75 0 001.5 0v-2.5z"/>
+            </svg>
+          );
+        case 'failed':
+          return (
+            <svg className="aa-status-icon aa-status-icon--error" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M3.72 3.72a.75.75 0 011.06 0L8 6.94l3.22-3.22a.75.75 0 111.06 1.06L9.06 8l3.22 3.22a.75.75 0 11-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 01-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 010-1.06z"/>
+            </svg>
+          );
+      }
+    }
+
+    if (status.phase === 'reflecting') {
+      switch (status.reflectionStatus) {
+        case 'analyzing':
+          return <div className="aa-status-spinner" />;
+        case 'passed':
+          return (
+            <svg className="aa-status-icon aa-status-icon--success" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
+            </svg>
+          );
+        case 'adjusting':
+          return (
+            <svg className="aa-status-icon aa-status-icon--warning" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M8 3a5 5 0 104.546 2.914.5.5 0 01.908-.418A6 6 0 118 2v1z"/>
+              <path d="M8 4.466V.534a.25.25 0 01.41-.192l2.36 1.966a.25.25 0 010 .384L8.41 4.658A.25.25 0 018 4.466z"/>
+            </svg>
+          );
+      }
+    }
+
+    return isActive ? <div className="aa-status-spinner" /> : null;
+  };
 
   return (
-    <div className={`aa-status aa-status--${status.phase}`}>
-      {isActive && <div className="aa-status-spinner" />}
+    <div className={`aa-status aa-status--${status.phase} ${status.validationStatus ? `aa-status--validation-${status.validationStatus}` : ''} ${status.reflectionStatus ? `aa-status--reflection-${status.reflectionStatus}` : ''}`}>
+      {getStatusIcon()}
       <span className="aa-status-text">{getMessage()}</span>
+      {status.confidenceScore !== undefined && (
+        <span className="aa-status-confidence">
+          <span className="aa-confidence-bar">
+            <span
+              className="aa-confidence-fill"
+              style={{ width: `${status.confidenceScore}%` }}
+            />
+          </span>
+          <span className="aa-confidence-value">{status.confidenceScore}%</span>
+        </span>
+      )}
       {status.phase === 'self_healing' && status.error && (
         <span className="aa-status-error">{status.error.message}</span>
       )}
@@ -380,9 +443,9 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
           disabled={isRunning && executionSpeed !== 'step-by-step'}
         >
           <option value="instant">즉시 (지연 없음)</option>
-          <option value="fast">빠름 (0.3초)</option>
-          <option value="normal">보통 (0.8초)</option>
-          <option value="slow">느림 (1.5초)</option>
+          <option value="fast">빠름 (0.8초)</option>
+          <option value="normal">보통 (1.5초)</option>
+          <option value="slow">느림 (3초)</option>
           <option value="step-by-step">단계별 (수동)</option>
         </select>
       </div>

@@ -19,6 +19,10 @@ import {
   AutoAgentRefineResponse,
   AutoAgentReplanRequest,
   AutoAgentReplanResponse,
+  AutoAgentValidateRequest,
+  AutoAgentValidateResponse,
+  AutoAgentReflectRequest,
+  AutoAgentReflectResponse,
   ExecutionPlan,
   PlanStep,
   ExecutionError,
@@ -375,6 +379,82 @@ export class ApiService {
 
     const result = await response.json();
     console.log('[ApiService] Replan API Success:', result);
+    return result;
+  }
+
+  /**
+   * Validate code before execution - 사전 코드 품질 검증 (Pyflakes/AST 기반)
+   */
+  async validateCode(request: AutoAgentValidateRequest): Promise<AutoAgentValidateResponse> {
+    console.log('[ApiService] validateCode request:', request);
+
+    const response = await fetch(`${this.baseUrl}/auto-agent/validate`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      credentials: 'include',
+      body: JSON.stringify(request)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[ApiService] Validate API Error:', {
+        status: response.status,
+        statusText: response.statusText,
+        body: errorText,
+        url: `${this.baseUrl}/auto-agent/validate`
+      });
+
+      let errorMessage = '코드 검증 실패';
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error || errorJson.message || errorMessage;
+      } catch (e) {
+        errorMessage = errorText || errorMessage;
+      }
+
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    console.log('[ApiService] Validate API Success:', result);
+    return result;
+  }
+
+  /**
+   * Reflect on step execution - 실행 결과 분석 및 적응적 조정
+   */
+  async reflectOnExecution(request: AutoAgentReflectRequest): Promise<AutoAgentReflectResponse> {
+    console.log('[ApiService] reflectOnExecution request:', request);
+
+    const response = await fetch(`${this.baseUrl}/auto-agent/reflect`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      credentials: 'include',
+      body: JSON.stringify(request)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[ApiService] Reflect API Error:', {
+        status: response.status,
+        statusText: response.statusText,
+        body: errorText,
+        url: `${this.baseUrl}/auto-agent/reflect`
+      });
+
+      let errorMessage = 'Reflection 실패';
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error || errorJson.message || errorMessage;
+      } catch (e) {
+        errorMessage = errorText || errorMessage;
+      }
+
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    console.log('[ApiService] Reflect API Success:', result);
     return result;
   }
 

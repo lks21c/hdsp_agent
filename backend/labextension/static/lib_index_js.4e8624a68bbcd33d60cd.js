@@ -16,20 +16,49 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _jupyterlab_ui_components__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! @jupyterlab/ui-components */ "webpack/sharing/consume/default/@jupyterlab/ui-components");
 /* harmony import */ var _jupyterlab_ui_components__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(_jupyterlab_ui_components__WEBPACK_IMPORTED_MODULE_1__);
 /* harmony import */ var _SettingsPanel__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./SettingsPanel */ "./lib/components/SettingsPanel.js");
-/* harmony import */ var _AutoAgentPanel__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./AutoAgentPanel */ "./lib/components/AutoAgentPanel.js");
-/* harmony import */ var _utils_markdownRenderer__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ../utils/markdownRenderer */ "./lib/utils/markdownRenderer.js");
+/* harmony import */ var _services_AgentOrchestrator__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ../services/AgentOrchestrator */ "./lib/services/AgentOrchestrator.js");
+/* harmony import */ var _types_auto_agent__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ../types/auto-agent */ "./lib/types/auto-agent.js");
+/* harmony import */ var _utils_markdownRenderer__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ../utils/markdownRenderer */ "./lib/utils/markdownRenderer.js");
 /**
  * Agent Panel - Main sidebar panel for Jupyter Agent
+ * Cursor AI Style: Unified Chat + Agent Interface
  */
 
 
 
 
 
+
+// Agent 명령어 감지 함수
+const isAgentCommand = (input) => {
+    const trimmed = input.trim().toLowerCase();
+    return trimmed.startsWith('/run ') ||
+        trimmed.startsWith('@agent ') ||
+        trimmed.startsWith('/agent ') ||
+        trimmed.startsWith('/execute ');
+};
+// Agent 명령어에서 실제 요청 추출
+const extractAgentRequest = (input) => {
+    const trimmed = input.trim();
+    if (trimmed.toLowerCase().startsWith('/run ')) {
+        return trimmed.slice(5).trim();
+    }
+    if (trimmed.toLowerCase().startsWith('@agent ')) {
+        return trimmed.slice(7).trim();
+    }
+    if (trimmed.toLowerCase().startsWith('/agent ')) {
+        return trimmed.slice(7).trim();
+    }
+    if (trimmed.toLowerCase().startsWith('/execute ')) {
+        return trimmed.slice(9).trim();
+    }
+    return trimmed;
+};
 /**
- * Chat Panel Component
+ * Chat Panel Component - Cursor AI Style Unified Interface
  */
 const ChatPanel = (0,react__WEBPACK_IMPORTED_MODULE_0__.forwardRef)(({ apiService, notebookTracker }, ref) => {
+    // 통합 메시지 목록 (Chat + Agent 실행)
     const [messages, setMessages] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)([]);
     const [input, setInput] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)('');
     const [isLoading, setIsLoading] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false);
@@ -38,12 +67,16 @@ const ChatPanel = (0,react__WEBPACK_IMPORTED_MODULE_0__.forwardRef)(({ apiServic
     const [conversationId, setConversationId] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)('');
     const [showSettings, setShowSettings] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false);
     const [llmConfig, setLlmConfig] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null);
-    const [agentMode, setAgentMode] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)('chat');
+    // Agent 실행 상태
+    const [isAgentRunning, setIsAgentRunning] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false);
+    const [currentAgentMessageId, setCurrentAgentMessageId] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null);
+    const [executionSpeed, setExecutionSpeed] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)('normal');
     const messagesEndRef = (0,react__WEBPACK_IMPORTED_MODULE_0__.useRef)(null);
     const pendingLlmPromptRef = (0,react__WEBPACK_IMPORTED_MODULE_0__.useRef)(null);
     const allCodeBlocksRef = (0,react__WEBPACK_IMPORTED_MODULE_0__.useRef)([]);
     const currentCellIdRef = (0,react__WEBPACK_IMPORTED_MODULE_0__.useRef)(null);
     const currentCellIndexRef = (0,react__WEBPACK_IMPORTED_MODULE_0__.useRef)(null);
+    const orchestratorRef = (0,react__WEBPACK_IMPORTED_MODULE_0__.useRef)(null);
     // Expose handleSendMessage via ref
     (0,react__WEBPACK_IMPORTED_MODULE_0__.useImperativeHandle)(ref, () => ({
         handleSendMessage: async () => {
@@ -73,6 +106,91 @@ const ChatPanel = (0,react__WEBPACK_IMPORTED_MODULE_0__.forwardRef)(({ apiServic
     (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
         loadConfig();
     }, []);
+    // Initialize AgentOrchestrator when notebook is available
+    (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
+        const notebook = notebookTracker?.currentWidget;
+        const sessionContext = notebook?.sessionContext;
+        if (notebook && sessionContext) {
+            const config = { ..._types_auto_agent__WEBPACK_IMPORTED_MODULE_4__.DEFAULT_AUTO_AGENT_CONFIG, executionSpeed };
+            orchestratorRef.current = new _services_AgentOrchestrator__WEBPACK_IMPORTED_MODULE_3__.AgentOrchestrator(notebook, sessionContext, apiService, config);
+        }
+        return () => {
+            orchestratorRef.current = null;
+        };
+    }, [notebookTracker?.currentWidget, apiService, executionSpeed]);
+    // Agent 실행 핸들러
+    const handleAgentExecution = (0,react__WEBPACK_IMPORTED_MODULE_0__.useCallback)(async (request) => {
+        const notebook = notebookTracker?.currentWidget;
+        if (!orchestratorRef.current || !notebook) {
+            // 노트북이 없으면 에러 메시지 표시
+            const errorMessage = {
+                id: Date.now().toString(),
+                role: 'assistant',
+                content: '노트북을 먼저 열어주세요. Agent 실행은 활성 노트북이 필요합니다.',
+                timestamp: Date.now(),
+            };
+            setMessages(prev => [...prev, errorMessage]);
+            return;
+        }
+        // Agent 실행 메시지 생성
+        const agentMessageId = `agent-${Date.now()}`;
+        const agentMessage = {
+            id: agentMessageId,
+            type: 'agent_execution',
+            request,
+            status: { phase: 'planning', message: '실행 계획 생성 중...' },
+            plan: null,
+            result: null,
+            completedSteps: [],
+            failedSteps: [],
+            timestamp: Date.now(),
+        };
+        setMessages(prev => [...prev, agentMessage]);
+        setCurrentAgentMessageId(agentMessageId);
+        setIsAgentRunning(true);
+        try {
+            const result = await orchestratorRef.current.executeTask(request, notebook, (newStatus) => {
+                // 실시간 상태 업데이트
+                setMessages(prev => prev.map(msg => msg.id === agentMessageId && 'type' in msg && msg.type === 'agent_execution'
+                    ? {
+                        ...msg,
+                        status: newStatus,
+                        plan: newStatus.plan || msg.plan,
+                        completedSteps: newStatus.currentStep && newStatus.currentStep > 1
+                            ? Array.from({ length: newStatus.currentStep - 1 }, (_, i) => i + 1)
+                            : msg.completedSteps,
+                        failedSteps: newStatus.phase === 'failed' && newStatus.currentStep
+                            ? [...msg.failedSteps, newStatus.currentStep]
+                            : msg.failedSteps,
+                    }
+                    : msg));
+            });
+            // 최종 결과 업데이트
+            setMessages(prev => prev.map(msg => msg.id === agentMessageId && 'type' in msg && msg.type === 'agent_execution'
+                ? {
+                    ...msg,
+                    status: {
+                        phase: result.success ? 'completed' : 'failed',
+                        message: result.finalAnswer || (result.success ? '작업 완료' : '작업 실패'),
+                    },
+                    result,
+                    completedSteps: result.plan?.steps.map(s => s.stepNumber) || [],
+                }
+                : msg));
+        }
+        catch (error) {
+            setMessages(prev => prev.map(msg => msg.id === agentMessageId && 'type' in msg && msg.type === 'agent_execution'
+                ? {
+                    ...msg,
+                    status: { phase: 'failed', message: error.message || '실행 중 오류 발생' },
+                }
+                : msg));
+        }
+        finally {
+            setIsAgentRunning(false);
+            setCurrentAgentMessageId(null);
+        }
+    }, [notebookTracker, apiService]);
     const loadConfig = async () => {
         try {
             const config = await apiService.getConfig();
@@ -663,8 +781,27 @@ const ChatPanel = (0,react__WEBPACK_IMPORTED_MODULE_0__.forwardRef)(({ apiServic
         const textarea = messagesEndRef.current?.parentElement?.querySelector('.jp-agent-input');
         const llmPrompt = pendingLlmPromptRef.current || textarea?.getAttribute('data-llm-prompt');
         // Allow execution if we have an LLM prompt even if input is empty (for auto-execution)
-        if ((!input.trim() && !llmPrompt) || isLoading || isStreaming)
+        if ((!input.trim() && !llmPrompt) || isLoading || isStreaming || isAgentRunning)
             return;
+        const currentInput = input.trim();
+        // Check if this is an Agent command
+        if (isAgentCommand(currentInput)) {
+            const agentRequest = extractAgentRequest(currentInput);
+            if (agentRequest) {
+                // User 메시지 추가
+                const userMessage = {
+                    id: Date.now().toString(),
+                    role: 'user',
+                    content: currentInput,
+                    timestamp: Date.now(),
+                };
+                setMessages(prev => [...prev, userMessage]);
+                setInput('');
+                // Agent 실행
+                await handleAgentExecution(agentRequest);
+                return;
+            }
+        }
         // Check if API key is configured before sending
         if (!llmConfig) {
             // Config not loaded yet, try to load it
@@ -694,7 +831,7 @@ const ChatPanel = (0,react__WEBPACK_IMPORTED_MODULE_0__.forwardRef)(({ apiServic
             const errorMessage = {
                 id: Date.now().toString(),
                 role: 'assistant',
-                content: `⚠️ API Key가 설정되지 않았습니다.\n\n${providerName === 'gemini' ? 'Gemini' : providerName === 'openai' ? 'OpenAI' : 'vLLM'} API Key를 먼저 설정해주세요.\n\n설정 버튼을 클릭하여 API Key를 입력하세요.`,
+                content: `API Key가 설정되지 않았습니다.\n\n${providerName === 'gemini' ? 'Gemini' : providerName === 'openai' ? 'OpenAI' : 'vLLM'} API Key를 먼저 설정해주세요.\n\n설정 버튼을 클릭하여 API Key를 입력하세요.`,
                 timestamp: Date.now()
             };
             setMessages(prev => [...prev, errorMessage]);
@@ -702,7 +839,7 @@ const ChatPanel = (0,react__WEBPACK_IMPORTED_MODULE_0__.forwardRef)(({ apiServic
             return;
         }
         // Use the display prompt (input) for the user message, or use a fallback if input is empty
-        const displayContent = input.trim() || (llmPrompt ? '셀 분석 요청' : '');
+        const displayContent = currentInput || (llmPrompt ? '셀 분석 요청' : '');
         const userMessage = {
             id: Date.now().toString(),
             role: 'user',
@@ -711,7 +848,7 @@ const ChatPanel = (0,react__WEBPACK_IMPORTED_MODULE_0__.forwardRef)(({ apiServic
         };
         setMessages(prev => [...prev, userMessage]);
         // Only clear input if it was manually entered, keep it for auto-execution display
-        if (input.trim()) {
+        if (currentInput) {
             setInput('');
         }
         setIsLoading(true);
@@ -743,7 +880,7 @@ const ChatPanel = (0,react__WEBPACK_IMPORTED_MODULE_0__.forwardRef)(({ apiServic
             // onChunk callback - update message content incrementally
             (chunk) => {
                 streamedContent += chunk;
-                setMessages(prev => prev.map(msg => msg.id === assistantMessageId
+                setMessages(prev => prev.map(msg => msg.id === assistantMessageId && isChatMessage(msg)
                     ? { ...msg, content: streamedContent }
                     : msg));
             }, 
@@ -753,7 +890,7 @@ const ChatPanel = (0,react__WEBPACK_IMPORTED_MODULE_0__.forwardRef)(({ apiServic
                     setConversationId(metadata.conversationId);
                 }
                 if (metadata.provider || metadata.model) {
-                    setMessages(prev => prev.map(msg => msg.id === assistantMessageId
+                    setMessages(prev => prev.map(msg => msg.id === assistantMessageId && isChatMessage(msg)
                         ? {
                             ...msg,
                             metadata: {
@@ -768,7 +905,7 @@ const ChatPanel = (0,react__WEBPACK_IMPORTED_MODULE_0__.forwardRef)(({ apiServic
         }
         catch (error) {
             // Update the assistant message with error
-            setMessages(prev => prev.map(msg => msg.id === assistantMessageId
+            setMessages(prev => prev.map(msg => msg.id === assistantMessageId && isChatMessage(msg)
                 ? {
                     ...msg,
                     content: streamedContent + `\n\nError: ${error instanceof Error ? error.message : 'Failed to send message'}`
@@ -791,17 +928,90 @@ const ChatPanel = (0,react__WEBPACK_IMPORTED_MODULE_0__.forwardRef)(({ apiServic
         setMessages([]);
         setConversationId('');
     };
+    // Agent 실행 메시지 렌더링
+    const renderAgentExecutionMessage = (msg) => {
+        const { status, plan, result, completedSteps, failedSteps, request } = msg;
+        const isActive = ['planning', 'executing', 'tool_calling', 'self_healing', 'replanning', 'validating', 'reflecting'].includes(status.phase);
+        const getStepStatus = (stepNumber) => {
+            if (failedSteps.includes(stepNumber))
+                return 'failed';
+            if (completedSteps.includes(stepNumber))
+                return 'completed';
+            if (status.currentStep === stepNumber)
+                return 'current';
+            return 'pending';
+        };
+        const progressPercent = plan ? (completedSteps.length / plan.totalSteps) * 100 : 0;
+        return (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-execution-message" },
+            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-execution-header" },
+                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-execution-badge" },
+                    react__WEBPACK_IMPORTED_MODULE_0___default().createElement("svg", { viewBox: "0 0 16 16", fill: "currentColor", width: "12", height: "12" },
+                        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("path", { d: "M8 0a8 8 0 100 16A8 8 0 008 0zm0 14.5a6.5 6.5 0 110-13 6.5 6.5 0 010 13z" }),
+                        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("path", { d: "M8 3a.75.75 0 01.75.75v3.5h2.5a.75.75 0 010 1.5h-3.25a.75.75 0 01-.75-.75v-4.25A.75.75 0 018 3z" })),
+                    "Agent"),
+                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "jp-agent-execution-request" }, request)),
+            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: `jp-agent-execution-status jp-agent-execution-status--${status.phase}` },
+                isActive && react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-execution-spinner" }),
+                status.phase === 'completed' && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("svg", { viewBox: "0 0 16 16", fill: "currentColor", className: "jp-agent-execution-icon--success" },
+                    react__WEBPACK_IMPORTED_MODULE_0___default().createElement("path", { d: "M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z" }))),
+                status.phase === 'failed' && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("svg", { viewBox: "0 0 16 16", fill: "currentColor", className: "jp-agent-execution-icon--error" },
+                    react__WEBPACK_IMPORTED_MODULE_0___default().createElement("path", { d: "M3.72 3.72a.75.75 0 011.06 0L8 6.94l3.22-3.22a.75.75 0 111.06 1.06L9.06 8l3.22 3.22a.75.75 0 11-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 01-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 010-1.06z" }))),
+                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "jp-agent-execution-status-text" }, status.message || status.phase),
+                status.confidenceScore !== undefined && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "jp-agent-execution-confidence" },
+                    status.confidenceScore,
+                    "%"))),
+            plan && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-execution-plan" },
+                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-execution-plan-header" },
+                    react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", null, "\uC2E4\uD589 \uACC4\uD68D"),
+                    react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "jp-agent-execution-plan-progress" },
+                        completedSteps.length,
+                        " / ",
+                        plan.totalSteps)),
+                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-execution-progress-bar" },
+                    react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-execution-progress-fill", style: { width: `${progressPercent}%` } })),
+                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-execution-steps" }, plan.steps.map((step) => {
+                    const stepStatus = getStepStatus(step.stepNumber);
+                    return (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { key: step.stepNumber, className: `jp-agent-execution-step jp-agent-execution-step--${stepStatus}` },
+                        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-execution-step-indicator" },
+                            stepStatus === 'completed' && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("svg", { viewBox: "0 0 16 16", fill: "currentColor" },
+                                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("path", { d: "M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z" }))),
+                            stepStatus === 'failed' && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("svg", { viewBox: "0 0 16 16", fill: "currentColor" },
+                                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("path", { d: "M3.72 3.72a.75.75 0 011.06 0L8 6.94l3.22-3.22a.75.75 0 111.06 1.06L9.06 8l3.22 3.22a.75.75 0 11-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 01-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 010-1.06z" }))),
+                            stepStatus === 'current' && react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-execution-step-spinner" }),
+                            stepStatus === 'pending' && react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", null, step.stepNumber)),
+                        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-execution-step-content" },
+                            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: `jp-agent-execution-step-desc ${stepStatus === 'completed' ? 'jp-agent-execution-step-desc--done' : ''}` }, step.description),
+                            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-execution-step-tools" }, step.toolCalls.map((tc, i) => (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { key: i, className: "jp-agent-execution-tool-tag" }, tc.tool)))))));
+                })))),
+            result && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: `jp-agent-execution-result jp-agent-execution-result--${result.success ? 'success' : 'error'}` },
+                result.finalAnswer && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", { className: "jp-agent-execution-result-message" }, result.finalAnswer)),
+                result.error && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", { className: "jp-agent-execution-result-error" }, result.error)),
+                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-execution-result-stats" },
+                    react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", null,
+                        result.createdCells.length,
+                        "\uAC1C \uC140 \uC0DD\uC131"),
+                    react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", null,
+                        result.modifiedCells.length,
+                        "\uAC1C \uC140 \uC218\uC815"),
+                    result.executionTime && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", null,
+                        (result.executionTime / 1000).toFixed(1),
+                        "\uCD08")))))));
+    };
+    // 메시지가 Chat 메시지인지 확인
+    const isChatMessage = (msg) => {
+        return !('type' in msg) || msg.type !== 'agent_execution';
+    };
     return (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-panel" },
         showSettings && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_SettingsPanel__WEBPACK_IMPORTED_MODULE_2__.SettingsPanel, { onClose: () => setShowSettings(false), onSave: handleSaveConfig, currentConfig: llmConfig || undefined })),
         react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-header" },
             react__WEBPACK_IMPORTED_MODULE_0___default().createElement("h2", null, "HDSP Agent"),
             react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-header-buttons" },
-                agentMode === 'chat' && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", { className: "jp-agent-clear-button", onClick: clearChat, title: "\uB300\uD654 \uCD08\uAE30\uD654" },
+                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", { className: "jp-agent-clear-button", onClick: clearChat, title: "\uB300\uD654 \uCD08\uAE30\uD654" },
                     react__WEBPACK_IMPORTED_MODULE_0___default().createElement("svg", { width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" },
                         react__WEBPACK_IMPORTED_MODULE_0___default().createElement("polyline", { points: "3 6 5 6 21 6" }),
                         react__WEBPACK_IMPORTED_MODULE_0___default().createElement("path", { d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" }),
                         react__WEBPACK_IMPORTED_MODULE_0___default().createElement("line", { x1: "10", y1: "11", x2: "10", y2: "17" }),
-                        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("line", { x1: "14", y1: "11", x2: "14", y2: "17" })))),
+                        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("line", { x1: "14", y1: "11", x2: "14", y2: "17" }))),
                 react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", { className: "jp-agent-settings-button-icon", onClick: () => setShowSettings(true), title: "\uC124\uC815" },
                     react__WEBPACK_IMPORTED_MODULE_0___default().createElement("svg", { width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" },
                         react__WEBPACK_IMPORTED_MODULE_0___default().createElement("line", { x1: "4", y1: "21", x2: "4", y2: "14" }),
@@ -813,40 +1023,49 @@ const ChatPanel = (0,react__WEBPACK_IMPORTED_MODULE_0__.forwardRef)(({ apiServic
                         react__WEBPACK_IMPORTED_MODULE_0___default().createElement("line", { x1: "1", y1: "14", x2: "7", y2: "14" }),
                         react__WEBPACK_IMPORTED_MODULE_0___default().createElement("line", { x1: "9", y1: "8", x2: "15", y2: "8" }),
                         react__WEBPACK_IMPORTED_MODULE_0___default().createElement("line", { x1: "17", y1: "16", x2: "23", y2: "16" }))))),
-        agentMode === 'chat' && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-messages" },
+        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-messages" },
             messages.length === 0 ? (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-empty-state" },
-                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", null, "\uC548\uB155\uD558\uC138\uC694! HDSP Agent\uC785\uB2C8\uB2E4."))) : (messages.map(msg => (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { key: msg.id, className: `jp-agent-message jp-agent-message-${msg.role}` },
-                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-message-header" },
-                    react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "jp-agent-message-role" }, msg.role === 'user' ? '사용자' : 'Agent'),
-                    react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "jp-agent-message-time" }, new Date(msg.timestamp).toLocaleTimeString())),
-                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: `jp-agent-message-content${streamingMessageId === msg.id ? ' streaming' : ''}`, dangerouslySetInnerHTML: {
-                        __html: msg.role === 'assistant'
-                            ? (0,_utils_markdownRenderer__WEBPACK_IMPORTED_MODULE_4__.formatMarkdownToHtml)(msg.content)
-                            : escapeHtml(msg.content).replace(/\n/g, '<br>')
-                    } }))))),
-            isLoading && !isStreaming && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-message jp-agent-message-assistant" },
+                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", null, "\uC548\uB155\uD558\uC138\uC694! HDSP Agent\uC785\uB2C8\uB2E4."),
+                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", { className: "jp-agent-empty-hint" },
+                    "\uCC44\uD305\uC73C\uB85C \uB300\uD654\uD558\uAC70\uB098, ",
+                    react__WEBPACK_IMPORTED_MODULE_0___default().createElement("code", null, "/run"),
+                    " \uB610\uB294 ",
+                    react__WEBPACK_IMPORTED_MODULE_0___default().createElement("code", null, "@agent"),
+                    "\uB85C \uC791\uC5C5\uC744 \uC2E4\uD589\uD558\uC138\uC694."))) : (messages.map(msg => {
+                if (isChatMessage(msg)) {
+                    // 일반 Chat 메시지
+                    return (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { key: msg.id, className: `jp-agent-message jp-agent-message-${msg.role}` },
+                        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-message-header" },
+                            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "jp-agent-message-role" }, msg.role === 'user' ? '사용자' : 'Agent'),
+                            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "jp-agent-message-time" }, new Date(msg.timestamp).toLocaleTimeString())),
+                        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: `jp-agent-message-content${streamingMessageId === msg.id ? ' streaming' : ''}`, dangerouslySetInnerHTML: {
+                                __html: msg.role === 'assistant'
+                                    ? (0,_utils_markdownRenderer__WEBPACK_IMPORTED_MODULE_5__.formatMarkdownToHtml)(msg.content)
+                                    : escapeHtml(msg.content).replace(/\n/g, '<br>')
+                            } })));
+                }
+                else {
+                    // Agent 실행 메시지
+                    return (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { key: msg.id, className: "jp-agent-message jp-agent-message-agent-execution" }, renderAgentExecutionMessage(msg)));
+                }
+            })),
+            isLoading && !isStreaming && !isAgentRunning && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-message jp-agent-message-assistant" },
                 react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-message-header" },
                     react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "jp-agent-message-role" }, "Agent")),
                 react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-message-content jp-agent-loading" },
                     react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "jp-agent-loading-dot" }, "."),
                     react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "jp-agent-loading-dot" }, "."),
                     react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "jp-agent-loading-dot" }, ".")))),
-            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { ref: messagesEndRef }))),
-        agentMode === 'auto' && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_AutoAgentPanel__WEBPACK_IMPORTED_MODULE_3__.AutoAgentPanel, { apiService: apiService, notebookTracker: notebookTracker, onComplete: (result) => {
-                console.log('[AgentPanel] Auto-Agent completed:', result);
-            } })),
-        agentMode === 'chat' && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-input-container" },
-            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-mode-selector" },
-                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("select", { className: "jp-agent-mode-select", value: agentMode, onChange: (e) => setAgentMode(e.target.value) },
-                    react__WEBPACK_IMPORTED_MODULE_0___default().createElement("option", { value: "chat" }, "Chat"),
-                    react__WEBPACK_IMPORTED_MODULE_0___default().createElement("option", { value: "auto" }, "Agent"))),
+            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { ref: messagesEndRef })),
+        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-input-container" },
             react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-input-wrapper" },
-                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("textarea", { className: "jp-agent-input", value: input, onChange: (e) => setInput(e.target.value), onKeyDown: handleKeyDown, placeholder: "\uCF54\uB4DC\uC5D0 \uB300\uD574 \uBB34\uC5C7\uC774\uB4E0 \uBB3C\uC5B4\uBCF4\uC138\uC694...", rows: 3, disabled: isLoading }),
-                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", { className: "jp-agent-send-button", onClick: handleSendMessage, disabled: !input.trim() || isLoading || isStreaming, title: "\uBA54\uC2DC\uC9C0 \uC804\uC1A1 (Enter)" }, "\uC804\uC1A1")))),
-        agentMode === 'auto' && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-mode-selector-standalone" },
-            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("select", { className: "jp-agent-mode-select", value: agentMode, onChange: (e) => setAgentMode(e.target.value) },
-                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("option", { value: "chat" }, "Chat"),
-                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("option", { value: "auto" }, "Agent"))))));
+                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("textarea", { className: "jp-agent-input", value: input, onChange: (e) => setInput(e.target.value), onKeyDown: handleKeyDown, placeholder: "\uBA54\uC2DC\uC9C0 \uC785\uB825 \uB610\uB294 /run, @agent\uB85C \uC791\uC5C5 \uC2E4\uD589...", rows: 3, disabled: isLoading || isAgentRunning }),
+                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", { className: "jp-agent-send-button", onClick: handleSendMessage, disabled: !input.trim() || isLoading || isStreaming || isAgentRunning, title: "\uC804\uC1A1 (Enter)" }, isAgentRunning ? '실행 중...' : '전송')),
+            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-input-hint" },
+                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("code", null, "/run"),
+                " \uB610\uB294 ",
+                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("code", null, "@agent"),
+                ": \uB178\uD2B8\uBD81 \uC791\uC5C5 \uC790\uB3D9 \uC2E4\uD589"))));
 });
 ChatPanel.displayName = 'ChatPanel';
 /**
@@ -1015,272 +1234,6 @@ ${cell.output}
         }, 100);
     }
 }
-
-
-/***/ }),
-
-/***/ "./lib/components/AutoAgentPanel.js":
-/*!******************************************!*\
-  !*** ./lib/components/AutoAgentPanel.js ***!
-  \******************************************/
-/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
-
-__webpack_require__.r(__webpack_exports__);
-/* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   AutoAgentPanel: () => (/* binding */ AutoAgentPanel),
-/* harmony export */   "default": () => (__WEBPACK_DEFAULT_EXPORT__)
-/* harmony export */ });
-/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! react */ "webpack/sharing/consume/default/react");
-/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
-/* harmony import */ var _services_ApiService__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ../services/ApiService */ "./lib/services/ApiService.js");
-/* harmony import */ var _services_AgentOrchestrator__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ../services/AgentOrchestrator */ "./lib/services/AgentOrchestrator.js");
-/* harmony import */ var _types_auto_agent__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ../types/auto-agent */ "./lib/types/auto-agent.js");
-/**
- * AutoAgentPanel - Claude/Cursor Style Auto-Agent UI
- * Minimal, matte design with no emojis
- */
-
-
-
-
-const ExecutionPlanView = ({ plan, currentStep, completedSteps, failedSteps, isReplanning, originalStepCount, }) => {
-    const getStepStatus = (stepNumber) => {
-        if (isReplanning && currentStep === stepNumber)
-            return 'replanning';
-        if (failedSteps.includes(stepNumber))
-            return 'failed';
-        if (completedSteps.includes(stepNumber))
-            return 'completed';
-        if (currentStep === stepNumber)
-            return 'current';
-        return 'pending';
-    };
-    // 새로 추가된 스텝인지 확인
-    const isNewStep = (stepNumber) => {
-        return originalStepCount !== undefined && stepNumber > originalStepCount;
-    };
-    const progressPercent = (completedSteps.length / plan.totalSteps) * 100;
-    return (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: `aa-plan ${isReplanning ? 'aa-plan--replanning' : ''}` },
-        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-plan-header" },
-            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "aa-plan-title" }, isReplanning ? '계획 수정 중...' : '실행 계획'),
-            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "aa-plan-progress" },
-                completedSteps.length,
-                " / ",
-                plan.totalSteps,
-                originalStepCount !== undefined && plan.totalSteps !== originalStepCount && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "aa-plan-changed" },
-                    "(",
-                    plan.totalSteps > originalStepCount ? '+' : '',
-                    plan.totalSteps - originalStepCount,
-                    ")")))),
-        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-progress-bar" },
-            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-progress-fill", style: { width: `${progressPercent}%` } })),
-        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-plan-steps" }, plan.steps.map((step) => {
-            const status = getStepStatus(step.stepNumber);
-            const isNew = isNewStep(step.stepNumber);
-            return (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { key: step.stepNumber, className: `aa-step aa-step--${status} ${isNew ? 'aa-step--new' : ''}` },
-                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-step-indicator" },
-                    status === 'completed' && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("svg", { viewBox: "0 0 16 16", fill: "currentColor" },
-                        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("path", { d: "M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z" }))),
-                    status === 'failed' && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("svg", { viewBox: "0 0 16 16", fill: "currentColor" },
-                        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("path", { d: "M3.72 3.72a.75.75 0 011.06 0L8 6.94l3.22-3.22a.75.75 0 111.06 1.06L9.06 8l3.22 3.22a.75.75 0 11-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 01-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 010-1.06z" }))),
-                    status === 'replanning' && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("svg", { viewBox: "0 0 16 16", fill: "currentColor", className: "aa-icon-spin" },
-                        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("path", { d: "M8 3a5 5 0 104.546 2.914.5.5 0 01.908-.418A6 6 0 118 2v1z" }),
-                        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("path", { d: "M8 4.466V.534a.25.25 0 01.41-.192l2.36 1.966a.25.25 0 010 .384L8.41 4.658A.25.25 0 018 4.466z" }))),
-                    status === 'current' && react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-step-spinner" }),
-                    status === 'pending' && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "aa-step-number" },
-                        isNew ? '+' : '',
-                        step.stepNumber))),
-                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-step-content" },
-                    react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: `aa-step-desc ${status === 'completed' ? 'aa-step-desc--done' : ''} ${isNew ? 'aa-step-desc--new' : ''}` },
-                        isNew && react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "aa-new-badge" }, "NEW"),
-                        step.description),
-                    status === 'current' && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "aa-step-executing" }, "\uC2E4\uD589 \uC911...")),
-                    status === 'replanning' && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "aa-step-replanning" }, "\uACC4\uD68D \uC218\uC815 \uC911...")),
-                    react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-step-tools" }, step.toolCalls.map((tc, i) => (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { key: i, className: `aa-tool-tag ${status === 'completed' ? 'aa-tool-tag--done' : ''}` }, tc.tool)))))));
-        }))));
-};
-const StatusIndicator = ({ status }) => {
-    const getMessage = () => {
-        switch (status.phase) {
-            case 'idle': return '준비됨';
-            case 'planning': return '계획 생성 중...';
-            case 'planned': return status.message || '계획 완료';
-            case 'executing': return `실행 중 (${status.currentStep}/${status.totalSteps})`;
-            case 'tool_calling': return `${status.tool} 실행 중`;
-            case 'self_healing': return `재시도 중 (${status.attempt}/3)`;
-            case 'replanning': return `계획 수정 중 (Step ${status.currentStep})`;
-            case 'completed': return '완료';
-            case 'failed': return '실패';
-            default: return '처리 중...';
-        }
-    };
-    const isActive = ['planning', 'executing', 'tool_calling', 'self_healing', 'replanning'].includes(status.phase);
-    return (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: `aa-status aa-status--${status.phase}` },
-        isActive && react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-status-spinner" }),
-        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "aa-status-text" }, getMessage()),
-        status.phase === 'self_healing' && status.error && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "aa-status-error" }, status.error.message))));
-};
-// ═══════════════════════════════════════════════════════════════════════════
-// Main Component
-// ═══════════════════════════════════════════════════════════════════════════
-const AutoAgentPanel = ({ notebook: propNotebook, sessionContext: propSessionContext, notebookTracker, apiService: propApiService, onComplete, onCancel, config, }) => {
-    const [request, setRequest] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)('');
-    const [status, setStatus] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)({ phase: 'idle' });
-    const [plan, setPlan] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null);
-    const [isRunning, setIsRunning] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false);
-    const [result, setResult] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null);
-    const [completedSteps, setCompletedSteps] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)([]);
-    const [failedSteps, setFailedSteps] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)([]);
-    const [originalStepCount, setOriginalStepCount] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(undefined);
-    const [executionSpeed, setExecutionSpeed] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)('normal');
-    const [isPaused, setIsPaused] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false);
-    const orchestratorRef = (0,react__WEBPACK_IMPORTED_MODULE_0__.useRef)(null);
-    const textareaRef = (0,react__WEBPACK_IMPORTED_MODULE_0__.useRef)(null);
-    const mergedConfig = { ..._types_auto_agent__WEBPACK_IMPORTED_MODULE_3__.DEFAULT_AUTO_AGENT_CONFIG, ...config, executionSpeed };
-    const notebook = propNotebook || notebookTracker?.currentWidget;
-    const sessionContext = propSessionContext || notebook?.sessionContext;
-    const apiService = propApiService || new _services_ApiService__WEBPACK_IMPORTED_MODULE_1__.ApiService();
-    (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
-        if (notebook && sessionContext) {
-            orchestratorRef.current = new _services_AgentOrchestrator__WEBPACK_IMPORTED_MODULE_2__.AgentOrchestrator(notebook, sessionContext, apiService, mergedConfig);
-        }
-        return () => { orchestratorRef.current = null; };
-    }, [notebook, sessionContext, apiService]);
-    // 일시정지 상태 폴링 (step-by-step 모드용)
-    (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
-        if (!isRunning)
-            return;
-        const interval = setInterval(() => {
-            if (orchestratorRef.current) {
-                setIsPaused(orchestratorRef.current.getIsPaused());
-            }
-        }, 100);
-        return () => clearInterval(interval);
-    }, [isRunning]);
-    // 속도 변경 시 오케스트레이터 설정 업데이트
-    (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
-        if (orchestratorRef.current) {
-            orchestratorRef.current.updateConfig({ executionSpeed });
-        }
-    }, [executionSpeed]);
-    const handleProgress = (0,react__WEBPACK_IMPORTED_MODULE_0__.useCallback)((newStatus) => {
-        setStatus(newStatus);
-        if (newStatus.plan) {
-            setPlan(newStatus.plan);
-            // 첫 계획이면 원래 스텝 수 저장
-            if (newStatus.phase === 'planned' && originalStepCount === undefined) {
-                setOriginalStepCount(newStatus.plan.totalSteps);
-            }
-        }
-        if (newStatus.phase === 'executing' && newStatus.currentStep && newStatus.currentStep > 1) {
-            setCompletedSteps(Array.from({ length: newStatus.currentStep - 1 }, (_, i) => i + 1));
-        }
-        if (newStatus.phase === 'failed' && newStatus.currentStep) {
-            setFailedSteps(prev => [...prev, newStatus.currentStep]);
-        }
-    }, [originalStepCount]);
-    const handleExecute = (0,react__WEBPACK_IMPORTED_MODULE_0__.useCallback)(async () => {
-        if (!orchestratorRef.current || !notebook || !request.trim())
-            return;
-        setIsRunning(true);
-        setResult(null);
-        setPlan(null);
-        setCompletedSteps([]);
-        setFailedSteps([]);
-        setOriginalStepCount(undefined);
-        setStatus({ phase: 'planning', message: 'Creating execution plan...' });
-        try {
-            const taskResult = await orchestratorRef.current.executeTask(request.trim(), notebook, handleProgress);
-            setResult(taskResult);
-            if (taskResult.success && taskResult.plan) {
-                setCompletedSteps(taskResult.plan.steps.map(s => s.stepNumber));
-                setStatus({ phase: 'completed', message: taskResult.finalAnswer || 'Task completed successfully' });
-            }
-            onComplete?.(taskResult);
-        }
-        catch (error) {
-            setStatus({ phase: 'failed', message: error.message || 'Execution failed' });
-        }
-        finally {
-            setIsRunning(false);
-        }
-    }, [notebook, request, handleProgress, onComplete]);
-    const handleCancel = (0,react__WEBPACK_IMPORTED_MODULE_0__.useCallback)(() => {
-        orchestratorRef.current?.cancel();
-        setStatus({ phase: 'idle', message: 'Cancelled' });
-        setIsRunning(false);
-        onCancel?.();
-    }, [onCancel]);
-    const handleReset = (0,react__WEBPACK_IMPORTED_MODULE_0__.useCallback)(() => {
-        setRequest('');
-        setStatus({ phase: 'idle' });
-        setPlan(null);
-        setResult(null);
-        setCompletedSteps([]);
-        setFailedSteps([]);
-        setIsPaused(false);
-        textareaRef.current?.focus();
-    }, []);
-    const handleNextStep = (0,react__WEBPACK_IMPORTED_MODULE_0__.useCallback)(() => {
-        if (orchestratorRef.current) {
-            orchestratorRef.current.proceedToNextStep();
-        }
-    }, []);
-    const handleSpeedChange = (0,react__WEBPACK_IMPORTED_MODULE_0__.useCallback)((e) => {
-        setExecutionSpeed(e.target.value);
-    }, []);
-    const handleKeyDown = (0,react__WEBPACK_IMPORTED_MODULE_0__.useCallback)((e) => {
-        if (e.key === 'Enter' && !e.shiftKey && !isRunning && request.trim()) {
-            e.preventDefault();
-            handleExecute();
-        }
-    }, [handleExecute, isRunning, request]);
-    if (!notebook || !sessionContext) {
-        return (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-panel" },
-            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-empty" },
-                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "aa-empty-text" }, "\uB178\uD2B8\uBD81\uC744 \uC5F4\uC5B4\uC8FC\uC138\uC694"))));
-    }
-    return (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-panel" },
-        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-input-section" },
-            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("textarea", { ref: textareaRef, className: "aa-textarea", value: request, onChange: (e) => setRequest(e.target.value), onKeyDown: handleKeyDown, placeholder: "\uC6D0\uD558\uB294 \uC791\uC5C5\uC744 \uC124\uBA85\uD574\uC8FC\uC138\uC694...", disabled: isRunning, rows: 3 }),
-            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-actions" },
-                !isRunning ? (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", { className: "aa-btn aa-btn--primary", onClick: handleExecute, disabled: !request.trim() }, "\uC2E4\uD589")) : (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", { className: "aa-btn aa-btn--cancel", onClick: handleCancel }, "\uCDE8\uC18C")),
-                result && !isRunning && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", { className: "aa-btn aa-btn--secondary", onClick: handleReset }, "\uCD08\uAE30\uD654")))),
-        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-speed-control" },
-            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "aa-speed-label" }, "\uC2E4\uD589 \uC18D\uB3C4:"),
-            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("select", { className: "aa-speed-select", value: executionSpeed, onChange: handleSpeedChange, disabled: isRunning && executionSpeed !== 'step-by-step' },
-                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("option", { value: "instant" }, "\uC989\uC2DC (\uC9C0\uC5F0 \uC5C6\uC74C)"),
-                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("option", { value: "fast" }, "\uBE60\uB984 (0.3\uCD08)"),
-                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("option", { value: "normal" }, "\uBCF4\uD1B5 (0.8\uCD08)"),
-                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("option", { value: "slow" }, "\uB290\uB9BC (1.5\uCD08)"),
-                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("option", { value: "step-by-step" }, "\uB2E8\uACC4\uBCC4 (\uC218\uB3D9)"))),
-        isPaused && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-paused-indicator" },
-            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("svg", { className: "aa-paused-icon", viewBox: "0 0 16 16", fill: "currentColor" },
-                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("path", { d: "M5.5 3.5A1.5 1.5 0 017 5v6a1.5 1.5 0 01-3 0V5a1.5 1.5 0 011.5-1.5zm5 0A1.5 1.5 0 0112 5v6a1.5 1.5 0 01-3 0V5a1.5 1.5 0 011.5-1.5z" })),
-            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", null, "\uB2E4\uC74C \uB2E8\uACC4 \uB300\uAE30 \uC911..."),
-            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", { className: "aa-btn aa-btn--next", onClick: handleNextStep }, "\uB2E4\uC74C \uB2E8\uACC4"))),
-        status.phase !== 'idle' && react__WEBPACK_IMPORTED_MODULE_0___default().createElement(StatusIndicator, { status: status }),
-        plan && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement(ExecutionPlanView, { plan: plan, currentStep: status.currentStep, completedSteps: completedSteps, failedSteps: failedSteps, isReplanning: status.phase === 'replanning', originalStepCount: originalStepCount })),
-        result && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: `aa-result aa-result--${result.success ? 'success' : 'error'}` },
-            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-result-header" },
-                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "aa-result-title" }, result.success ? '완료' : '실패'),
-                result.executionTime && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "aa-result-time" },
-                    (result.executionTime / 1000).toFixed(1),
-                    "s"))),
-            result.finalAnswer && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", { className: "aa-result-message" }, result.finalAnswer)),
-            result.error && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", { className: "aa-result-error" }, result.error)),
-            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-result-stats" },
-                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", null,
-                    result.createdCells.length,
-                    "\uAC1C \uC140 \uC0DD\uC131"),
-                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", null,
-                    result.modifiedCells.length,
-                    "\uAC1C \uC140 \uC218\uC815")))),
-        status.phase === 'idle' && !result && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "aa-hint" },
-            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", null, "\uC791\uC5C5\uC744 \uC785\uB825\uD558\uACE0 Enter \uB610\uB294 \uC2E4\uD589 \uBC84\uD2BC\uC744 \uD074\uB9AD\uD558\uC138\uC694."),
-            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", { className: "aa-hint-sub" }, "Shift+Enter\uB85C \uC904\uBC14\uAFC8")))));
-};
-/* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (AutoAgentPanel);
 
 
 /***/ }),
@@ -3498,6 +3451,9 @@ class AgentOrchestrator {
         // Step-by-step 모드를 위한 상태
         this.stepByStepResolver = null;
         this.isPaused = false;
+        // Validation & Reflection 설정
+        this.enablePreValidation = true;
+        this.enableReflection = true;
         this.notebook = notebook;
         this.apiService = apiService || new _ApiService__WEBPACK_IMPORTED_MODULE_0__.ApiService();
         this.toolExecutor = new _ToolExecutor__WEBPACK_IMPORTED_MODULE_1__.ToolExecutor(notebook, sessionContext);
@@ -3506,6 +3462,8 @@ class AgentOrchestrator {
             maxExecutionTime: (config?.executionTimeout ?? 30000) / 1000,
         });
         this.config = { ..._types_auto_agent__WEBPACK_IMPORTED_MODULE_3__.DEFAULT_AUTO_AGENT_CONFIG, ...config };
+        // ToolExecutor에 자동 스크롤 설정 연동
+        this.toolExecutor.setAutoScroll(this.config.autoScrollToCell);
     }
     /**
      * 메인 실행 함수: 사용자 요청을 받아 자동 실행
@@ -3662,6 +3620,53 @@ class AgentOrchestrator {
                 // 성공한 단계 기록
                 executedSteps.push(stepResult);
                 replanAttempts = 0; // 성공 시 재계획 시도 횟수 리셋
+                // ═══════════════════════════════════════════════════════════════════════
+                // REFLECTION: 실행 결과 분석 및 적응적 조정
+                // ═══════════════════════════════════════════════════════════════════════
+                if (this.enableReflection && stepResult.toolResults.length > 0) {
+                    // Reflection 시작 알림
+                    onProgress({
+                        phase: 'reflecting',
+                        reflectionStatus: 'analyzing',
+                        currentStep: step.stepNumber,
+                        message: '실행 결과 분석 중...',
+                    });
+                    const remainingSteps = currentPlan.steps.slice(stepIndex + 1);
+                    const reflection = await this.performReflection(step, stepResult.toolResults, remainingSteps);
+                    if (reflection) {
+                        const { shouldContinue, action, reason } = this.shouldContinueAfterReflection(reflection);
+                        console.log('[Orchestrator] Reflection decision:', { shouldContinue, action, reason });
+                        // Reflection 결과 UI 업데이트
+                        const confidencePercent = Math.round(reflection.evaluation.confidence_score * 100);
+                        if (reflection.evaluation.checkpoint_passed) {
+                            onProgress({
+                                phase: 'reflecting',
+                                reflectionStatus: 'passed',
+                                currentStep: step.stepNumber,
+                                confidenceScore: confidencePercent,
+                                message: `검증 통과 (신뢰도: ${confidencePercent}%)`,
+                            });
+                        }
+                        else {
+                            onProgress({
+                                phase: 'reflecting',
+                                reflectionStatus: 'adjusting',
+                                currentStep: step.stepNumber,
+                                confidenceScore: confidencePercent,
+                                message: `조정 권고: ${reason}`,
+                            });
+                        }
+                        // Reflection 결과가 retry 또는 replan을 요구하면 해당 로직으로 이동
+                        if (!shouldContinue) {
+                            if (action === 'replan') {
+                                console.log('[Orchestrator] Reflection recommends replan, triggering adaptive replanning');
+                            }
+                            else if (action === 'retry') {
+                                console.log('[Orchestrator] Reflection recommends retry - but step succeeded, continuing');
+                            }
+                        }
+                    }
+                }
                 // 다음 스텝 전에 지연 적용 (사용자가 결과를 확인할 시간)
                 await this.applyStepDelay();
                 // final_answer 도구 호출 시 완료
@@ -3741,6 +3746,7 @@ class AgentOrchestrator {
     /**
      * Self-Healing: 단계별 재시도 로직
      * 환경/의존성 에러는 재시도하지 않고 바로 Adaptive Replanning으로 보냄
+     * + Pre-Validation: 실행 전 Pyflakes/AST 검증
      */
     async executeStepWithRetry(step, notebook, onProgress) {
         console.log('[Orchestrator] executeStepWithRetry called for step:', step.stepNumber);
@@ -3771,9 +3777,10 @@ class AgentOrchestrator {
                         attempt: attempt + 1,
                         currentStep: step.stepNumber,
                     });
-                    // 안전성 검사 (jupyter_cell인 경우)
+                    // jupyter_cell인 경우: 안전성 검사 + Pre-Validation
                     if (toolCall.tool === 'jupyter_cell') {
                         const params = toolCall.parameters;
+                        // 1. 기존 안전성 검사
                         const safetyResult = this.safetyChecker.checkCodeSafety(params.code);
                         if (!safetyResult.safe) {
                             return {
@@ -3783,6 +3790,50 @@ class AgentOrchestrator {
                                 attempts: attempt + 1,
                                 error: `안전성 검사 실패: ${safetyResult.blockedPatterns?.join(', ')}`,
                             };
+                        }
+                        // 2. Pre-Validation (Pyflakes/AST 기반)
+                        onProgress({
+                            phase: 'validating',
+                            validationStatus: 'checking',
+                            currentStep: step.stepNumber,
+                            message: '코드 품질 검증 중...',
+                        });
+                        const validation = await this.validateCodeBeforeExecution(params.code);
+                        if (validation) {
+                            if (validation.hasErrors) {
+                                console.log('[Orchestrator] Pre-validation detected errors:', validation.summary);
+                                onProgress({
+                                    phase: 'validating',
+                                    validationStatus: 'failed',
+                                    currentStep: step.stepNumber,
+                                    message: `검증 실패: ${validation.summary}`,
+                                });
+                                // 검증 오류가 있으면 Self-Healing으로 수정 시도
+                                lastError = {
+                                    type: 'validation',
+                                    message: `사전 검증 오류: ${validation.summary}`,
+                                    traceback: validation.issues.map(i => `Line ${i.line || '?'}: [${i.category}] ${i.message}`),
+                                    recoverable: true,
+                                };
+                                // 다음 재시도에서 LLM에게 수정 요청
+                                break;
+                            }
+                            else if (validation.hasWarnings) {
+                                onProgress({
+                                    phase: 'validating',
+                                    validationStatus: 'warning',
+                                    currentStep: step.stepNumber,
+                                    message: `경고 감지: ${validation.issues.length}건 (실행 계속)`,
+                                });
+                            }
+                            else {
+                                onProgress({
+                                    phase: 'validating',
+                                    validationStatus: 'passed',
+                                    currentStep: step.stepNumber,
+                                    message: '코드 검증 통과',
+                                });
+                            }
                         }
                     }
                     // 타임아웃과 함께 실행
@@ -4088,6 +4139,10 @@ class AgentOrchestrator {
             enableSafetyCheck: this.config.enableSafetyCheck,
             maxExecutionTime: this.config.executionTimeout / 1000,
         });
+        // ToolExecutor 자동 스크롤 설정 동기화
+        if (config.autoScrollToCell !== undefined) {
+            this.toolExecutor.setAutoScroll(this.config.autoScrollToCell);
+        }
     }
     /**
      * 현재 실행 중인 셀로 스크롤 및 하이라이트
@@ -4125,12 +4180,13 @@ class AgentOrchestrator {
      * 현재 설정에 맞는 지연 시간 반환
      */
     getEffectiveDelay() {
-        // 명시적으로 설정된 stepDelay가 있으면 사용
-        if (this.config.stepDelay > 0) {
-            return this.config.stepDelay;
+        // executionSpeed 프리셋 사용 (stepDelay는 무시하고 프리셋 값을 우선)
+        const presetDelay = _types_auto_agent__WEBPACK_IMPORTED_MODULE_3__.EXECUTION_SPEED_DELAYS[this.config.executionSpeed];
+        if (presetDelay !== undefined) {
+            return presetDelay;
         }
-        // 그렇지 않으면 executionSpeed 프리셋 사용
-        return _types_auto_agent__WEBPACK_IMPORTED_MODULE_3__.EXECUTION_SPEED_DELAYS[this.config.executionSpeed] || 0;
+        // 프리셋이 없으면 stepDelay 사용
+        return this.config.stepDelay || 0;
     }
     /**
      * 스텝 사이 지연 적용 (step-by-step 모드 포함)
@@ -4171,6 +4227,181 @@ class AgentOrchestrator {
      */
     getExecutionSpeed() {
         return this.config.executionSpeed;
+    }
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Code Validation & Reflection Methods
+    // ═══════════════════════════════════════════════════════════════════════════
+    /**
+     * 실행 전 코드 검증 (Pyflakes/AST 기반)
+     *
+     * @param code 검증할 코드
+     * @returns 검증 결과
+     */
+    async validateCodeBeforeExecution(code) {
+        if (!this.enablePreValidation) {
+            return null;
+        }
+        try {
+            console.log('[Orchestrator] Pre-validation: Checking code quality');
+            const notebookContext = this.extractNotebookContext(this.notebook);
+            const validationResult = await this.apiService.validateCode({
+                code,
+                notebookContext,
+            });
+            console.log('[Orchestrator] Validation result:', {
+                valid: validationResult.valid,
+                hasErrors: validationResult.hasErrors,
+                issueCount: validationResult.issues.length,
+            });
+            return validationResult;
+        }
+        catch (error) {
+            console.warn('[Orchestrator] Pre-validation failed:', error.message);
+            // 검증 실패 시에도 실행은 계속 진행 (graceful degradation)
+            return null;
+        }
+    }
+    /**
+     * 실행 후 Reflection 수행
+     *
+     * @param step 실행된 단계
+     * @param toolResults 도구 실행 결과
+     * @param remainingSteps 남은 단계들
+     * @returns Reflection 결과
+     */
+    async performReflection(step, toolResults, remainingSteps) {
+        if (!this.enableReflection) {
+            return null;
+        }
+        try {
+            // jupyter_cell 실행 결과 추출
+            const jupyterResult = toolResults.find(r => r.cellIndex !== undefined);
+            if (!jupyterResult) {
+                return null;
+            }
+            // 실행된 코드 추출
+            const jupyterToolCall = step.toolCalls.find(tc => tc.tool === 'jupyter_cell');
+            const executedCode = jupyterToolCall
+                ? jupyterToolCall.parameters.code
+                : '';
+            // Checkpoint 정보 추출 (EnhancedPlanStep인 경우)
+            const enhancedStep = step;
+            const checkpoint = enhancedStep.checkpoint;
+            console.log('[Orchestrator] Performing reflection for step', step.stepNumber);
+            const reflectResponse = await this.apiService.reflectOnExecution({
+                stepNumber: step.stepNumber,
+                stepDescription: step.description,
+                executedCode,
+                executionStatus: jupyterResult.success ? 'ok' : 'error',
+                executionOutput: String(jupyterResult.output || ''),
+                errorMessage: jupyterResult.error,
+                expectedOutcome: checkpoint?.expectedOutcome,
+                validationCriteria: checkpoint?.validationCriteria,
+                remainingSteps,
+            });
+            console.log('[Orchestrator] Reflection result:', {
+                checkpointPassed: reflectResponse.reflection.evaluation.checkpoint_passed,
+                confidenceScore: reflectResponse.reflection.evaluation.confidence_score,
+                action: reflectResponse.reflection.recommendations.action,
+            });
+            return reflectResponse.reflection;
+        }
+        catch (error) {
+            console.warn('[Orchestrator] Reflection failed:', error.message);
+            // Reflection 실패 시에도 실행은 계속 진행
+            return null;
+        }
+    }
+    /**
+     * Reflection 결과에 따른 액션 결정
+     *
+     * @param reflection Reflection 결과
+     * @returns true면 계속 진행, false면 재시도/재계획 필요
+     */
+    shouldContinueAfterReflection(reflection) {
+        if (!reflection) {
+            return { shouldContinue: true, action: 'continue', reason: 'No reflection data' };
+        }
+        const { evaluation, recommendations } = reflection;
+        // Checkpoint 통과 및 신뢰도 70% 이상이면 계속 진행
+        if (evaluation.checkpoint_passed && evaluation.confidence_score >= 0.7) {
+            return {
+                shouldContinue: true,
+                action: 'continue',
+                reason: 'Checkpoint passed with high confidence'
+            };
+        }
+        // Recommendation에 따른 결정
+        switch (recommendations.action) {
+            case 'continue':
+                return {
+                    shouldContinue: true,
+                    action: 'continue',
+                    reason: recommendations.reasoning
+                };
+            case 'adjust':
+                // 경미한 조정은 계속 진행 (다음 단계에서 보정)
+                return {
+                    shouldContinue: true,
+                    action: 'adjust',
+                    reason: recommendations.reasoning
+                };
+            case 'retry':
+                return {
+                    shouldContinue: false,
+                    action: 'retry',
+                    reason: recommendations.reasoning
+                };
+            case 'replan':
+                return {
+                    shouldContinue: false,
+                    action: 'replan',
+                    reason: recommendations.reasoning
+                };
+            default:
+                return { shouldContinue: true, action: 'continue', reason: 'Default continue' };
+        }
+    }
+    /**
+     * 검증 결과에 따른 코드 자동 수정 시도
+     *
+     * @param code 원본 코드
+     * @param validation 검증 결과
+     * @returns 수정된 코드 (수정 불가 시 null)
+     */
+    async attemptAutoFix(code, validation) {
+        // 자동 수정 가능한 경우만 처리
+        const autoFixableIssues = validation.issues.filter(issue => issue.category === 'unused_import' || issue.category === 'unused_variable');
+        // 심각한 오류가 있으면 자동 수정 불가
+        if (validation.hasErrors) {
+            return null;
+        }
+        // 경고만 있는 경우 코드 그대로 반환 (실행 가능)
+        if (!validation.hasErrors && autoFixableIssues.length > 0) {
+            console.log('[Orchestrator] Code has warnings but is executable');
+            return code;
+        }
+        return null;
+    }
+    /**
+     * Validation & Reflection 설정 업데이트
+     */
+    setValidationEnabled(enabled) {
+        this.enablePreValidation = enabled;
+        console.log('[Orchestrator] Pre-validation:', enabled ? 'enabled' : 'disabled');
+    }
+    setReflectionEnabled(enabled) {
+        this.enableReflection = enabled;
+        console.log('[Orchestrator] Reflection:', enabled ? 'enabled' : 'disabled');
+    }
+    /**
+     * 현재 설정 확인
+     */
+    getValidationEnabled() {
+        return this.enablePreValidation;
+    }
+    getReflectionEnabled() {
+        return this.enableReflection;
     }
 }
 /* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (AgentOrchestrator);
@@ -4493,6 +4724,72 @@ class ApiService {
         return result;
     }
     /**
+     * Validate code before execution - 사전 코드 품질 검증 (Pyflakes/AST 기반)
+     */
+    async validateCode(request) {
+        console.log('[ApiService] validateCode request:', request);
+        const response = await fetch(`${this.baseUrl}/auto-agent/validate`, {
+            method: 'POST',
+            headers: this.getHeaders(),
+            credentials: 'include',
+            body: JSON.stringify(request)
+        });
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('[ApiService] Validate API Error:', {
+                status: response.status,
+                statusText: response.statusText,
+                body: errorText,
+                url: `${this.baseUrl}/auto-agent/validate`
+            });
+            let errorMessage = '코드 검증 실패';
+            try {
+                const errorJson = JSON.parse(errorText);
+                errorMessage = errorJson.error || errorJson.message || errorMessage;
+            }
+            catch (e) {
+                errorMessage = errorText || errorMessage;
+            }
+            throw new Error(errorMessage);
+        }
+        const result = await response.json();
+        console.log('[ApiService] Validate API Success:', result);
+        return result;
+    }
+    /**
+     * Reflect on step execution - 실행 결과 분석 및 적응적 조정
+     */
+    async reflectOnExecution(request) {
+        console.log('[ApiService] reflectOnExecution request:', request);
+        const response = await fetch(`${this.baseUrl}/auto-agent/reflect`, {
+            method: 'POST',
+            headers: this.getHeaders(),
+            credentials: 'include',
+            body: JSON.stringify(request)
+        });
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('[ApiService] Reflect API Error:', {
+                status: response.status,
+                statusText: response.statusText,
+                body: errorText,
+                url: `${this.baseUrl}/auto-agent/reflect`
+            });
+            let errorMessage = 'Reflection 실패';
+            try {
+                const errorJson = JSON.parse(errorText);
+                errorMessage = errorJson.error || errorJson.message || errorMessage;
+            }
+            catch (e) {
+                errorMessage = errorText || errorMessage;
+            }
+            throw new Error(errorMessage);
+        }
+        const result = await response.json();
+        console.log('[ApiService] Reflect API Success:', result);
+        return result;
+    }
+    /**
      * Stream execution plan generation with real-time updates
      */
     async generateExecutionPlanStream(request, onPlanUpdate, onReasoning) {
@@ -4734,8 +5031,31 @@ __webpack_require__.r(__webpack_exports__);
 
 class ToolExecutor {
     constructor(notebook, sessionContext) {
+        this.autoScrollEnabled = true;
         this.notebook = notebook;
         this.sessionContext = sessionContext;
+    }
+    /**
+     * 자동 스크롤 설정
+     */
+    setAutoScroll(enabled) {
+        this.autoScrollEnabled = enabled;
+    }
+    /**
+     * 특정 셀로 스크롤 및 포커스
+     */
+    scrollToCell(cellIndex) {
+        if (!this.autoScrollEnabled)
+            return;
+        const notebookContent = this.notebook.content;
+        const cell = notebookContent.widgets[cellIndex];
+        if (cell) {
+            // 셀로 부드럽게 스크롤
+            cell.node.scrollIntoView({
+                behavior: 'smooth',
+                block: 'center',
+            });
+        }
     }
     /**
      * Tool 실행 라우터
@@ -4789,6 +5109,8 @@ class ToolExecutor {
                 cellIndex = await this.createCodeCell(params.code, params.insertAfter);
                 console.log('[ToolExecutor] Created cell at index:', cellIndex);
             }
+            // 셀 생성/수정 후 해당 셀로 스크롤 (실행 전)
+            this.scrollToCell(cellIndex);
             // 셀 실행 및 결과 캡처
             console.log('[ToolExecutor] Executing cell at index:', cellIndex);
             const result = await this.executeCellAndCapture(cellIndex);
@@ -4827,6 +5149,8 @@ class ToolExecutor {
             else {
                 cellIndex = await this.createMarkdownCell(params.content);
             }
+            // 마크다운 셀도 생성 후 스크롤
+            this.scrollToCell(cellIndex);
             return {
                 success: true,
                 cellIndex,
@@ -5101,12 +5425,12 @@ __webpack_require__.r(__webpack_exports__);
  * Auto-Agent Type Definitions
  * HuggingFace Jupyter Agent 패턴 기반 Tool Calling 구조
  */
-// 속도 프리셋 (ms 단위 지연)
+// 속도 프리셋 (ms 단위 지연) - 전반적으로 느리게 조정
 const EXECUTION_SPEED_DELAYS = {
     'instant': 0,
-    'fast': 300,
-    'normal': 800,
-    'slow': 1500,
+    'fast': 800,
+    'normal': 1500,
+    'slow': 3000,
     'step-by-step': -1, // -1은 수동 진행 의미
 };
 const DEFAULT_AUTO_AGENT_CONFIG = {
@@ -5115,7 +5439,7 @@ const DEFAULT_AUTO_AGENT_CONFIG = {
     enableSafetyCheck: true,
     showDetailedProgress: true,
     executionSpeed: 'normal',
-    stepDelay: 800,
+    stepDelay: 1500,
     autoScrollToCell: true,
     highlightCurrentCell: true,
 };
@@ -6178,4 +6502,4 @@ __webpack_require__.r(__webpack_exports__);
 /***/ })
 
 }]);
-//# sourceMappingURL=lib_index_js.fc339602661ce83f9daa.js.map
+//# sourceMappingURL=lib_index_js.4e8624a68bbcd33d60cd.js.map

@@ -14,10 +14,14 @@ from .auto_agent_prompts import (
     ERROR_REFINEMENT_PROMPT,
     ADAPTIVE_REPLAN_PROMPT,
     FINAL_ANSWER_PROMPT,
+    STRUCTURED_PLAN_PROMPT,
+    REFLECTION_PROMPT,
     format_plan_prompt,
     format_refine_prompt,
     format_final_answer_prompt,
     format_replan_prompt,
+    format_structured_plan_prompt,
+    format_reflection_prompt,
 )
 
 # Cell Action Prompts
@@ -39,10 +43,14 @@ __all__ = [
     'ERROR_REFINEMENT_PROMPT',
     'ADAPTIVE_REPLAN_PROMPT',
     'FINAL_ANSWER_PROMPT',
+    'STRUCTURED_PLAN_PROMPT',
+    'REFLECTION_PROMPT',
     'format_plan_prompt',
     'format_refine_prompt',
     'format_final_answer_prompt',
     'format_replan_prompt',
+    'format_structured_plan_prompt',
+    'format_reflection_prompt',
     # Cell Action Prompts
     'EXPLAIN_CODE_PROMPT',
     'FIX_CODE_PROMPT',

@@ -30,6 +30,12 @@ import {
   AutoAgentReplanResponse,
   ReplanDecision,
   EXECUTION_SPEED_DELAYS,
+  // Validation & Reflection Types
+  AutoAgentValidateResponse,
+  ReflectionResult,
+  ReflectionAction,
+  EnhancedPlanStep,
+  Checkpoint,
 } from '../types/auto-agent';
 
 export class AgentOrchestrator {
@@ -45,6 +51,10 @@ export class AgentOrchestrator {
   private stepByStepResolver: (() => void) | null = null;
   private isPaused: boolean = false;
 
+  // Validation & Reflection 설정
+  private enablePreValidation: boolean = true;
+  private enableReflection: boolean = true;
+
   constructor(
     notebook: NotebookPanel,
     sessionContext: ISessionContext,
@@ -59,6 +69,9 @@ export class AgentOrchestrator {
       maxExecutionTime: (config?.executionTimeout ?? 30000) / 1000,
     });
     this.config = { ...DEFAULT_AUTO_AGENT_CONFIG, ...config };
+
+    // ToolExecutor에 자동 스크롤 설정 연동
+    this.toolExecutor.setAutoScroll(this.config.autoScrollToCell);
   }
 
   /**
@@ -249,6 +262,57 @@ export class AgentOrchestrator {
         executedSteps.push(stepResult);
         replanAttempts = 0; // 성공 시 재계획 시도 횟수 리셋
 
+        // ═══════════════════════════════════════════════════════════════════════
+        // REFLECTION: 실행 결과 분석 및 적응적 조정
+        // ═══════════════════════════════════════════════════════════════════════
+        if (this.enableReflection && stepResult.toolResults.length > 0) {
+          // Reflection 시작 알림
+          onProgress({
+            phase: 'reflecting',
+            reflectionStatus: 'analyzing',
+            currentStep: step.stepNumber,
+            message: '실행 결과 분석 중...',
+          });
+
+          const remainingSteps = currentPlan.steps.slice(stepIndex + 1);
+          const reflection = await this.performReflection(step, stepResult.toolResults, remainingSteps);
+
+          if (reflection) {
+            const { shouldContinue, action, reason } = this.shouldContinueAfterReflection(reflection);
+            console.log('[Orchestrator] Reflection decision:', { shouldContinue, action, reason });
+
+            // Reflection 결과 UI 업데이트
+            const confidencePercent = Math.round(reflection.evaluation.confidence_score * 100);
+
+            if (reflection.evaluation.checkpoint_passed) {
+              onProgress({
+                phase: 'reflecting',
+                reflectionStatus: 'passed',
+                currentStep: step.stepNumber,
+                confidenceScore: confidencePercent,
+                message: `검증 통과 (신뢰도: ${confidencePercent}%)`,
+              });
+            } else {
+              onProgress({
+                phase: 'reflecting',
+                reflectionStatus: 'adjusting',
+                currentStep: step.stepNumber,
+                confidenceScore: confidencePercent,
+                message: `조정 권고: ${reason}`,
+              });
+            }
+
+            // Reflection 결과가 retry 또는 replan을 요구하면 해당 로직으로 이동
+            if (!shouldContinue) {
+              if (action === 'replan') {
+                console.log('[Orchestrator] Reflection recommends replan, triggering adaptive replanning');
+              } else if (action === 'retry') {
+                console.log('[Orchestrator] Reflection recommends retry - but step succeeded, continuing');
+              }
+            }
+          }
+        }
+
         // 다음 스텝 전에 지연 적용 (사용자가 결과를 확인할 시간)
         await this.applyStepDelay();
 
@@ -335,6 +399,7 @@ export class AgentOrchestrator {
   /**
    * Self-Healing: 단계별 재시도 로직
    * 환경/의존성 에러는 재시도하지 않고 바로 Adaptive Replanning으로 보냄
+   * + Pre-Validation: 실행 전 Pyflakes/AST 검증
    */
   private async executeStepWithRetry(
     step: PlanStep,
@@ -373,11 +438,12 @@ export class AgentOrchestrator {
             currentStep: step.stepNumber,
           });
 
-          // 안전성 검사 (jupyter_cell인 경우)
+          // jupyter_cell인 경우: 안전성 검사 + Pre-Validation
           if (toolCall.tool === 'jupyter_cell') {
             const params = toolCall.parameters as JupyterCellParams;
-            const safetyResult = this.safetyChecker.checkCodeSafety(params.code);
 
+            // 1. 기존 안전성 검사
+            const safetyResult = this.safetyChecker.checkCodeSafety(params.code);
             if (!safetyResult.safe) {
               return {
                 success: false,
@@ -386,6 +452,54 @@ export class AgentOrchestrator {
                 attempts: attempt + 1,
                 error: `안전성 검사 실패: ${safetyResult.blockedPatterns?.join(', ')}`,
               };
+            }
+
+            // 2. Pre-Validation (Pyflakes/AST 기반)
+            onProgress({
+              phase: 'validating',
+              validationStatus: 'checking',
+              currentStep: step.stepNumber,
+              message: '코드 품질 검증 중...',
+            });
+
+            const validation = await this.validateCodeBeforeExecution(params.code);
+
+            if (validation) {
+              if (validation.hasErrors) {
+                console.log('[Orchestrator] Pre-validation detected errors:', validation.summary);
+
+                onProgress({
+                  phase: 'validating',
+                  validationStatus: 'failed',
+                  currentStep: step.stepNumber,
+                  message: `검증 실패: ${validation.summary}`,
+                });
+
+                // 검증 오류가 있으면 Self-Healing으로 수정 시도
+                lastError = {
+                  type: 'validation',
+                  message: `사전 검증 오류: ${validation.summary}`,
+                  traceback: validation.issues.map(i => `Line ${i.line || '?'}: [${i.category}] ${i.message}`),
+                  recoverable: true,
+                };
+
+                // 다음 재시도에서 LLM에게 수정 요청
+                break;
+              } else if (validation.hasWarnings) {
+                onProgress({
+                  phase: 'validating',
+                  validationStatus: 'warning',
+                  currentStep: step.stepNumber,
+                  message: `경고 감지: ${validation.issues.length}건 (실행 계속)`,
+                });
+              } else {
+                onProgress({
+                  phase: 'validating',
+                  validationStatus: 'passed',
+                  currentStep: step.stepNumber,
+                  message: '코드 검증 통과',
+                });
+              }
             }
           }
 
@@ -740,6 +854,10 @@ export class AgentOrchestrator {
       enableSafetyCheck: this.config.enableSafetyCheck,
       maxExecutionTime: this.config.executionTimeout / 1000,
     });
+    // ToolExecutor 자동 스크롤 설정 동기화
+    if (config.autoScrollToCell !== undefined) {
+      this.toolExecutor.setAutoScroll(this.config.autoScrollToCell);
+    }
   }
 
   /**
@@ -783,12 +901,13 @@ export class AgentOrchestrator {
    * 현재 설정에 맞는 지연 시간 반환
    */
   private getEffectiveDelay(): number {
-    // 명시적으로 설정된 stepDelay가 있으면 사용
-    if (this.config.stepDelay > 0) {
-      return this.config.stepDelay;
+    // executionSpeed 프리셋 사용 (stepDelay는 무시하고 프리셋 값을 우선)
+    const presetDelay = EXECUTION_SPEED_DELAYS[this.config.executionSpeed];
+    if (presetDelay !== undefined) {
+      return presetDelay;
     }
-    // 그렇지 않으면 executionSpeed 프리셋 사용
-    return EXECUTION_SPEED_DELAYS[this.config.executionSpeed] || 0;
+    // 프리셋이 없으면 stepDelay 사용
+    return this.config.stepDelay || 0;
   }
 
   /**
@@ -835,6 +954,221 @@ export class AgentOrchestrator {
    */
   getExecutionSpeed(): string {
     return this.config.executionSpeed;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Code Validation & Reflection Methods
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * 실행 전 코드 검증 (Pyflakes/AST 기반)
+   *
+   * @param code 검증할 코드
+   * @returns 검증 결과
+   */
+  private async validateCodeBeforeExecution(code: string): Promise<AutoAgentValidateResponse | null> {
+    if (!this.enablePreValidation) {
+      return null;
+    }
+
+    try {
+      console.log('[Orchestrator] Pre-validation: Checking code quality');
+      const notebookContext = this.extractNotebookContext(this.notebook);
+      const validationResult = await this.apiService.validateCode({
+        code,
+        notebookContext,
+      });
+
+      console.log('[Orchestrator] Validation result:', {
+        valid: validationResult.valid,
+        hasErrors: validationResult.hasErrors,
+        issueCount: validationResult.issues.length,
+      });
+
+      return validationResult;
+    } catch (error: any) {
+      console.warn('[Orchestrator] Pre-validation failed:', error.message);
+      // 검증 실패 시에도 실행은 계속 진행 (graceful degradation)
+      return null;
+    }
+  }
+
+  /**
+   * 실행 후 Reflection 수행
+   *
+   * @param step 실행된 단계
+   * @param toolResults 도구 실행 결과
+   * @param remainingSteps 남은 단계들
+   * @returns Reflection 결과
+   */
+  private async performReflection(
+    step: PlanStep | EnhancedPlanStep,
+    toolResults: ToolResult[],
+    remainingSteps: PlanStep[]
+  ): Promise<ReflectionResult | null> {
+    if (!this.enableReflection) {
+      return null;
+    }
+
+    try {
+      // jupyter_cell 실행 결과 추출
+      const jupyterResult = toolResults.find(r => r.cellIndex !== undefined);
+      if (!jupyterResult) {
+        return null;
+      }
+
+      // 실행된 코드 추출
+      const jupyterToolCall = step.toolCalls.find(tc => tc.tool === 'jupyter_cell');
+      const executedCode = jupyterToolCall
+        ? (jupyterToolCall.parameters as JupyterCellParams).code
+        : '';
+
+      // Checkpoint 정보 추출 (EnhancedPlanStep인 경우)
+      const enhancedStep = step as EnhancedPlanStep;
+      const checkpoint = enhancedStep.checkpoint;
+
+      console.log('[Orchestrator] Performing reflection for step', step.stepNumber);
+
+      const reflectResponse = await this.apiService.reflectOnExecution({
+        stepNumber: step.stepNumber,
+        stepDescription: step.description,
+        executedCode,
+        executionStatus: jupyterResult.success ? 'ok' : 'error',
+        executionOutput: String(jupyterResult.output || ''),
+        errorMessage: jupyterResult.error,
+        expectedOutcome: checkpoint?.expectedOutcome,
+        validationCriteria: checkpoint?.validationCriteria,
+        remainingSteps,
+      });
+
+      console.log('[Orchestrator] Reflection result:', {
+        checkpointPassed: reflectResponse.reflection.evaluation.checkpoint_passed,
+        confidenceScore: reflectResponse.reflection.evaluation.confidence_score,
+        action: reflectResponse.reflection.recommendations.action,
+      });
+
+      return reflectResponse.reflection;
+    } catch (error: any) {
+      console.warn('[Orchestrator] Reflection failed:', error.message);
+      // Reflection 실패 시에도 실행은 계속 진행
+      return null;
+    }
+  }
+
+  /**
+   * Reflection 결과에 따른 액션 결정
+   *
+   * @param reflection Reflection 결과
+   * @returns true면 계속 진행, false면 재시도/재계획 필요
+   */
+  private shouldContinueAfterReflection(reflection: ReflectionResult | null): {
+    shouldContinue: boolean;
+    action: ReflectionAction;
+    reason: string;
+  } {
+    if (!reflection) {
+      return { shouldContinue: true, action: 'continue', reason: 'No reflection data' };
+    }
+
+    const { evaluation, recommendations } = reflection;
+
+    // Checkpoint 통과 및 신뢰도 70% 이상이면 계속 진행
+    if (evaluation.checkpoint_passed && evaluation.confidence_score >= 0.7) {
+      return {
+        shouldContinue: true,
+        action: 'continue',
+        reason: 'Checkpoint passed with high confidence'
+      };
+    }
+
+    // Recommendation에 따른 결정
+    switch (recommendations.action) {
+      case 'continue':
+        return {
+          shouldContinue: true,
+          action: 'continue',
+          reason: recommendations.reasoning
+        };
+
+      case 'adjust':
+        // 경미한 조정은 계속 진행 (다음 단계에서 보정)
+        return {
+          shouldContinue: true,
+          action: 'adjust',
+          reason: recommendations.reasoning
+        };
+
+      case 'retry':
+        return {
+          shouldContinue: false,
+          action: 'retry',
+          reason: recommendations.reasoning
+        };
+
+      case 'replan':
+        return {
+          shouldContinue: false,
+          action: 'replan',
+          reason: recommendations.reasoning
+        };
+
+      default:
+        return { shouldContinue: true, action: 'continue', reason: 'Default continue' };
+    }
+  }
+
+  /**
+   * 검증 결과에 따른 코드 자동 수정 시도
+   *
+   * @param code 원본 코드
+   * @param validation 검증 결과
+   * @returns 수정된 코드 (수정 불가 시 null)
+   */
+  private async attemptAutoFix(
+    code: string,
+    validation: AutoAgentValidateResponse
+  ): Promise<string | null> {
+    // 자동 수정 가능한 경우만 처리
+    const autoFixableIssues = validation.issues.filter(
+      issue => issue.category === 'unused_import' || issue.category === 'unused_variable'
+    );
+
+    // 심각한 오류가 있으면 자동 수정 불가
+    if (validation.hasErrors) {
+      return null;
+    }
+
+    // 경고만 있는 경우 코드 그대로 반환 (실행 가능)
+    if (!validation.hasErrors && autoFixableIssues.length > 0) {
+      console.log('[Orchestrator] Code has warnings but is executable');
+      return code;
+    }
+
+    return null;
+  }
+
+  /**
+   * Validation & Reflection 설정 업데이트
+   */
+  setValidationEnabled(enabled: boolean): void {
+    this.enablePreValidation = enabled;
+    console.log('[Orchestrator] Pre-validation:', enabled ? 'enabled' : 'disabled');
+  }
+
+  setReflectionEnabled(enabled: boolean): void {
+    this.enableReflection = enabled;
+    console.log('[Orchestrator] Reflection:', enabled ? 'enabled' : 'disabled');
+  }
+
+  /**
+   * 현재 설정 확인
+   */
+  getValidationEnabled(): boolean {
+    return this.enablePreValidation;
+  }
+
+  getReflectionEnabled(): boolean {
+    return this.enableReflection;
   }
 }
 

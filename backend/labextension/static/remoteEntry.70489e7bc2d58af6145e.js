@@ -124,7 +124,7 @@ __webpack_require__.d(exports, {
 /******/ 		// This function allow to reference async chunks
 /******/ 		__webpack_require__.u = (chunkId) => {
 /******/ 			// return url for filenames based on template
-/******/ 			return "" + chunkId + "." + {"vendors-node_modules_emotion_cache_dist_emotion-cache_browser_development_esm_js":"2f78e897ea9ffc4b86fe","vendors-node_modules_babel_runtime_helpers_esm_extends_js-node_modules_emotion_serialize_dist-051195":"0df8755bcdc0dc71c29b","vendors-node_modules_mui_material_utils_createSvgIcon_js":"d6e7bc8b3c1656caf49b","lib_index_js":"fc339602661ce83f9daa","frontend_styles_index_js":"4beaf4c3e1eba6607eeb","vendors-node_modules_emotion_react_dist_emotion-react_browser_development_esm_js":"1581ebd0ddb8edd13e8a","node_modules_emotion_use-insertion-effect-with-fallbacks_dist_emotion-use-insertion-effect-wi-3ba6b80":"551c0777885681ee5ac4","vendors-node_modules_emotion_styled_dist_emotion-styled_browser_development_esm_js":"ac8004993f50447adad8","vendors-node_modules_mui_material_index_js":"f6ccf6a456a55e840adc","node_modules_emotion_use-insertion-effect-with-fallbacks_dist_emotion-use-insertion-effect-wi-3ba6b81":"751aa38fd79db4a4cd1e"}[chunkId] + ".js";
+/******/ 			return "" + chunkId + "." + {"vendors-node_modules_emotion_cache_dist_emotion-cache_browser_development_esm_js":"2f78e897ea9ffc4b86fe","vendors-node_modules_babel_runtime_helpers_esm_extends_js-node_modules_emotion_serialize_dist-051195":"0df8755bcdc0dc71c29b","vendors-node_modules_mui_material_utils_createSvgIcon_js":"d6e7bc8b3c1656caf49b","lib_index_js":"4e8624a68bbcd33d60cd","frontend_styles_index_js":"471b8f0fdbcf672efb12","vendors-node_modules_emotion_react_dist_emotion-react_browser_development_esm_js":"1581ebd0ddb8edd13e8a","node_modules_emotion_use-insertion-effect-with-fallbacks_dist_emotion-use-insertion-effect-wi-3ba6b80":"551c0777885681ee5ac4","vendors-node_modules_emotion_styled_dist_emotion-styled_browser_development_esm_js":"ac8004993f50447adad8","vendors-node_modules_mui_material_index_js":"f6ccf6a456a55e840adc","node_modules_emotion_use-insertion-effect-with-fallbacks_dist_emotion-use-insertion-effect-wi-3ba6b81":"751aa38fd79db4a4cd1e"}[chunkId] + ".js";
 /******/ 		};
 /******/ 	})();
 /******/ 	
@@ -403,8 +403,8 @@ __webpack_require__.d(exports, {
 /******/ 		var installedModules = {};
 /******/ 		var moduleToHandlerMapping = {
 /******/ 			"webpack/sharing/consume/default/react": () => (loadSingletonVersion("default", "react", false, [1,18,2,0])),
-/******/ 			"webpack/sharing/consume/default/@emotion/react/@emotion/react?98f9": () => (loadStrictVersion("default", "@emotion/react", false, [1,11,4,1], () => (Promise.all([__webpack_require__.e("vendors-node_modules_emotion_react_dist_emotion-react_browser_development_esm_js"), __webpack_require__.e("node_modules_emotion_use-insertion-effect-with-fallbacks_dist_emotion-use-insertion-effect-wi-3ba6b81")]).then(() => (() => (__webpack_require__(/*! @emotion/react */ "./node_modules/@emotion/react/dist/emotion-react.browser.development.esm.js"))))))),
 /******/ 			"webpack/sharing/consume/default/@emotion/styled/@emotion/styled": () => (loadStrictVersion("default", "@emotion/styled", false, [1,11,3,0], () => (Promise.all([__webpack_require__.e("vendors-node_modules_emotion_styled_dist_emotion-styled_browser_development_esm_js"), __webpack_require__.e("webpack_sharing_consume_default_emotion_react_emotion_react")]).then(() => (() => (__webpack_require__(/*! @emotion/styled */ "./node_modules/@emotion/styled/dist/emotion-styled.browser.development.esm.js"))))))),
+/******/ 			"webpack/sharing/consume/default/@emotion/react/@emotion/react?98f9": () => (loadStrictVersion("default", "@emotion/react", false, [1,11,4,1], () => (Promise.all([__webpack_require__.e("vendors-node_modules_emotion_react_dist_emotion-react_browser_development_esm_js"), __webpack_require__.e("node_modules_emotion_use-insertion-effect-with-fallbacks_dist_emotion-use-insertion-effect-wi-3ba6b81")]).then(() => (() => (__webpack_require__(/*! @emotion/react */ "./node_modules/@emotion/react/dist/emotion-react.browser.development.esm.js"))))))),
 /******/ 			"webpack/sharing/consume/default/@jupyterlab/application": () => (loadSingletonVersion("default", "@jupyterlab/application", false, [1,4,5,0])),
 /******/ 			"webpack/sharing/consume/default/@jupyterlab/apputils": () => (loadSingletonVersion("default", "@jupyterlab/apputils", false, [1,4,6,0])),
 /******/ 			"webpack/sharing/consume/default/@jupyterlab/notebook": () => (loadSingletonVersion("default", "@jupyterlab/notebook", false, [1,4,5,0])),
@@ -422,8 +422,8 @@ __webpack_require__.d(exports, {
 /******/ 				"webpack/sharing/consume/default/react"
 /******/ 			],
 /******/ 			"webpack_sharing_consume_default_emotion_react_emotion_react-webpack_sharing_consume_default_e-2f734f": [
-/******/ 				"webpack/sharing/consume/default/@emotion/react/@emotion/react?98f9",
-/******/ 				"webpack/sharing/consume/default/@emotion/styled/@emotion/styled"
+/******/ 				"webpack/sharing/consume/default/@emotion/styled/@emotion/styled",
+/******/ 				"webpack/sharing/consume/default/@emotion/react/@emotion/react?98f9"
 /******/ 			],
 /******/ 			"lib_index_js": [
 /******/ 				"webpack/sharing/consume/default/@jupyterlab/application",
@@ -580,4 +580,4 @@ __webpack_require__.d(exports, {
 /******/ 	
 /******/ })()
 ;
-//# sourceMappingURL=remoteEntry.63d102da77b9debd3a64.js.map
+//# sourceMappingURL=remoteEntry.70489e7bc2d58af6145e.js.map

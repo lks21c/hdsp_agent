@@ -836,13 +836,362 @@ body[data-jp-theme-light="false"] .jp-agent-mode-select {
   background-image: url(${___CSS_LOADER_URL_REPLACEMENT_2___});
 }
 
-/* Standalone Mode Selector (for Auto Agent mode) */
-.jp-agent-mode-selector-standalone {
-  padding: 8px 16px;
-  border-top: 1px solid var(--jp-border-color2);
-  background: var(--jp-layout-color2);
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* Cursor AI Style: Unified Chat + Agent Execution                             */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Empty State Hint */
+.jp-agent-empty-hint {
+  font-size: 12px;
+  color: var(--jp-ui-font-color3);
+  margin-top: 8px;
 }
-`, "",{"version":3,"sources":["webpack://./frontend/styles/agent-panel.css"],"names":[],"mappings":"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","sourcesContent":["/**\n * Agent Panel Styling - Sidebar Chat Interface\n */\n\n/* Panel Container */\n.jp-agent-widget {\n  display: flex;\n  flex-direction: column;\n  min-width: 600px;\n  height: 100%;\n  background: var(--jp-layout-color1);\n}\n\n.jp-agent-panel {\n  display: flex;\n  flex-direction: column;\n  height: 100%;\n  padding: 0;\n}\n\n/* Header */\n.jp-agent-header {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  padding: 12px 16px;\n  border-bottom: 1px solid var(--jp-border-color2);\n  background: var(--jp-layout-color2);\n}\n\n.jp-agent-header h2 {\n  margin: 0;\n  font-size: 16px;\n  font-weight: 600;\n  color: var(--jp-ui-font-color1);\n}\n\n.jp-agent-header-buttons {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n}\n\n.jp-agent-settings-button-icon {\n  padding: 4px 8px;\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 4px;\n  background: transparent;\n  color: var(--jp-ui-font-color2);\n  font-size: 16px;\n  cursor: pointer;\n  transition: all 0.2s ease;\n  line-height: 1;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.jp-agent-settings-button-icon svg {\n  display: block;\n}\n\n.jp-agent-settings-button-icon:hover {\n  background: var(--jp-layout-color3);\n  color: var(--jp-ui-font-color1);\n}\n\n.jp-agent-clear-button {\n  padding: 4px 8px;\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 4px;\n  background: transparent;\n  color: var(--jp-ui-font-color2);\n  font-size: 16px;\n  cursor: pointer;\n  transition: all 0.2s ease;\n  line-height: 1;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.jp-agent-clear-button svg {\n  display: block;\n}\n\n.jp-agent-clear-button:hover {\n  background: var(--jp-layout-color3);\n  color: var(--jp-ui-font-color1);\n}\n\n/* Messages Container */\n.jp-agent-messages {\n  flex: 1;\n  overflow-y: auto;\n  padding: 16px;\n  display: flex;\n  flex-direction: column;\n  gap: 12px;\n}\n\n/* Empty State */\n.jp-agent-empty-state {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  justify-content: center;\n  text-align: center;\n  padding: 32px 16px;\n  color: var(--jp-ui-font-color2);\n}\n\n.jp-agent-empty-state p {\n  margin: 8px 0;\n  font-size: 14px;\n}\n\n.jp-agent-suggestions {\n  display: flex;\n  flex-direction: column;\n  gap: 8px;\n  margin-top: 16px;\n  width: 100%;\n  max-width: 240px;\n}\n\n.jp-agent-suggestions button {\n  padding: 8px 12px;\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 4px;\n  background: var(--jp-layout-color2);\n  color: var(--jp-ui-font-color1);\n  font-size: 13px;\n  cursor: pointer;\n  transition: all 0.2s ease;\n  text-align: left;\n}\n\n.jp-agent-suggestions button:hover {\n  background: var(--jp-layout-color3);\n  border-color: var(--jp-brand-color1);\n}\n\n/* Message */\n.jp-agent-message {\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n  padding: 12px;\n  border-radius: 8px;\n  max-width: 90%;\n}\n\n.jp-agent-message-user {\n  align-self: flex-end;\n  background: var(--jp-brand-color1);\n  color: white;\n}\n\n.jp-agent-message-assistant {\n  align-self: flex-start;\n  background: var(--jp-layout-color2);\n  border: 1px solid var(--jp-border-color2);\n}\n\n.jp-agent-message-header {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  margin-bottom: 4px;\n}\n\n.jp-agent-message-role {\n  font-size: 11px;\n  font-weight: 600;\n  opacity: 0.8;\n}\n\n.jp-agent-message-time {\n  font-size: 10px;\n  opacity: 0.6;\n}\n\n.jp-agent-message-content {\n  font-size: 13px;\n  line-height: 1.5;\n  white-space: pre-wrap;\n  word-wrap: break-word;\n  overflow: hidden;\n  overflow-x: auto;\n  max-width: 100%;\n}\n\n.jp-agent-message-user .jp-agent-message-content {\n  color: white;\n}\n\n/* Loading Animation */\n.jp-agent-loading {\n  display: flex;\n  gap: 4px;\n  padding: 4px 0;\n}\n\n.jp-agent-loading-dot {\n  animation: jp-agent-loading-bounce 1.4s infinite ease-in-out both;\n  font-size: 20px;\n  line-height: 1;\n}\n\n.jp-agent-loading-dot:nth-child(1) {\n  animation-delay: -0.32s;\n}\n\n.jp-agent-loading-dot:nth-child(2) {\n  animation-delay: -0.16s;\n}\n\n@keyframes jp-agent-loading-bounce {\n  0%, 80%, 100% {\n    opacity: 0.3;\n    transform: translateY(0);\n  }\n  40% {\n    opacity: 1;\n    transform: translateY(-4px);\n  }\n}\n\n/* Streaming Cursor Animation */\n.jp-agent-message-content.streaming::after {\n  content: '|';\n  animation: jp-agent-cursor-blink 0.7s infinite;\n  font-weight: bold;\n  color: var(--jp-brand-color1);\n}\n\n@keyframes jp-agent-cursor-blink {\n  0%, 50% {\n    opacity: 1;\n  }\n  51%, 100% {\n    opacity: 0;\n  }\n}\n\n/* Input Container */\n.jp-agent-input-container {\n  padding: 12px 16px;\n  border-top: 1px solid var(--jp-border-color2);\n  background: var(--jp-layout-color2);\n}\n\n.jp-agent-input-wrapper {\n  display: flex;\n  gap: 8px;\n  align-items: flex-end;\n}\n\n.jp-agent-input {\n  flex: 1;\n  min-height: 60px;\n  max-height: 150px;\n  padding: 8px 12px;\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 4px;\n  background: var(--jp-layout-color1);\n  color: var(--jp-ui-font-color1);\n  font-family: var(--jp-ui-font-family);\n  font-size: 13px;\n  resize: vertical;\n  outline: none;\n  transition: border-color 0.2s ease;\n}\n\n.jp-agent-input:focus {\n  border-color: var(--jp-brand-color1);\n  box-shadow: 0 0 0 1px var(--jp-brand-color1);\n}\n\n.jp-agent-input:disabled {\n  opacity: 0.5;\n  cursor: not-allowed;\n}\n\n.jp-agent-input::placeholder {\n  color: var(--jp-ui-font-color3);\n}\n\n.jp-agent-send-button {\n  padding: 10px 24px;\n  border: 1px solid var(--jp-border-color1);\n  border-radius: 4px;\n  background: var(--jp-layout-color1);\n  color: var(--jp-ui-font-color1);\n  font-size: 13px;\n  font-weight: 500;\n  cursor: pointer;\n  transition: all 0.2s ease;\n  white-space: nowrap;\n  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);\n}\n\n.jp-agent-send-button:hover:not(:disabled) {\n  background: var(--jp-layout-color3);\n  border-color: var(--jp-border-color1);\n  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);\n}\n\n.jp-agent-send-button:active:not(:disabled) {\n  background: var(--jp-layout-color3);\n  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);\n}\n\n.jp-agent-send-button:disabled {\n  opacity: 0.5;\n  cursor: not-allowed;\n  box-shadow: none;\n}\n\n/* Icon */\n.jp-agent-icon {\n  background-image: url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cGF0aCBkPSJNOCAyQzQuNjkgMiAyIDQuNjkgMiA4czIuNjkgNiA2IDYgNi0yLjY5IDYtNi0yLjY5LTYtNi02em0wIDEwLjVjLTIuNDggMC00LjUtMi4wMi00LjUtNC41czIuMDItNC41IDQuNS00LjUgNC41IDIuMDIgNC41IDQuNS0yLjAyIDQuNS00LjUgNC41eiIgZmlsbD0iY3VycmVudENvbG9yIi8+CiAgPGNpcmNsZSBjeD0iNiIgY3k9IjciIHI9IjEiIGZpbGw9ImN1cnJlbnRDb2xvciIvPgogIDxjaXJjbGUgY3g9IjEwIiBjeT0iNyIgcj0iMSIgZmlsbD0iY3VycmVudENvbG9yIi8+CiAgPHBhdGggZD0iTTUuNSAxMGMwLjUtMC44IDEuNS0xLjMgMi41LTEuMyAxIDAgMiAwLjUgMi41IDEuMyIgc3Ryb2tlPSJjdXJyZW50Q29sb3IiIHN0cm9rZS13aWR0aD0iMSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+Cjwvc3ZnPg==');\n  background-repeat: no-repeat;\n  background-position: center;\n  background-size: contain;\n}\n\n/* Scrollbar Styling */\n.jp-agent-messages::-webkit-scrollbar {\n  width: 8px;\n}\n\n.jp-agent-messages::-webkit-scrollbar-track {\n  background: var(--jp-layout-color1);\n}\n\n.jp-agent-messages::-webkit-scrollbar-thumb {\n  background: var(--jp-border-color2);\n  border-radius: 4px;\n}\n\n.jp-agent-messages::-webkit-scrollbar-thumb:hover {\n  background: var(--jp-border-color1);\n}\n\n/* Dark Theme Adjustments */\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-assistant {\n  background: var(--jp-layout-color0);\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-input {\n  background: var(--jp-layout-color0);\n}\n\n/* Code Block Styling */\n.jp-agent-message-content .code-block-container {\n  margin: 12px 0;\n  border-radius: 6px;\n  overflow: hidden;\n  background: #1e1e1e;\n  border: 1px solid #333;\n}\n\n.jp-agent-message-content .code-block-header {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  padding: 8px 12px;\n  background: #2d2d2d;\n  border-bottom: 1px solid #3d3d3d;\n}\n\n.jp-agent-message-content .code-block-language {\n  font-size: 11px;\n  font-weight: 600;\n  color: #9cdcfe;\n  text-transform: uppercase;\n  letter-spacing: 0.5px;\n}\n\n.jp-agent-message-content .code-block-actions {\n  display: flex;\n  gap: 6px;\n}\n\n.jp-agent-message-content .code-block-apply {\n  background: #667eea;\n  color: white;\n  border: 1px solid #667eea;\n  border-radius: 3px;\n  padding: 4px 10px;\n  font-size: 11px;\n  cursor: pointer;\n  transition: all 0.2s ease;\n  font-weight: 500;\n}\n\n.jp-agent-message-content .code-block-apply:hover {\n  background: #5568d3;\n  border-color: #5568d3;\n}\n\n.jp-agent-message-content .code-block-apply:active {\n  background: #4a5bbd;\n}\n\n.jp-agent-message-content .code-block-apply:disabled {\n  opacity: 0.5;\n  cursor: not-allowed;\n}\n\n.jp-agent-message-content .code-block-copy {\n  background: transparent;\n  color: #858585;\n  border: 1px solid #4d4d4d;\n  border-radius: 3px;\n  padding: 4px 10px;\n  font-size: 11px;\n  cursor: pointer;\n  transition: all 0.2s ease;\n  font-weight: 500;\n}\n\n.jp-agent-message-content .code-block-copy:hover {\n  background: #3d3d3d;\n  color: #d4d4d4;\n  border-color: #5d5d5d;\n}\n\n.jp-agent-message-content .code-block-copy:active {\n  background: #4d4d4d;\n}\n\n.jp-agent-message-content .code-block {\n  margin: 0;\n  padding: 14px;\n  background: #1e1e1e;\n  overflow-x: auto;\n  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;\n  font-size: 12px;\n  line-height: 1.6;\n}\n\n.jp-agent-message-content .code-block code {\n  color: #d4d4d4;\n  background: transparent;\n  padding: 0;\n  border: none;\n  display: block;\n  white-space: pre;\n}\n\n/* Inline Code Styling */\n.jp-agent-message-content .inline-code {\n  background: #f3f4f6;\n  color: #374151;\n  padding: 2px 6px;\n  border-radius: 4px;\n  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;\n  font-size: 12px;\n  border: 1px solid #d1d5db;\n  font-weight: 500;\n}\n\n/* Dark Theme Inline Code */\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content .inline-code {\n  background: #374151;\n  color: #e5e7eb;\n  border-color: #4b5563;\n}\n\n/* Markdown Elements in Message Content */\n.jp-agent-message-content h1 {\n  font-size: 16px;\n  font-weight: 600;\n  color: #1a56db;\n  margin: 12px 0 8px 0;\n  padding-bottom: 6px;\n  border-bottom: 2px solid #e5e7eb;\n}\n\n.jp-agent-message-content h2 {\n  font-size: 14px;\n  font-weight: 600;\n  color: #1e40af;\n  margin: 10px 0 6px 0;\n  padding-bottom: 4px;\n  border-bottom: 1px solid #e5e7eb;\n}\n\n.jp-agent-message-content h3 {\n  font-size: 13px;\n  font-weight: 600;\n  color: #3730a3;\n  margin: 8px 0 4px 0;\n}\n\n.jp-agent-message-content strong {\n  font-weight: 600;\n  color: #111827;\n}\n\n.jp-agent-message-content em {\n  font-style: italic;\n  color: #6b7280;\n}\n\n.jp-agent-message-content ul {\n  margin: 8px 0;\n  padding-left: 20px;\n  list-style-position: inside;\n  overflow: hidden;\n}\n\n.jp-agent-message-content ol {\n  margin: 8px 0;\n  padding-left: 20px;\n  list-style-position: inside;\n  overflow: hidden;\n}\n\n.jp-agent-message-content li {\n  margin: 4px 0;\n  line-height: 1.6;\n  color: #374151;\n  text-indent: -8px;\n  padding-left: 8px;\n}\n\n.jp-agent-message-content li::marker {\n  color: #6366f1;\n}\n\n/* Links */\n.jp-agent-message-content a {\n  color: #2563eb;\n  text-decoration: none;\n  border-bottom: 1px solid #93c5fd;\n  transition: all 0.15s ease;\n}\n\n.jp-agent-message-content a:hover {\n  color: #1d4ed8;\n  border-bottom-color: #2563eb;\n  background: #eff6ff;\n}\n\n/* Dark Theme Links */\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content a {\n  color: #60a5fa;\n  border-bottom-color: #3b82f6;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content a:hover {\n  color: #93c5fd;\n  border-bottom-color: #60a5fa;\n  background: rgba(59, 130, 246, 0.1);\n}\n\n/* Markdown Table Styling */\n.jp-agent-message-content .markdown-table {\n  width: 100%;\n  max-width: 100%;\n  border-collapse: collapse;\n  margin: 12px 0;\n  font-size: 12px;\n  background: #ffffff;\n  border: 1px solid #e5e7eb;\n  border-radius: 6px;\n  overflow: hidden;\n  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);\n  display: block;\n  overflow-x: auto;\n}\n\n.jp-agent-message-content .markdown-table thead {\n  background: linear-gradient(to bottom, #f8fafc, #f1f5f9);\n}\n\n.jp-agent-message-content .markdown-table th {\n  padding: 10px 14px;\n  font-weight: 600;\n  color: #1e40af;\n  border-bottom: 2px solid #c7d2fe;\n  text-transform: uppercase;\n  font-size: 11px;\n  letter-spacing: 0.5px;\n}\n\n.jp-agent-message-content .markdown-table td {\n  padding: 10px 14px;\n  color: #374151;\n  border-bottom: 1px solid #e5e7eb;\n}\n\n.jp-agent-message-content .markdown-table tbody tr:last-child td {\n  border-bottom: none;\n}\n\n.jp-agent-message-content .markdown-table tbody tr:nth-child(even) {\n  background: #f9fafb;\n}\n\n.jp-agent-message-content .markdown-table tbody tr:hover {\n  background: #eef2ff;\n}\n\n/* Table inline styles */\n.jp-agent-message-content .markdown-table strong {\n  color: #111827;\n  font-weight: 600;\n}\n\n.jp-agent-message-content .markdown-table code.inline-code {\n  background: #f3f4f6;\n  color: #374151;\n  padding: 1px 4px;\n  border-radius: 3px;\n  font-size: 11px;\n  border: 1px solid #d1d5db;\n}\n\n/* Dark Theme Table Adjustments */\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content .markdown-table {\n  background: #1f2937;\n  border-color: #374151;\n  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content .markdown-table thead {\n  background: linear-gradient(to bottom, #374151, #1f2937);\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content .markdown-table th {\n  color: #93c5fd;\n  border-bottom-color: #4b5563;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content .markdown-table td {\n  color: #e5e7eb;\n  border-bottom-color: #374151;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content .markdown-table tbody tr:nth-child(even) {\n  background: #111827;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content .markdown-table tbody tr:hover {\n  background: #312e81;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content .markdown-table code.inline-code {\n  background: #374151;\n  color: #e5e7eb;\n  border-color: #4b5563;\n}\n\n/* Dark Theme Markdown Elements */\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content h1 {\n  color: #60a5fa;\n  border-bottom-color: #374151;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content h2 {\n  color: #93c5fd;\n  border-bottom-color: #374151;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content h3 {\n  color: #a5b4fc;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content strong {\n  color: #f9fafb;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content em {\n  color: #9ca3af;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content li {\n  color: #e5e7eb;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content li::marker {\n  color: #818cf8;\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════ */\n/* Mode Selector - Cursor/Claude Style (Bottom Left)                           */\n/* ═══════════════════════════════════════════════════════════════════════════ */\n\n.jp-agent-mode-selector {\n  display: flex;\n  align-items: center;\n  margin-bottom: 8px;\n}\n\n.jp-agent-mode-select {\n  padding: 4px 8px;\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 4px;\n  background: var(--jp-layout-color1);\n  color: var(--jp-ui-font-color1);\n  font-size: 12px;\n  font-weight: 500;\n  cursor: pointer;\n  outline: none;\n  transition: all 0.15s ease;\n  appearance: none;\n  -webkit-appearance: none;\n  -moz-appearance: none;\n  background-image: url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E\");\n  background-repeat: no-repeat;\n  background-position: right 6px center;\n  padding-right: 24px;\n}\n\n.jp-agent-mode-select:hover {\n  border-color: var(--jp-border-color1);\n  background-color: var(--jp-layout-color2);\n}\n\n.jp-agent-mode-select:focus {\n  border-color: var(--jp-brand-color1);\n  box-shadow: 0 0 0 1px var(--jp-brand-color1);\n}\n\n.jp-agent-mode-select option {\n  background: var(--jp-layout-color1);\n  color: var(--jp-ui-font-color1);\n  padding: 8px;\n}\n\n/* Dark Theme */\nbody[data-jp-theme-light=\"false\"] .jp-agent-mode-select {\n  background-image: url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E\");\n}\n\n/* Standalone Mode Selector (for Auto Agent mode) */\n.jp-agent-mode-selector-standalone {\n  padding: 8px 16px;\n  border-top: 1px solid var(--jp-border-color2);\n  background: var(--jp-layout-color2);\n}\n"],"sourceRoot":""}]);
+
+.jp-agent-empty-hint code {
+  background: var(--jp-layout-color2);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: 'Menlo', 'Monaco', monospace;
+  font-size: 11px;
+}
+
+/* Input Hint */
+.jp-agent-input-hint {
+  font-size: 11px;
+  color: var(--jp-ui-font-color3);
+  margin-top: 6px;
+  padding-left: 2px;
+}
+
+.jp-agent-input-hint code {
+  background: var(--jp-layout-color3);
+  padding: 1px 4px;
+  border-radius: 2px;
+  font-family: 'Menlo', 'Monaco', monospace;
+  font-size: 10px;
+  margin: 0 2px;
+}
+
+/* Agent Execution Message Container */
+.jp-agent-message-agent-execution {
+  align-self: stretch !important;
+  max-width: 100% !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+}
+
+.jp-agent-execution-message {
+  background: var(--jp-layout-color2);
+  border: 1px solid var(--jp-border-color2);
+  border-radius: 8px;
+  padding: 12px;
+  width: 100%;
+}
+
+/* Agent Execution Header */
+.jp-agent-execution-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.jp-agent-execution-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.jp-agent-execution-badge svg {
+  width: 12px;
+  height: 12px;
+}
+
+.jp-agent-execution-request {
+  font-size: 13px;
+  color: var(--jp-ui-font-color1);
+  font-weight: 500;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Agent Execution Status */
+.jp-agent-execution-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  margin-bottom: 10px;
+  background: var(--jp-layout-color1);
+  border: 1px solid var(--jp-border-color2);
+}
+
+.jp-agent-execution-status--planning,
+.jp-agent-execution-status--executing,
+.jp-agent-execution-status--tool_calling,
+.jp-agent-execution-status--validating,
+.jp-agent-execution-status--reflecting {
+  background: linear-gradient(90deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.05));
+  border-color: rgba(102, 126, 234, 0.3);
+}
+
+.jp-agent-execution-status--completed {
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.05));
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.jp-agent-execution-status--failed {
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.05));
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.jp-agent-execution-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--jp-border-color2);
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: jp-agent-spin 0.8s linear infinite;
+}
+
+@keyframes jp-agent-spin {
+  to { transform: rotate(360deg); }
+}
+
+.jp-agent-execution-icon--success {
+  width: 16px;
+  height: 16px;
+  color: #10b981;
+}
+
+.jp-agent-execution-icon--error {
+  width: 16px;
+  height: 16px;
+  color: #ef4444;
+}
+
+.jp-agent-execution-status-text {
+  font-size: 12px;
+  color: var(--jp-ui-font-color1);
+  flex: 1;
+}
+
+.jp-agent-execution-confidence {
+  font-size: 11px;
+  color: var(--jp-ui-font-color2);
+  background: var(--jp-layout-color2);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* Agent Execution Plan */
+.jp-agent-execution-plan {
+  background: var(--jp-layout-color1);
+  border: 1px solid var(--jp-border-color2);
+  border-radius: 6px;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.jp-agent-execution-plan-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--jp-ui-font-color1);
+  margin-bottom: 8px;
+}
+
+.jp-agent-execution-plan-progress {
+  font-size: 11px;
+  color: var(--jp-ui-font-color2);
+  background: var(--jp-layout-color2);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* Progress Bar */
+.jp-agent-execution-progress-bar {
+  height: 4px;
+  background: var(--jp-layout-color3);
+  border-radius: 2px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+
+.jp-agent-execution-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #667eea, #764ba2);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+/* Execution Steps */
+.jp-agent-execution-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.jp-agent-execution-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: var(--jp-layout-color2);
+  border: 1px solid var(--jp-border-color3);
+  transition: all 0.2s ease;
+}
+
+.jp-agent-execution-step--current {
+  background: linear-gradient(90deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.05));
+  border-color: rgba(102, 126, 234, 0.3);
+}
+
+.jp-agent-execution-step--completed {
+  background: rgba(16, 185, 129, 0.05);
+  border-color: rgba(16, 185, 129, 0.2);
+}
+
+.jp-agent-execution-step--failed {
+  background: rgba(239, 68, 68, 0.05);
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.jp-agent-execution-step-indicator {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--jp-ui-font-color2);
+}
+
+.jp-agent-execution-step--completed .jp-agent-execution-step-indicator {
+  color: #10b981;
+}
+
+.jp-agent-execution-step--completed .jp-agent-execution-step-indicator svg {
+  width: 14px;
+  height: 14px;
+}
+
+.jp-agent-execution-step--failed .jp-agent-execution-step-indicator {
+  color: #ef4444;
+}
+
+.jp-agent-execution-step--failed .jp-agent-execution-step-indicator svg {
+  width: 14px;
+  height: 14px;
+}
+
+.jp-agent-execution-step-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--jp-border-color2);
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: jp-agent-spin 0.8s linear infinite;
+}
+
+.jp-agent-execution-step-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.jp-agent-execution-step-desc {
+  font-size: 12px;
+  color: var(--jp-ui-font-color1);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.jp-agent-execution-step-desc--done {
+  color: var(--jp-ui-font-color2);
+}
+
+.jp-agent-execution-step-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.jp-agent-execution-tool-tag {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--jp-layout-color3);
+  color: var(--jp-ui-font-color2);
+}
+
+/* Execution Result */
+.jp-agent-execution-result {
+  padding: 10px;
+  border-radius: 6px;
+  border: 1px solid var(--jp-border-color2);
+}
+
+.jp-agent-execution-result--success {
+  background: rgba(16, 185, 129, 0.05);
+  border-color: rgba(16, 185, 129, 0.2);
+}
+
+.jp-agent-execution-result--error {
+  background: rgba(239, 68, 68, 0.05);
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.jp-agent-execution-result-message {
+  font-size: 13px;
+  color: var(--jp-ui-font-color1);
+  margin: 0 0 8px 0;
+  line-height: 1.5;
+}
+
+.jp-agent-execution-result-error {
+  font-size: 12px;
+  color: #ef4444;
+  margin: 0 0 8px 0;
+}
+
+.jp-agent-execution-result-stats {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--jp-ui-font-color2);
+}
+
+.jp-agent-execution-result-stats span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Dark Theme Adjustments */
+body[data-jp-theme-light="false"] .jp-agent-execution-badge {
+  background: linear-gradient(135deg, #5a67d8, #6b46c1);
+}
+
+body[data-jp-theme-light="false"] .jp-agent-empty-hint code,
+body[data-jp-theme-light="false"] .jp-agent-input-hint code {
+  background: var(--jp-layout-color3);
+}
+`, "",{"version":3,"sources":["webpack://./frontend/styles/agent-panel.css"],"names":[],"mappings":"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","sourcesContent":["/**\n * Agent Panel Styling - Sidebar Chat Interface\n */\n\n/* Panel Container */\n.jp-agent-widget {\n  display: flex;\n  flex-direction: column;\n  min-width: 600px;\n  height: 100%;\n  background: var(--jp-layout-color1);\n}\n\n.jp-agent-panel {\n  display: flex;\n  flex-direction: column;\n  height: 100%;\n  padding: 0;\n}\n\n/* Header */\n.jp-agent-header {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  padding: 12px 16px;\n  border-bottom: 1px solid var(--jp-border-color2);\n  background: var(--jp-layout-color2);\n}\n\n.jp-agent-header h2 {\n  margin: 0;\n  font-size: 16px;\n  font-weight: 600;\n  color: var(--jp-ui-font-color1);\n}\n\n.jp-agent-header-buttons {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n}\n\n.jp-agent-settings-button-icon {\n  padding: 4px 8px;\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 4px;\n  background: transparent;\n  color: var(--jp-ui-font-color2);\n  font-size: 16px;\n  cursor: pointer;\n  transition: all 0.2s ease;\n  line-height: 1;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.jp-agent-settings-button-icon svg {\n  display: block;\n}\n\n.jp-agent-settings-button-icon:hover {\n  background: var(--jp-layout-color3);\n  color: var(--jp-ui-font-color1);\n}\n\n.jp-agent-clear-button {\n  padding: 4px 8px;\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 4px;\n  background: transparent;\n  color: var(--jp-ui-font-color2);\n  font-size: 16px;\n  cursor: pointer;\n  transition: all 0.2s ease;\n  line-height: 1;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.jp-agent-clear-button svg {\n  display: block;\n}\n\n.jp-agent-clear-button:hover {\n  background: var(--jp-layout-color3);\n  color: var(--jp-ui-font-color1);\n}\n\n/* Messages Container */\n.jp-agent-messages {\n  flex: 1;\n  overflow-y: auto;\n  padding: 16px;\n  display: flex;\n  flex-direction: column;\n  gap: 12px;\n}\n\n/* Empty State */\n.jp-agent-empty-state {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  justify-content: center;\n  text-align: center;\n  padding: 32px 16px;\n  color: var(--jp-ui-font-color2);\n}\n\n.jp-agent-empty-state p {\n  margin: 8px 0;\n  font-size: 14px;\n}\n\n.jp-agent-suggestions {\n  display: flex;\n  flex-direction: column;\n  gap: 8px;\n  margin-top: 16px;\n  width: 100%;\n  max-width: 240px;\n}\n\n.jp-agent-suggestions button {\n  padding: 8px 12px;\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 4px;\n  background: var(--jp-layout-color2);\n  color: var(--jp-ui-font-color1);\n  font-size: 13px;\n  cursor: pointer;\n  transition: all 0.2s ease;\n  text-align: left;\n}\n\n.jp-agent-suggestions button:hover {\n  background: var(--jp-layout-color3);\n  border-color: var(--jp-brand-color1);\n}\n\n/* Message */\n.jp-agent-message {\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n  padding: 12px;\n  border-radius: 8px;\n  max-width: 90%;\n}\n\n.jp-agent-message-user {\n  align-self: flex-end;\n  background: var(--jp-brand-color1);\n  color: white;\n}\n\n.jp-agent-message-assistant {\n  align-self: flex-start;\n  background: var(--jp-layout-color2);\n  border: 1px solid var(--jp-border-color2);\n}\n\n.jp-agent-message-header {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  margin-bottom: 4px;\n}\n\n.jp-agent-message-role {\n  font-size: 11px;\n  font-weight: 600;\n  opacity: 0.8;\n}\n\n.jp-agent-message-time {\n  font-size: 10px;\n  opacity: 0.6;\n}\n\n.jp-agent-message-content {\n  font-size: 13px;\n  line-height: 1.5;\n  white-space: pre-wrap;\n  word-wrap: break-word;\n  overflow: hidden;\n  overflow-x: auto;\n  max-width: 100%;\n}\n\n.jp-agent-message-user .jp-agent-message-content {\n  color: white;\n}\n\n/* Loading Animation */\n.jp-agent-loading {\n  display: flex;\n  gap: 4px;\n  padding: 4px 0;\n}\n\n.jp-agent-loading-dot {\n  animation: jp-agent-loading-bounce 1.4s infinite ease-in-out both;\n  font-size: 20px;\n  line-height: 1;\n}\n\n.jp-agent-loading-dot:nth-child(1) {\n  animation-delay: -0.32s;\n}\n\n.jp-agent-loading-dot:nth-child(2) {\n  animation-delay: -0.16s;\n}\n\n@keyframes jp-agent-loading-bounce {\n  0%, 80%, 100% {\n    opacity: 0.3;\n    transform: translateY(0);\n  }\n  40% {\n    opacity: 1;\n    transform: translateY(-4px);\n  }\n}\n\n/* Streaming Cursor Animation */\n.jp-agent-message-content.streaming::after {\n  content: '|';\n  animation: jp-agent-cursor-blink 0.7s infinite;\n  font-weight: bold;\n  color: var(--jp-brand-color1);\n}\n\n@keyframes jp-agent-cursor-blink {\n  0%, 50% {\n    opacity: 1;\n  }\n  51%, 100% {\n    opacity: 0;\n  }\n}\n\n/* Input Container */\n.jp-agent-input-container {\n  padding: 12px 16px;\n  border-top: 1px solid var(--jp-border-color2);\n  background: var(--jp-layout-color2);\n}\n\n.jp-agent-input-wrapper {\n  display: flex;\n  gap: 8px;\n  align-items: flex-end;\n}\n\n.jp-agent-input {\n  flex: 1;\n  min-height: 60px;\n  max-height: 150px;\n  padding: 8px 12px;\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 4px;\n  background: var(--jp-layout-color1);\n  color: var(--jp-ui-font-color1);\n  font-family: var(--jp-ui-font-family);\n  font-size: 13px;\n  resize: vertical;\n  outline: none;\n  transition: border-color 0.2s ease;\n}\n\n.jp-agent-input:focus {\n  border-color: var(--jp-brand-color1);\n  box-shadow: 0 0 0 1px var(--jp-brand-color1);\n}\n\n.jp-agent-input:disabled {\n  opacity: 0.5;\n  cursor: not-allowed;\n}\n\n.jp-agent-input::placeholder {\n  color: var(--jp-ui-font-color3);\n}\n\n.jp-agent-send-button {\n  padding: 10px 24px;\n  border: 1px solid var(--jp-border-color1);\n  border-radius: 4px;\n  background: var(--jp-layout-color1);\n  color: var(--jp-ui-font-color1);\n  font-size: 13px;\n  font-weight: 500;\n  cursor: pointer;\n  transition: all 0.2s ease;\n  white-space: nowrap;\n  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);\n}\n\n.jp-agent-send-button:hover:not(:disabled) {\n  background: var(--jp-layout-color3);\n  border-color: var(--jp-border-color1);\n  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);\n}\n\n.jp-agent-send-button:active:not(:disabled) {\n  background: var(--jp-layout-color3);\n  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);\n}\n\n.jp-agent-send-button:disabled {\n  opacity: 0.5;\n  cursor: not-allowed;\n  box-shadow: none;\n}\n\n/* Icon */\n.jp-agent-icon {\n  background-image: url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cGF0aCBkPSJNOCAyQzQuNjkgMiAyIDQuNjkgMiA4czIuNjkgNiA2IDYgNi0yLjY5IDYtNi0yLjY5LTYtNi02em0wIDEwLjVjLTIuNDggMC00LjUtMi4wMi00LjUtNC41czIuMDItNC41IDQuNS00LjUgNC41IDIuMDIgNC41IDQuNS0yLjAyIDQuNS00LjUgNC41eiIgZmlsbD0iY3VycmVudENvbG9yIi8+CiAgPGNpcmNsZSBjeD0iNiIgY3k9IjciIHI9IjEiIGZpbGw9ImN1cnJlbnRDb2xvciIvPgogIDxjaXJjbGUgY3g9IjEwIiBjeT0iNyIgcj0iMSIgZmlsbD0iY3VycmVudENvbG9yIi8+CiAgPHBhdGggZD0iTTUuNSAxMGMwLjUtMC44IDEuNS0xLjMgMi41LTEuMyAxIDAgMiAwLjUgMi41IDEuMyIgc3Ryb2tlPSJjdXJyZW50Q29sb3IiIHN0cm9rZS13aWR0aD0iMSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+Cjwvc3ZnPg==');\n  background-repeat: no-repeat;\n  background-position: center;\n  background-size: contain;\n}\n\n/* Scrollbar Styling */\n.jp-agent-messages::-webkit-scrollbar {\n  width: 8px;\n}\n\n.jp-agent-messages::-webkit-scrollbar-track {\n  background: var(--jp-layout-color1);\n}\n\n.jp-agent-messages::-webkit-scrollbar-thumb {\n  background: var(--jp-border-color2);\n  border-radius: 4px;\n}\n\n.jp-agent-messages::-webkit-scrollbar-thumb:hover {\n  background: var(--jp-border-color1);\n}\n\n/* Dark Theme Adjustments */\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-assistant {\n  background: var(--jp-layout-color0);\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-input {\n  background: var(--jp-layout-color0);\n}\n\n/* Code Block Styling */\n.jp-agent-message-content .code-block-container {\n  margin: 12px 0;\n  border-radius: 6px;\n  overflow: hidden;\n  background: #1e1e1e;\n  border: 1px solid #333;\n}\n\n.jp-agent-message-content .code-block-header {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  padding: 8px 12px;\n  background: #2d2d2d;\n  border-bottom: 1px solid #3d3d3d;\n}\n\n.jp-agent-message-content .code-block-language {\n  font-size: 11px;\n  font-weight: 600;\n  color: #9cdcfe;\n  text-transform: uppercase;\n  letter-spacing: 0.5px;\n}\n\n.jp-agent-message-content .code-block-actions {\n  display: flex;\n  gap: 6px;\n}\n\n.jp-agent-message-content .code-block-apply {\n  background: #667eea;\n  color: white;\n  border: 1px solid #667eea;\n  border-radius: 3px;\n  padding: 4px 10px;\n  font-size: 11px;\n  cursor: pointer;\n  transition: all 0.2s ease;\n  font-weight: 500;\n}\n\n.jp-agent-message-content .code-block-apply:hover {\n  background: #5568d3;\n  border-color: #5568d3;\n}\n\n.jp-agent-message-content .code-block-apply:active {\n  background: #4a5bbd;\n}\n\n.jp-agent-message-content .code-block-apply:disabled {\n  opacity: 0.5;\n  cursor: not-allowed;\n}\n\n.jp-agent-message-content .code-block-copy {\n  background: transparent;\n  color: #858585;\n  border: 1px solid #4d4d4d;\n  border-radius: 3px;\n  padding: 4px 10px;\n  font-size: 11px;\n  cursor: pointer;\n  transition: all 0.2s ease;\n  font-weight: 500;\n}\n\n.jp-agent-message-content .code-block-copy:hover {\n  background: #3d3d3d;\n  color: #d4d4d4;\n  border-color: #5d5d5d;\n}\n\n.jp-agent-message-content .code-block-copy:active {\n  background: #4d4d4d;\n}\n\n.jp-agent-message-content .code-block {\n  margin: 0;\n  padding: 14px;\n  background: #1e1e1e;\n  overflow-x: auto;\n  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;\n  font-size: 12px;\n  line-height: 1.6;\n}\n\n.jp-agent-message-content .code-block code {\n  color: #d4d4d4;\n  background: transparent;\n  padding: 0;\n  border: none;\n  display: block;\n  white-space: pre;\n}\n\n/* Inline Code Styling */\n.jp-agent-message-content .inline-code {\n  background: #f3f4f6;\n  color: #374151;\n  padding: 2px 6px;\n  border-radius: 4px;\n  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;\n  font-size: 12px;\n  border: 1px solid #d1d5db;\n  font-weight: 500;\n}\n\n/* Dark Theme Inline Code */\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content .inline-code {\n  background: #374151;\n  color: #e5e7eb;\n  border-color: #4b5563;\n}\n\n/* Markdown Elements in Message Content */\n.jp-agent-message-content h1 {\n  font-size: 16px;\n  font-weight: 600;\n  color: #1a56db;\n  margin: 12px 0 8px 0;\n  padding-bottom: 6px;\n  border-bottom: 2px solid #e5e7eb;\n}\n\n.jp-agent-message-content h2 {\n  font-size: 14px;\n  font-weight: 600;\n  color: #1e40af;\n  margin: 10px 0 6px 0;\n  padding-bottom: 4px;\n  border-bottom: 1px solid #e5e7eb;\n}\n\n.jp-agent-message-content h3 {\n  font-size: 13px;\n  font-weight: 600;\n  color: #3730a3;\n  margin: 8px 0 4px 0;\n}\n\n.jp-agent-message-content strong {\n  font-weight: 600;\n  color: #111827;\n}\n\n.jp-agent-message-content em {\n  font-style: italic;\n  color: #6b7280;\n}\n\n.jp-agent-message-content ul {\n  margin: 8px 0;\n  padding-left: 20px;\n  list-style-position: inside;\n  overflow: hidden;\n}\n\n.jp-agent-message-content ol {\n  margin: 8px 0;\n  padding-left: 20px;\n  list-style-position: inside;\n  overflow: hidden;\n}\n\n.jp-agent-message-content li {\n  margin: 4px 0;\n  line-height: 1.6;\n  color: #374151;\n  text-indent: -8px;\n  padding-left: 8px;\n}\n\n.jp-agent-message-content li::marker {\n  color: #6366f1;\n}\n\n/* Links */\n.jp-agent-message-content a {\n  color: #2563eb;\n  text-decoration: none;\n  border-bottom: 1px solid #93c5fd;\n  transition: all 0.15s ease;\n}\n\n.jp-agent-message-content a:hover {\n  color: #1d4ed8;\n  border-bottom-color: #2563eb;\n  background: #eff6ff;\n}\n\n/* Dark Theme Links */\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content a {\n  color: #60a5fa;\n  border-bottom-color: #3b82f6;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content a:hover {\n  color: #93c5fd;\n  border-bottom-color: #60a5fa;\n  background: rgba(59, 130, 246, 0.1);\n}\n\n/* Markdown Table Styling */\n.jp-agent-message-content .markdown-table {\n  width: 100%;\n  max-width: 100%;\n  border-collapse: collapse;\n  margin: 12px 0;\n  font-size: 12px;\n  background: #ffffff;\n  border: 1px solid #e5e7eb;\n  border-radius: 6px;\n  overflow: hidden;\n  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);\n  display: block;\n  overflow-x: auto;\n}\n\n.jp-agent-message-content .markdown-table thead {\n  background: linear-gradient(to bottom, #f8fafc, #f1f5f9);\n}\n\n.jp-agent-message-content .markdown-table th {\n  padding: 10px 14px;\n  font-weight: 600;\n  color: #1e40af;\n  border-bottom: 2px solid #c7d2fe;\n  text-transform: uppercase;\n  font-size: 11px;\n  letter-spacing: 0.5px;\n}\n\n.jp-agent-message-content .markdown-table td {\n  padding: 10px 14px;\n  color: #374151;\n  border-bottom: 1px solid #e5e7eb;\n}\n\n.jp-agent-message-content .markdown-table tbody tr:last-child td {\n  border-bottom: none;\n}\n\n.jp-agent-message-content .markdown-table tbody tr:nth-child(even) {\n  background: #f9fafb;\n}\n\n.jp-agent-message-content .markdown-table tbody tr:hover {\n  background: #eef2ff;\n}\n\n/* Table inline styles */\n.jp-agent-message-content .markdown-table strong {\n  color: #111827;\n  font-weight: 600;\n}\n\n.jp-agent-message-content .markdown-table code.inline-code {\n  background: #f3f4f6;\n  color: #374151;\n  padding: 1px 4px;\n  border-radius: 3px;\n  font-size: 11px;\n  border: 1px solid #d1d5db;\n}\n\n/* Dark Theme Table Adjustments */\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content .markdown-table {\n  background: #1f2937;\n  border-color: #374151;\n  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content .markdown-table thead {\n  background: linear-gradient(to bottom, #374151, #1f2937);\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content .markdown-table th {\n  color: #93c5fd;\n  border-bottom-color: #4b5563;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content .markdown-table td {\n  color: #e5e7eb;\n  border-bottom-color: #374151;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content .markdown-table tbody tr:nth-child(even) {\n  background: #111827;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content .markdown-table tbody tr:hover {\n  background: #312e81;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content .markdown-table code.inline-code {\n  background: #374151;\n  color: #e5e7eb;\n  border-color: #4b5563;\n}\n\n/* Dark Theme Markdown Elements */\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content h1 {\n  color: #60a5fa;\n  border-bottom-color: #374151;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content h2 {\n  color: #93c5fd;\n  border-bottom-color: #374151;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content h3 {\n  color: #a5b4fc;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content strong {\n  color: #f9fafb;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content em {\n  color: #9ca3af;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content li {\n  color: #e5e7eb;\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-message-content li::marker {\n  color: #818cf8;\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════ */\n/* Mode Selector - Cursor/Claude Style (Bottom Left)                           */\n/* ═══════════════════════════════════════════════════════════════════════════ */\n\n.jp-agent-mode-selector {\n  display: flex;\n  align-items: center;\n  margin-bottom: 8px;\n}\n\n.jp-agent-mode-select {\n  padding: 4px 8px;\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 4px;\n  background: var(--jp-layout-color1);\n  color: var(--jp-ui-font-color1);\n  font-size: 12px;\n  font-weight: 500;\n  cursor: pointer;\n  outline: none;\n  transition: all 0.15s ease;\n  appearance: none;\n  -webkit-appearance: none;\n  -moz-appearance: none;\n  background-image: url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E\");\n  background-repeat: no-repeat;\n  background-position: right 6px center;\n  padding-right: 24px;\n}\n\n.jp-agent-mode-select:hover {\n  border-color: var(--jp-border-color1);\n  background-color: var(--jp-layout-color2);\n}\n\n.jp-agent-mode-select:focus {\n  border-color: var(--jp-brand-color1);\n  box-shadow: 0 0 0 1px var(--jp-brand-color1);\n}\n\n.jp-agent-mode-select option {\n  background: var(--jp-layout-color1);\n  color: var(--jp-ui-font-color1);\n  padding: 8px;\n}\n\n/* Dark Theme */\nbody[data-jp-theme-light=\"false\"] .jp-agent-mode-select {\n  background-image: url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E\");\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════ */\n/* Cursor AI Style: Unified Chat + Agent Execution                             */\n/* ═══════════════════════════════════════════════════════════════════════════ */\n\n/* Empty State Hint */\n.jp-agent-empty-hint {\n  font-size: 12px;\n  color: var(--jp-ui-font-color3);\n  margin-top: 8px;\n}\n\n.jp-agent-empty-hint code {\n  background: var(--jp-layout-color2);\n  padding: 2px 6px;\n  border-radius: 3px;\n  font-family: 'Menlo', 'Monaco', monospace;\n  font-size: 11px;\n}\n\n/* Input Hint */\n.jp-agent-input-hint {\n  font-size: 11px;\n  color: var(--jp-ui-font-color3);\n  margin-top: 6px;\n  padding-left: 2px;\n}\n\n.jp-agent-input-hint code {\n  background: var(--jp-layout-color3);\n  padding: 1px 4px;\n  border-radius: 2px;\n  font-family: 'Menlo', 'Monaco', monospace;\n  font-size: 10px;\n  margin: 0 2px;\n}\n\n/* Agent Execution Message Container */\n.jp-agent-message-agent-execution {\n  align-self: stretch !important;\n  max-width: 100% !important;\n  background: transparent !important;\n  border: none !important;\n  padding: 0 !important;\n}\n\n.jp-agent-execution-message {\n  background: var(--jp-layout-color2);\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 8px;\n  padding: 12px;\n  width: 100%;\n}\n\n/* Agent Execution Header */\n.jp-agent-execution-header {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  margin-bottom: 10px;\n}\n\n.jp-agent-execution-badge {\n  display: flex;\n  align-items: center;\n  gap: 4px;\n  background: linear-gradient(135deg, #667eea, #764ba2);\n  color: white;\n  padding: 3px 8px;\n  border-radius: 4px;\n  font-size: 11px;\n  font-weight: 600;\n}\n\n.jp-agent-execution-badge svg {\n  width: 12px;\n  height: 12px;\n}\n\n.jp-agent-execution-request {\n  font-size: 13px;\n  color: var(--jp-ui-font-color1);\n  font-weight: 500;\n  flex: 1;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n/* Agent Execution Status */\n.jp-agent-execution-status {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  padding: 8px 10px;\n  border-radius: 6px;\n  margin-bottom: 10px;\n  background: var(--jp-layout-color1);\n  border: 1px solid var(--jp-border-color2);\n}\n\n.jp-agent-execution-status--planning,\n.jp-agent-execution-status--executing,\n.jp-agent-execution-status--tool_calling,\n.jp-agent-execution-status--validating,\n.jp-agent-execution-status--reflecting {\n  background: linear-gradient(90deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.05));\n  border-color: rgba(102, 126, 234, 0.3);\n}\n\n.jp-agent-execution-status--completed {\n  background: linear-gradient(90deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.05));\n  border-color: rgba(16, 185, 129, 0.3);\n}\n\n.jp-agent-execution-status--failed {\n  background: linear-gradient(90deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.05));\n  border-color: rgba(239, 68, 68, 0.3);\n}\n\n.jp-agent-execution-spinner {\n  width: 14px;\n  height: 14px;\n  border: 2px solid var(--jp-border-color2);\n  border-top-color: #667eea;\n  border-radius: 50%;\n  animation: jp-agent-spin 0.8s linear infinite;\n}\n\n@keyframes jp-agent-spin {\n  to { transform: rotate(360deg); }\n}\n\n.jp-agent-execution-icon--success {\n  width: 16px;\n  height: 16px;\n  color: #10b981;\n}\n\n.jp-agent-execution-icon--error {\n  width: 16px;\n  height: 16px;\n  color: #ef4444;\n}\n\n.jp-agent-execution-status-text {\n  font-size: 12px;\n  color: var(--jp-ui-font-color1);\n  flex: 1;\n}\n\n.jp-agent-execution-confidence {\n  font-size: 11px;\n  color: var(--jp-ui-font-color2);\n  background: var(--jp-layout-color2);\n  padding: 2px 6px;\n  border-radius: 4px;\n}\n\n/* Agent Execution Plan */\n.jp-agent-execution-plan {\n  background: var(--jp-layout-color1);\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 6px;\n  padding: 10px;\n  margin-bottom: 10px;\n}\n\n.jp-agent-execution-plan-header {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  font-size: 12px;\n  font-weight: 500;\n  color: var(--jp-ui-font-color1);\n  margin-bottom: 8px;\n}\n\n.jp-agent-execution-plan-progress {\n  font-size: 11px;\n  color: var(--jp-ui-font-color2);\n  background: var(--jp-layout-color2);\n  padding: 2px 6px;\n  border-radius: 4px;\n}\n\n/* Progress Bar */\n.jp-agent-execution-progress-bar {\n  height: 4px;\n  background: var(--jp-layout-color3);\n  border-radius: 2px;\n  margin-bottom: 10px;\n  overflow: hidden;\n}\n\n.jp-agent-execution-progress-fill {\n  height: 100%;\n  background: linear-gradient(90deg, #667eea, #764ba2);\n  border-radius: 2px;\n  transition: width 0.3s ease;\n}\n\n/* Execution Steps */\n.jp-agent-execution-steps {\n  display: flex;\n  flex-direction: column;\n  gap: 6px;\n}\n\n.jp-agent-execution-step {\n  display: flex;\n  align-items: flex-start;\n  gap: 8px;\n  padding: 6px 8px;\n  border-radius: 4px;\n  background: var(--jp-layout-color2);\n  border: 1px solid var(--jp-border-color3);\n  transition: all 0.2s ease;\n}\n\n.jp-agent-execution-step--current {\n  background: linear-gradient(90deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.05));\n  border-color: rgba(102, 126, 234, 0.3);\n}\n\n.jp-agent-execution-step--completed {\n  background: rgba(16, 185, 129, 0.05);\n  border-color: rgba(16, 185, 129, 0.2);\n}\n\n.jp-agent-execution-step--failed {\n  background: rgba(239, 68, 68, 0.05);\n  border-color: rgba(239, 68, 68, 0.2);\n}\n\n.jp-agent-execution-step-indicator {\n  width: 20px;\n  height: 20px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n  font-size: 11px;\n  font-weight: 500;\n  color: var(--jp-ui-font-color2);\n}\n\n.jp-agent-execution-step--completed .jp-agent-execution-step-indicator {\n  color: #10b981;\n}\n\n.jp-agent-execution-step--completed .jp-agent-execution-step-indicator svg {\n  width: 14px;\n  height: 14px;\n}\n\n.jp-agent-execution-step--failed .jp-agent-execution-step-indicator {\n  color: #ef4444;\n}\n\n.jp-agent-execution-step--failed .jp-agent-execution-step-indicator svg {\n  width: 14px;\n  height: 14px;\n}\n\n.jp-agent-execution-step-spinner {\n  width: 12px;\n  height: 12px;\n  border: 2px solid var(--jp-border-color2);\n  border-top-color: #667eea;\n  border-radius: 50%;\n  animation: jp-agent-spin 0.8s linear infinite;\n}\n\n.jp-agent-execution-step-content {\n  flex: 1;\n  min-width: 0;\n}\n\n.jp-agent-execution-step-desc {\n  font-size: 12px;\n  color: var(--jp-ui-font-color1);\n  display: block;\n  margin-bottom: 4px;\n}\n\n.jp-agent-execution-step-desc--done {\n  color: var(--jp-ui-font-color2);\n}\n\n.jp-agent-execution-step-tools {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 4px;\n}\n\n.jp-agent-execution-tool-tag {\n  font-size: 10px;\n  padding: 1px 5px;\n  border-radius: 3px;\n  background: var(--jp-layout-color3);\n  color: var(--jp-ui-font-color2);\n}\n\n/* Execution Result */\n.jp-agent-execution-result {\n  padding: 10px;\n  border-radius: 6px;\n  border: 1px solid var(--jp-border-color2);\n}\n\n.jp-agent-execution-result--success {\n  background: rgba(16, 185, 129, 0.05);\n  border-color: rgba(16, 185, 129, 0.2);\n}\n\n.jp-agent-execution-result--error {\n  background: rgba(239, 68, 68, 0.05);\n  border-color: rgba(239, 68, 68, 0.2);\n}\n\n.jp-agent-execution-result-message {\n  font-size: 13px;\n  color: var(--jp-ui-font-color1);\n  margin: 0 0 8px 0;\n  line-height: 1.5;\n}\n\n.jp-agent-execution-result-error {\n  font-size: 12px;\n  color: #ef4444;\n  margin: 0 0 8px 0;\n}\n\n.jp-agent-execution-result-stats {\n  display: flex;\n  gap: 12px;\n  font-size: 11px;\n  color: var(--jp-ui-font-color2);\n}\n\n.jp-agent-execution-result-stats span {\n  display: flex;\n  align-items: center;\n  gap: 4px;\n}\n\n/* Dark Theme Adjustments */\nbody[data-jp-theme-light=\"false\"] .jp-agent-execution-badge {\n  background: linear-gradient(135deg, #5a67d8, #6b46c1);\n}\n\nbody[data-jp-theme-light=\"false\"] .jp-agent-empty-hint code,\nbody[data-jp-theme-light=\"false\"] .jp-agent-input-hint code {\n  background: var(--jp-layout-color3);\n}\n"],"sourceRoot":""}]);
 // Exports
 /* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (___CSS_LOADER_EXPORT___);
 
@@ -1541,7 +1890,214 @@ ___CSS_LOADER_EXPORT___.push([module.id, `/**
   width: 16px;
   height: 16px;
 }
-`, "",{"version":3,"sources":["webpack://./frontend/styles/auto-agent.css"],"names":[],"mappings":"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","sourcesContent":["/**\n * Auto-Agent Panel - Claude/Cursor Style\n * Minimal, matte design\n */\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Panel Container\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-panel {\n  display: flex;\n  flex-direction: column;\n  gap: 12px;\n  padding: 16px;\n  height: 100%;\n  overflow-y: auto;\n  background: var(--jp-layout-color1);\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Empty State\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-empty {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 48px 16px;\n  color: var(--jp-ui-font-color3);\n}\n\n.aa-empty-text {\n  font-size: 13px;\n  font-weight: 500;\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Input Section\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-input-section {\n  display: flex;\n  flex-direction: column;\n  gap: 8px;\n}\n\n.aa-textarea {\n  width: 100%;\n  min-height: 72px;\n  max-height: 180px;\n  padding: 12px;\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 6px;\n  background: var(--jp-layout-color0);\n  color: var(--jp-ui-font-color1);\n  font-family: var(--jp-ui-font-family);\n  font-size: 13px;\n  line-height: 1.5;\n  resize: vertical;\n  outline: none;\n  transition: border-color 0.15s ease;\n}\n\n.aa-textarea:focus {\n  border-color: var(--jp-brand-color1);\n}\n\n.aa-textarea:disabled {\n  opacity: 0.5;\n  cursor: not-allowed;\n}\n\n.aa-textarea::placeholder {\n  color: var(--jp-ui-font-color3);\n}\n\n/* Actions */\n.aa-actions {\n  display: flex;\n  gap: 8px;\n}\n\n.aa-btn {\n  padding: 8px 16px;\n  border: none;\n  border-radius: 6px;\n  font-size: 13px;\n  font-weight: 500;\n  cursor: pointer;\n  transition: background 0.15s ease, opacity 0.15s ease;\n}\n\n.aa-btn:disabled {\n  opacity: 0.4;\n  cursor: not-allowed;\n}\n\n.aa-btn--primary {\n  background: var(--jp-brand-color1);\n  color: white;\n}\n\n.aa-btn--primary:hover:not(:disabled) {\n  background: var(--jp-brand-color0);\n}\n\n.aa-btn--secondary {\n  background: var(--jp-layout-color2);\n  color: var(--jp-ui-font-color1);\n}\n\n.aa-btn--secondary:hover:not(:disabled) {\n  background: var(--jp-layout-color3);\n}\n\n.aa-btn--cancel {\n  background: transparent;\n  color: var(--jp-error-color1);\n  border: 1px solid var(--jp-error-color1);\n}\n\n.aa-btn--cancel:hover {\n  background: var(--jp-error-color1);\n  color: white;\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Status Indicator\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-status {\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  padding: 10px 12px;\n  border-radius: 6px;\n  font-size: 13px;\n  background: var(--jp-layout-color2);\n  border-left: 3px solid var(--jp-border-color1);\n}\n\n.aa-status--planning,\n.aa-status--executing,\n.aa-status--tool_calling {\n  border-left-color: var(--jp-brand-color1);\n}\n\n.aa-status--self_healing {\n  border-left-color: var(--jp-warn-color1);\n}\n\n.aa-status--replanning {\n  border-left-color: var(--jp-info-color1, #2196f3);\n  background: rgba(33, 150, 243, 0.06);\n}\n\n/* Replanning indicator for step */\n.aa-step--replanning {\n  background: rgba(33, 150, 243, 0.08);\n  border-left: 2px solid var(--jp-info-color1, #2196f3);\n}\n\n.aa-step--replanning .aa-step-indicator {\n  color: var(--jp-info-color1, #2196f3);\n}\n\n.aa-step-replanning {\n  display: inline-block;\n  font-size: 11px;\n  color: var(--jp-info-color1, #2196f3);\n  margin-left: 8px;\n  animation: aa-pulse 1.5s ease-in-out infinite;\n}\n\n/* Spinning icon for replanning */\n.aa-icon-spin {\n  animation: aa-spin 1s linear infinite;\n}\n\n/* Plan replanning state */\n.aa-plan--replanning {\n  border-color: var(--jp-info-color1, #2196f3);\n}\n\n.aa-plan--replanning .aa-plan-header {\n  background: rgba(33, 150, 243, 0.1);\n}\n\n.aa-plan--replanning .aa-plan-title {\n  color: var(--jp-info-color1, #2196f3);\n}\n\n/* Plan changed indicator */\n.aa-plan-changed {\n  margin-left: 6px;\n  font-weight: 600;\n  color: var(--jp-info-color1, #2196f3);\n}\n\n/* New step styles */\n.aa-step--new {\n  background: rgba(34, 197, 94, 0.06);\n  border-left: 2px solid var(--jp-success-color1, #22c55e);\n  animation: aa-slide-in 0.3s ease-out;\n}\n\n.aa-step-desc--new {\n  color: var(--jp-success-color1, #22c55e);\n}\n\n.aa-new-badge {\n  display: inline-block;\n  font-size: 9px;\n  font-weight: 700;\n  color: white;\n  background: var(--jp-success-color1, #22c55e);\n  padding: 1px 4px;\n  border-radius: 3px;\n  margin-right: 6px;\n  text-transform: uppercase;\n  letter-spacing: 0.5px;\n}\n\n@keyframes aa-slide-in {\n  from {\n    opacity: 0;\n    transform: translateX(-10px);\n  }\n  to {\n    opacity: 1;\n    transform: translateX(0);\n  }\n}\n\n.aa-status--completed {\n  border-left-color: var(--jp-success-color1);\n}\n\n.aa-status--failed {\n  border-left-color: var(--jp-error-color1);\n}\n\n.aa-status-spinner {\n  width: 14px;\n  height: 14px;\n  border: 2px solid var(--jp-border-color2);\n  border-top-color: var(--jp-brand-color1);\n  border-radius: 50%;\n  animation: aa-spin 0.8s linear infinite;\n}\n\n.aa-status-text {\n  flex: 1;\n  color: var(--jp-ui-font-color1);\n}\n\n.aa-status-error {\n  font-size: 12px;\n  color: var(--jp-error-color1);\n  margin-left: auto;\n}\n\n@keyframes aa-spin {\n  to { transform: rotate(360deg); }\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Execution Plan\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-plan {\n  background: var(--jp-layout-color0);\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 6px;\n  overflow: hidden;\n}\n\n.aa-plan-header {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  padding: 10px 12px;\n  background: var(--jp-layout-color2);\n  border-bottom: 1px solid var(--jp-border-color2);\n}\n\n.aa-plan-title {\n  font-size: 12px;\n  font-weight: 600;\n  color: var(--jp-ui-font-color2);\n  text-transform: uppercase;\n  letter-spacing: 0.5px;\n}\n\n.aa-plan-progress {\n  font-size: 12px;\n  color: var(--jp-ui-font-color3);\n  font-variant-numeric: tabular-nums;\n}\n\n/* Progress Bar */\n.aa-progress-bar {\n  height: 3px;\n  background: var(--jp-border-color2);\n  overflow: hidden;\n}\n\n.aa-progress-fill {\n  height: 100%;\n  background: var(--jp-brand-color1);\n  transition: width 0.3s ease;\n}\n\n.aa-plan-steps {\n  display: flex;\n  flex-direction: column;\n}\n\n.aa-step {\n  display: flex;\n  align-items: flex-start;\n  gap: 12px;\n  padding: 10px 12px;\n  border-bottom: 1px solid var(--jp-border-color3);\n  transition: background 0.15s ease;\n}\n\n.aa-step:last-child {\n  border-bottom: none;\n}\n\n.aa-step--current {\n  background: rgba(99, 102, 241, 0.06);\n}\n\n.aa-step--completed {\n  opacity: 0.7;\n}\n\n.aa-step--failed {\n  background: rgba(239, 68, 68, 0.06);\n}\n\n.aa-step--pending {\n  opacity: 0.5;\n}\n\n.aa-step-indicator {\n  width: 20px;\n  height: 20px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n  margin-top: 1px;\n}\n\n.aa-step-indicator svg {\n  width: 14px;\n  height: 14px;\n}\n\n.aa-step--completed .aa-step-indicator {\n  color: var(--jp-success-color1);\n}\n\n.aa-step--failed .aa-step-indicator {\n  color: var(--jp-error-color1);\n}\n\n.aa-step-spinner {\n  width: 14px;\n  height: 14px;\n  border: 2px solid var(--jp-border-color2);\n  border-top-color: var(--jp-brand-color1);\n  border-radius: 50%;\n  animation: aa-spin 0.8s linear infinite;\n}\n\n.aa-step-number {\n  font-size: 11px;\n  font-weight: 600;\n  color: var(--jp-ui-font-color3);\n}\n\n.aa-step-content {\n  flex: 1;\n  min-width: 0;\n}\n\n.aa-step-desc {\n  display: block;\n  font-size: 13px;\n  color: var(--jp-ui-font-color1);\n  line-height: 1.4;\n  margin-bottom: 4px;\n  transition: all 0.2s ease;\n}\n\n/* Completed step: strikethrough effect */\n.aa-step-desc--done {\n  text-decoration: line-through;\n  color: var(--jp-ui-font-color3);\n}\n\n/* Currently executing step indicator */\n.aa-step-executing {\n  display: inline-block;\n  font-size: 11px;\n  color: var(--jp-brand-color1);\n  margin-left: 8px;\n  animation: aa-pulse 1.5s ease-in-out infinite;\n}\n\n@keyframes aa-pulse {\n  0%, 100% { opacity: 1; }\n  50% { opacity: 0.5; }\n}\n\n.aa-step-tools {\n  display: flex;\n  gap: 6px;\n  flex-wrap: wrap;\n}\n\n.aa-tool-tag {\n  font-size: 10px;\n  font-weight: 500;\n  color: var(--jp-ui-font-color3);\n  background: var(--jp-layout-color2);\n  padding: 2px 6px;\n  border-radius: 3px;\n  font-family: var(--jp-code-font-family);\n  transition: all 0.2s ease;\n}\n\n/* Completed tool tag */\n.aa-tool-tag--done {\n  text-decoration: line-through;\n  opacity: 0.6;\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Result Section\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-result {\n  padding: 12px;\n  border-radius: 6px;\n  border: 1px solid var(--jp-border-color2);\n}\n\n.aa-result--success {\n  border-left: 3px solid var(--jp-success-color1);\n  background: var(--jp-layout-color0);\n}\n\n.aa-result--error {\n  border-left: 3px solid var(--jp-error-color1);\n  background: var(--jp-layout-color0);\n}\n\n.aa-result-header {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  margin-bottom: 8px;\n}\n\n.aa-result-title {\n  font-size: 13px;\n  font-weight: 600;\n  color: var(--jp-ui-font-color1);\n}\n\n.aa-result--success .aa-result-title {\n  color: var(--jp-success-color1);\n}\n\n.aa-result--error .aa-result-title {\n  color: var(--jp-error-color1);\n}\n\n.aa-result-time {\n  font-size: 11px;\n  color: var(--jp-ui-font-color3);\n  font-variant-numeric: tabular-nums;\n}\n\n.aa-result-message {\n  font-size: 13px;\n  color: var(--jp-ui-font-color1);\n  line-height: 1.5;\n  margin: 0 0 8px 0;\n}\n\n.aa-result-error {\n  font-size: 12px;\n  color: var(--jp-error-color1);\n  line-height: 1.4;\n  margin: 0 0 8px 0;\n  word-break: break-word;\n}\n\n.aa-result-stats {\n  display: flex;\n  gap: 16px;\n  font-size: 11px;\n  color: var(--jp-ui-font-color3);\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Hint Section\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-hint {\n  padding: 16px;\n  text-align: center;\n}\n\n.aa-hint p {\n  margin: 0;\n  font-size: 13px;\n  color: var(--jp-ui-font-color2);\n  line-height: 1.5;\n}\n\n.aa-hint-sub {\n  margin-top: 4px !important;\n  font-size: 11px !important;\n  color: var(--jp-ui-font-color3) !important;\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Scrollbar\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-panel::-webkit-scrollbar {\n  width: 6px;\n}\n\n.aa-panel::-webkit-scrollbar-track {\n  background: transparent;\n}\n\n.aa-panel::-webkit-scrollbar-thumb {\n  background: var(--jp-border-color2);\n  border-radius: 3px;\n}\n\n.aa-panel::-webkit-scrollbar-thumb:hover {\n  background: var(--jp-border-color1);\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Cell Execution Highlight (노트북 내 셀)\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n/* 현재 실행 중인 셀 하이라이트 */\n.aa-cell-executing {\n  position: relative;\n  animation: aa-cell-pulse 1.5s ease-in-out infinite;\n}\n\n.aa-cell-executing::before {\n  content: '';\n  position: absolute;\n  top: 0;\n  left: -4px;\n  width: 4px;\n  height: 100%;\n  background: var(--jp-brand-color1);\n  border-radius: 2px;\n  animation: aa-glow 1.5s ease-in-out infinite;\n}\n\n@keyframes aa-cell-pulse {\n  0%, 100% {\n    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);\n  }\n  50% {\n    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.15);\n  }\n}\n\n@keyframes aa-glow {\n  0%, 100% {\n    opacity: 1;\n  }\n  50% {\n    opacity: 0.5;\n  }\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Speed Control\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-speed-control {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  padding: 8px 12px;\n  background: var(--jp-layout-color2);\n  border-radius: 6px;\n  font-size: 12px;\n}\n\n.aa-speed-label {\n  color: var(--jp-ui-font-color2);\n  font-weight: 500;\n  white-space: nowrap;\n}\n\n.aa-speed-select {\n  flex: 1;\n  padding: 4px 8px;\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 4px;\n  background: var(--jp-layout-color0);\n  color: var(--jp-ui-font-color1);\n  font-size: 12px;\n  cursor: pointer;\n  outline: none;\n}\n\n.aa-speed-select:focus {\n  border-color: var(--jp-brand-color1);\n}\n\n.aa-speed-select:disabled {\n  opacity: 0.5;\n  cursor: not-allowed;\n}\n\n/* Step-by-step 모드 다음 버튼 */\n.aa-btn--next {\n  background: var(--jp-brand-color1);\n  color: white;\n  animation: aa-pulse-btn 1.5s ease-in-out infinite;\n}\n\n.aa-btn--next:hover:not(:disabled) {\n  background: var(--jp-brand-color0);\n}\n\n@keyframes aa-pulse-btn {\n  0%, 100% {\n    transform: scale(1);\n  }\n  50% {\n    transform: scale(1.02);\n  }\n}\n\n/* 일시정지 상태 표시 */\n.aa-paused-indicator {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  padding: 8px 12px;\n  background: rgba(99, 102, 241, 0.1);\n  border: 1px solid var(--jp-brand-color1);\n  border-radius: 6px;\n  color: var(--jp-brand-color1);\n  font-size: 12px;\n  font-weight: 500;\n}\n\n.aa-paused-icon {\n  width: 16px;\n  height: 16px;\n}\n"],"sourceRoot":""}]);
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Validation & Reflection Status
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Validation Phase Styles */
+.aa-status--validating {
+  border-left-color: var(--jp-info-color1, #2196f3);
+  background: rgba(33, 150, 243, 0.06);
+}
+
+.aa-status--validation-passed {
+  border-left-color: var(--jp-success-color1, #22c55e);
+  background: rgba(34, 197, 94, 0.06);
+}
+
+.aa-status--validation-warning {
+  border-left-color: var(--jp-warn-color1, #f59e0b);
+  background: rgba(245, 158, 11, 0.06);
+}
+
+.aa-status--validation-failed {
+  border-left-color: var(--jp-error-color1, #ef4444);
+  background: rgba(239, 68, 68, 0.06);
+}
+
+/* Reflection Phase Styles */
+.aa-status--reflecting {
+  border-left-color: var(--jp-accent-color1, #8b5cf6);
+  background: rgba(139, 92, 246, 0.06);
+}
+
+.aa-status--reflection-passed {
+  border-left-color: var(--jp-success-color1, #22c55e);
+  background: rgba(34, 197, 94, 0.06);
+}
+
+.aa-status--reflection-adjusting {
+  border-left-color: var(--jp-warn-color1, #f59e0b);
+  background: rgba(245, 158, 11, 0.06);
+}
+
+/* Status Icons */
+.aa-status-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.aa-status-icon--success {
+  color: var(--jp-success-color1, #22c55e);
+}
+
+.aa-status-icon--warning {
+  color: var(--jp-warn-color1, #f59e0b);
+}
+
+.aa-status-icon--error {
+  color: var(--jp-error-color1, #ef4444);
+}
+
+/* Confidence Score Bar */
+.aa-status-confidence {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.aa-confidence-bar {
+  width: 60px;
+  height: 6px;
+  background: var(--jp-border-color2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.aa-confidence-fill {
+  height: 100%;
+  background: linear-gradient(90deg,
+    var(--jp-error-color1, #ef4444) 0%,
+    var(--jp-warn-color1, #f59e0b) 50%,
+    var(--jp-success-color1, #22c55e) 100%
+  );
+  background-size: 200% 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.aa-confidence-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--jp-ui-font-color2);
+  min-width: 32px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* High confidence (>70%) - green */
+.aa-confidence-fill[style*="width: 7"],
+.aa-confidence-fill[style*="width: 8"],
+.aa-confidence-fill[style*="width: 9"],
+.aa-confidence-fill[style*="width: 100"] {
+  background: var(--jp-success-color1, #22c55e);
+}
+
+/* Medium confidence (50-70%) - yellow */
+.aa-confidence-fill[style*="width: 5"],
+.aa-confidence-fill[style*="width: 6"] {
+  background: var(--jp-warn-color1, #f59e0b);
+}
+
+/* Low confidence (<50%) - red */
+.aa-confidence-fill[style*="width: 1"],
+.aa-confidence-fill[style*="width: 2"],
+.aa-confidence-fill[style*="width: 3"],
+.aa-confidence-fill[style*="width: 4"] {
+  background: var(--jp-error-color1, #ef4444);
+}
+
+/* Quality Badge Indicators */
+.aa-quality-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.aa-quality-badge--validated {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--jp-success-color1, #22c55e);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.aa-quality-badge--warning {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--jp-warn-color1, #f59e0b);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.aa-quality-badge--reflected {
+  background: rgba(139, 92, 246, 0.15);
+  color: var(--jp-accent-color1, #8b5cf6);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+/* Step Quality Indicators */
+.aa-step-quality {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.aa-step-quality-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: var(--jp-ui-font-color3);
+}
+
+.aa-step-quality-item svg {
+  width: 12px;
+  height: 12px;
+}
+
+.aa-step-quality-item--pass {
+  color: var(--jp-success-color1, #22c55e);
+}
+
+.aa-step-quality-item--warn {
+  color: var(--jp-warn-color1, #f59e0b);
+}
+
+.aa-step-quality-item--fail {
+  color: var(--jp-error-color1, #ef4444);
+}
+
+/* Shimmer Animation for Active States */
+.aa-status--validating .aa-status-text,
+.aa-status--reflecting .aa-status-text {
+  background: linear-gradient(
+    90deg,
+    var(--jp-ui-font-color1) 0%,
+    var(--jp-ui-font-color3) 50%,
+    var(--jp-ui-font-color1) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: aa-shimmer 2s linear infinite;
+}
+
+@keyframes aa-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+`, "",{"version":3,"sources":["webpack://./frontend/styles/auto-agent.css"],"names":[],"mappings":"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","sourcesContent":["/**\n * Auto-Agent Panel - Claude/Cursor Style\n * Minimal, matte design\n */\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Panel Container\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-panel {\n  display: flex;\n  flex-direction: column;\n  gap: 12px;\n  padding: 16px;\n  height: 100%;\n  overflow-y: auto;\n  background: var(--jp-layout-color1);\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Empty State\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-empty {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 48px 16px;\n  color: var(--jp-ui-font-color3);\n}\n\n.aa-empty-text {\n  font-size: 13px;\n  font-weight: 500;\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Input Section\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-input-section {\n  display: flex;\n  flex-direction: column;\n  gap: 8px;\n}\n\n.aa-textarea {\n  width: 100%;\n  min-height: 72px;\n  max-height: 180px;\n  padding: 12px;\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 6px;\n  background: var(--jp-layout-color0);\n  color: var(--jp-ui-font-color1);\n  font-family: var(--jp-ui-font-family);\n  font-size: 13px;\n  line-height: 1.5;\n  resize: vertical;\n  outline: none;\n  transition: border-color 0.15s ease;\n}\n\n.aa-textarea:focus {\n  border-color: var(--jp-brand-color1);\n}\n\n.aa-textarea:disabled {\n  opacity: 0.5;\n  cursor: not-allowed;\n}\n\n.aa-textarea::placeholder {\n  color: var(--jp-ui-font-color3);\n}\n\n/* Actions */\n.aa-actions {\n  display: flex;\n  gap: 8px;\n}\n\n.aa-btn {\n  padding: 8px 16px;\n  border: none;\n  border-radius: 6px;\n  font-size: 13px;\n  font-weight: 500;\n  cursor: pointer;\n  transition: background 0.15s ease, opacity 0.15s ease;\n}\n\n.aa-btn:disabled {\n  opacity: 0.4;\n  cursor: not-allowed;\n}\n\n.aa-btn--primary {\n  background: var(--jp-brand-color1);\n  color: white;\n}\n\n.aa-btn--primary:hover:not(:disabled) {\n  background: var(--jp-brand-color0);\n}\n\n.aa-btn--secondary {\n  background: var(--jp-layout-color2);\n  color: var(--jp-ui-font-color1);\n}\n\n.aa-btn--secondary:hover:not(:disabled) {\n  background: var(--jp-layout-color3);\n}\n\n.aa-btn--cancel {\n  background: transparent;\n  color: var(--jp-error-color1);\n  border: 1px solid var(--jp-error-color1);\n}\n\n.aa-btn--cancel:hover {\n  background: var(--jp-error-color1);\n  color: white;\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Status Indicator\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-status {\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  padding: 10px 12px;\n  border-radius: 6px;\n  font-size: 13px;\n  background: var(--jp-layout-color2);\n  border-left: 3px solid var(--jp-border-color1);\n}\n\n.aa-status--planning,\n.aa-status--executing,\n.aa-status--tool_calling {\n  border-left-color: var(--jp-brand-color1);\n}\n\n.aa-status--self_healing {\n  border-left-color: var(--jp-warn-color1);\n}\n\n.aa-status--replanning {\n  border-left-color: var(--jp-info-color1, #2196f3);\n  background: rgba(33, 150, 243, 0.06);\n}\n\n/* Replanning indicator for step */\n.aa-step--replanning {\n  background: rgba(33, 150, 243, 0.08);\n  border-left: 2px solid var(--jp-info-color1, #2196f3);\n}\n\n.aa-step--replanning .aa-step-indicator {\n  color: var(--jp-info-color1, #2196f3);\n}\n\n.aa-step-replanning {\n  display: inline-block;\n  font-size: 11px;\n  color: var(--jp-info-color1, #2196f3);\n  margin-left: 8px;\n  animation: aa-pulse 1.5s ease-in-out infinite;\n}\n\n/* Spinning icon for replanning */\n.aa-icon-spin {\n  animation: aa-spin 1s linear infinite;\n}\n\n/* Plan replanning state */\n.aa-plan--replanning {\n  border-color: var(--jp-info-color1, #2196f3);\n}\n\n.aa-plan--replanning .aa-plan-header {\n  background: rgba(33, 150, 243, 0.1);\n}\n\n.aa-plan--replanning .aa-plan-title {\n  color: var(--jp-info-color1, #2196f3);\n}\n\n/* Plan changed indicator */\n.aa-plan-changed {\n  margin-left: 6px;\n  font-weight: 600;\n  color: var(--jp-info-color1, #2196f3);\n}\n\n/* New step styles */\n.aa-step--new {\n  background: rgba(34, 197, 94, 0.06);\n  border-left: 2px solid var(--jp-success-color1, #22c55e);\n  animation: aa-slide-in 0.3s ease-out;\n}\n\n.aa-step-desc--new {\n  color: var(--jp-success-color1, #22c55e);\n}\n\n.aa-new-badge {\n  display: inline-block;\n  font-size: 9px;\n  font-weight: 700;\n  color: white;\n  background: var(--jp-success-color1, #22c55e);\n  padding: 1px 4px;\n  border-radius: 3px;\n  margin-right: 6px;\n  text-transform: uppercase;\n  letter-spacing: 0.5px;\n}\n\n@keyframes aa-slide-in {\n  from {\n    opacity: 0;\n    transform: translateX(-10px);\n  }\n  to {\n    opacity: 1;\n    transform: translateX(0);\n  }\n}\n\n.aa-status--completed {\n  border-left-color: var(--jp-success-color1);\n}\n\n.aa-status--failed {\n  border-left-color: var(--jp-error-color1);\n}\n\n.aa-status-spinner {\n  width: 14px;\n  height: 14px;\n  border: 2px solid var(--jp-border-color2);\n  border-top-color: var(--jp-brand-color1);\n  border-radius: 50%;\n  animation: aa-spin 0.8s linear infinite;\n}\n\n.aa-status-text {\n  flex: 1;\n  color: var(--jp-ui-font-color1);\n}\n\n.aa-status-error {\n  font-size: 12px;\n  color: var(--jp-error-color1);\n  margin-left: auto;\n}\n\n@keyframes aa-spin {\n  to { transform: rotate(360deg); }\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Execution Plan\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-plan {\n  background: var(--jp-layout-color0);\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 6px;\n  overflow: hidden;\n}\n\n.aa-plan-header {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  padding: 10px 12px;\n  background: var(--jp-layout-color2);\n  border-bottom: 1px solid var(--jp-border-color2);\n}\n\n.aa-plan-title {\n  font-size: 12px;\n  font-weight: 600;\n  color: var(--jp-ui-font-color2);\n  text-transform: uppercase;\n  letter-spacing: 0.5px;\n}\n\n.aa-plan-progress {\n  font-size: 12px;\n  color: var(--jp-ui-font-color3);\n  font-variant-numeric: tabular-nums;\n}\n\n/* Progress Bar */\n.aa-progress-bar {\n  height: 3px;\n  background: var(--jp-border-color2);\n  overflow: hidden;\n}\n\n.aa-progress-fill {\n  height: 100%;\n  background: var(--jp-brand-color1);\n  transition: width 0.3s ease;\n}\n\n.aa-plan-steps {\n  display: flex;\n  flex-direction: column;\n}\n\n.aa-step {\n  display: flex;\n  align-items: flex-start;\n  gap: 12px;\n  padding: 10px 12px;\n  border-bottom: 1px solid var(--jp-border-color3);\n  transition: background 0.15s ease;\n}\n\n.aa-step:last-child {\n  border-bottom: none;\n}\n\n.aa-step--current {\n  background: rgba(99, 102, 241, 0.06);\n}\n\n.aa-step--completed {\n  opacity: 0.7;\n}\n\n.aa-step--failed {\n  background: rgba(239, 68, 68, 0.06);\n}\n\n.aa-step--pending {\n  opacity: 0.5;\n}\n\n.aa-step-indicator {\n  width: 20px;\n  height: 20px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n  margin-top: 1px;\n}\n\n.aa-step-indicator svg {\n  width: 14px;\n  height: 14px;\n}\n\n.aa-step--completed .aa-step-indicator {\n  color: var(--jp-success-color1);\n}\n\n.aa-step--failed .aa-step-indicator {\n  color: var(--jp-error-color1);\n}\n\n.aa-step-spinner {\n  width: 14px;\n  height: 14px;\n  border: 2px solid var(--jp-border-color2);\n  border-top-color: var(--jp-brand-color1);\n  border-radius: 50%;\n  animation: aa-spin 0.8s linear infinite;\n}\n\n.aa-step-number {\n  font-size: 11px;\n  font-weight: 600;\n  color: var(--jp-ui-font-color3);\n}\n\n.aa-step-content {\n  flex: 1;\n  min-width: 0;\n}\n\n.aa-step-desc {\n  display: block;\n  font-size: 13px;\n  color: var(--jp-ui-font-color1);\n  line-height: 1.4;\n  margin-bottom: 4px;\n  transition: all 0.2s ease;\n}\n\n/* Completed step: strikethrough effect */\n.aa-step-desc--done {\n  text-decoration: line-through;\n  color: var(--jp-ui-font-color3);\n}\n\n/* Currently executing step indicator */\n.aa-step-executing {\n  display: inline-block;\n  font-size: 11px;\n  color: var(--jp-brand-color1);\n  margin-left: 8px;\n  animation: aa-pulse 1.5s ease-in-out infinite;\n}\n\n@keyframes aa-pulse {\n  0%, 100% { opacity: 1; }\n  50% { opacity: 0.5; }\n}\n\n.aa-step-tools {\n  display: flex;\n  gap: 6px;\n  flex-wrap: wrap;\n}\n\n.aa-tool-tag {\n  font-size: 10px;\n  font-weight: 500;\n  color: var(--jp-ui-font-color3);\n  background: var(--jp-layout-color2);\n  padding: 2px 6px;\n  border-radius: 3px;\n  font-family: var(--jp-code-font-family);\n  transition: all 0.2s ease;\n}\n\n/* Completed tool tag */\n.aa-tool-tag--done {\n  text-decoration: line-through;\n  opacity: 0.6;\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Result Section\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-result {\n  padding: 12px;\n  border-radius: 6px;\n  border: 1px solid var(--jp-border-color2);\n}\n\n.aa-result--success {\n  border-left: 3px solid var(--jp-success-color1);\n  background: var(--jp-layout-color0);\n}\n\n.aa-result--error {\n  border-left: 3px solid var(--jp-error-color1);\n  background: var(--jp-layout-color0);\n}\n\n.aa-result-header {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  margin-bottom: 8px;\n}\n\n.aa-result-title {\n  font-size: 13px;\n  font-weight: 600;\n  color: var(--jp-ui-font-color1);\n}\n\n.aa-result--success .aa-result-title {\n  color: var(--jp-success-color1);\n}\n\n.aa-result--error .aa-result-title {\n  color: var(--jp-error-color1);\n}\n\n.aa-result-time {\n  font-size: 11px;\n  color: var(--jp-ui-font-color3);\n  font-variant-numeric: tabular-nums;\n}\n\n.aa-result-message {\n  font-size: 13px;\n  color: var(--jp-ui-font-color1);\n  line-height: 1.5;\n  margin: 0 0 8px 0;\n}\n\n.aa-result-error {\n  font-size: 12px;\n  color: var(--jp-error-color1);\n  line-height: 1.4;\n  margin: 0 0 8px 0;\n  word-break: break-word;\n}\n\n.aa-result-stats {\n  display: flex;\n  gap: 16px;\n  font-size: 11px;\n  color: var(--jp-ui-font-color3);\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Hint Section\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-hint {\n  padding: 16px;\n  text-align: center;\n}\n\n.aa-hint p {\n  margin: 0;\n  font-size: 13px;\n  color: var(--jp-ui-font-color2);\n  line-height: 1.5;\n}\n\n.aa-hint-sub {\n  margin-top: 4px !important;\n  font-size: 11px !important;\n  color: var(--jp-ui-font-color3) !important;\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Scrollbar\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-panel::-webkit-scrollbar {\n  width: 6px;\n}\n\n.aa-panel::-webkit-scrollbar-track {\n  background: transparent;\n}\n\n.aa-panel::-webkit-scrollbar-thumb {\n  background: var(--jp-border-color2);\n  border-radius: 3px;\n}\n\n.aa-panel::-webkit-scrollbar-thumb:hover {\n  background: var(--jp-border-color1);\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Cell Execution Highlight (노트북 내 셀)\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n/* 현재 실행 중인 셀 하이라이트 */\n.aa-cell-executing {\n  position: relative;\n  animation: aa-cell-pulse 1.5s ease-in-out infinite;\n}\n\n.aa-cell-executing::before {\n  content: '';\n  position: absolute;\n  top: 0;\n  left: -4px;\n  width: 4px;\n  height: 100%;\n  background: var(--jp-brand-color1);\n  border-radius: 2px;\n  animation: aa-glow 1.5s ease-in-out infinite;\n}\n\n@keyframes aa-cell-pulse {\n  0%, 100% {\n    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);\n  }\n  50% {\n    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.15);\n  }\n}\n\n@keyframes aa-glow {\n  0%, 100% {\n    opacity: 1;\n  }\n  50% {\n    opacity: 0.5;\n  }\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Speed Control\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n.aa-speed-control {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  padding: 8px 12px;\n  background: var(--jp-layout-color2);\n  border-radius: 6px;\n  font-size: 12px;\n}\n\n.aa-speed-label {\n  color: var(--jp-ui-font-color2);\n  font-weight: 500;\n  white-space: nowrap;\n}\n\n.aa-speed-select {\n  flex: 1;\n  padding: 4px 8px;\n  border: 1px solid var(--jp-border-color2);\n  border-radius: 4px;\n  background: var(--jp-layout-color0);\n  color: var(--jp-ui-font-color1);\n  font-size: 12px;\n  cursor: pointer;\n  outline: none;\n}\n\n.aa-speed-select:focus {\n  border-color: var(--jp-brand-color1);\n}\n\n.aa-speed-select:disabled {\n  opacity: 0.5;\n  cursor: not-allowed;\n}\n\n/* Step-by-step 모드 다음 버튼 */\n.aa-btn--next {\n  background: var(--jp-brand-color1);\n  color: white;\n  animation: aa-pulse-btn 1.5s ease-in-out infinite;\n}\n\n.aa-btn--next:hover:not(:disabled) {\n  background: var(--jp-brand-color0);\n}\n\n@keyframes aa-pulse-btn {\n  0%, 100% {\n    transform: scale(1);\n  }\n  50% {\n    transform: scale(1.02);\n  }\n}\n\n/* 일시정지 상태 표시 */\n.aa-paused-indicator {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  padding: 8px 12px;\n  background: rgba(99, 102, 241, 0.1);\n  border: 1px solid var(--jp-brand-color1);\n  border-radius: 6px;\n  color: var(--jp-brand-color1);\n  font-size: 12px;\n  font-weight: 500;\n}\n\n.aa-paused-icon {\n  width: 16px;\n  height: 16px;\n}\n\n/* ═══════════════════════════════════════════════════════════════════════════\n   Validation & Reflection Status\n   ═══════════════════════════════════════════════════════════════════════════ */\n\n/* Validation Phase Styles */\n.aa-status--validating {\n  border-left-color: var(--jp-info-color1, #2196f3);\n  background: rgba(33, 150, 243, 0.06);\n}\n\n.aa-status--validation-passed {\n  border-left-color: var(--jp-success-color1, #22c55e);\n  background: rgba(34, 197, 94, 0.06);\n}\n\n.aa-status--validation-warning {\n  border-left-color: var(--jp-warn-color1, #f59e0b);\n  background: rgba(245, 158, 11, 0.06);\n}\n\n.aa-status--validation-failed {\n  border-left-color: var(--jp-error-color1, #ef4444);\n  background: rgba(239, 68, 68, 0.06);\n}\n\n/* Reflection Phase Styles */\n.aa-status--reflecting {\n  border-left-color: var(--jp-accent-color1, #8b5cf6);\n  background: rgba(139, 92, 246, 0.06);\n}\n\n.aa-status--reflection-passed {\n  border-left-color: var(--jp-success-color1, #22c55e);\n  background: rgba(34, 197, 94, 0.06);\n}\n\n.aa-status--reflection-adjusting {\n  border-left-color: var(--jp-warn-color1, #f59e0b);\n  background: rgba(245, 158, 11, 0.06);\n}\n\n/* Status Icons */\n.aa-status-icon {\n  width: 16px;\n  height: 16px;\n  flex-shrink: 0;\n}\n\n.aa-status-icon--success {\n  color: var(--jp-success-color1, #22c55e);\n}\n\n.aa-status-icon--warning {\n  color: var(--jp-warn-color1, #f59e0b);\n}\n\n.aa-status-icon--error {\n  color: var(--jp-error-color1, #ef4444);\n}\n\n/* Confidence Score Bar */\n.aa-status-confidence {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  margin-left: auto;\n  flex-shrink: 0;\n}\n\n.aa-confidence-bar {\n  width: 60px;\n  height: 6px;\n  background: var(--jp-border-color2);\n  border-radius: 3px;\n  overflow: hidden;\n}\n\n.aa-confidence-fill {\n  height: 100%;\n  background: linear-gradient(90deg,\n    var(--jp-error-color1, #ef4444) 0%,\n    var(--jp-warn-color1, #f59e0b) 50%,\n    var(--jp-success-color1, #22c55e) 100%\n  );\n  background-size: 200% 100%;\n  border-radius: 3px;\n  transition: width 0.3s ease;\n}\n\n.aa-confidence-value {\n  font-size: 11px;\n  font-weight: 600;\n  color: var(--jp-ui-font-color2);\n  min-width: 32px;\n  text-align: right;\n  font-variant-numeric: tabular-nums;\n}\n\n/* High confidence (>70%) - green */\n.aa-confidence-fill[style*=\"width: 7\"],\n.aa-confidence-fill[style*=\"width: 8\"],\n.aa-confidence-fill[style*=\"width: 9\"],\n.aa-confidence-fill[style*=\"width: 100\"] {\n  background: var(--jp-success-color1, #22c55e);\n}\n\n/* Medium confidence (50-70%) - yellow */\n.aa-confidence-fill[style*=\"width: 5\"],\n.aa-confidence-fill[style*=\"width: 6\"] {\n  background: var(--jp-warn-color1, #f59e0b);\n}\n\n/* Low confidence (<50%) - red */\n.aa-confidence-fill[style*=\"width: 1\"],\n.aa-confidence-fill[style*=\"width: 2\"],\n.aa-confidence-fill[style*=\"width: 3\"],\n.aa-confidence-fill[style*=\"width: 4\"] {\n  background: var(--jp-error-color1, #ef4444);\n}\n\n/* Quality Badge Indicators */\n.aa-quality-badge {\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n  padding: 2px 8px;\n  border-radius: 4px;\n  font-size: 10px;\n  font-weight: 600;\n  text-transform: uppercase;\n  letter-spacing: 0.5px;\n}\n\n.aa-quality-badge--validated {\n  background: rgba(34, 197, 94, 0.15);\n  color: var(--jp-success-color1, #22c55e);\n  border: 1px solid rgba(34, 197, 94, 0.3);\n}\n\n.aa-quality-badge--warning {\n  background: rgba(245, 158, 11, 0.15);\n  color: var(--jp-warn-color1, #f59e0b);\n  border: 1px solid rgba(245, 158, 11, 0.3);\n}\n\n.aa-quality-badge--reflected {\n  background: rgba(139, 92, 246, 0.15);\n  color: var(--jp-accent-color1, #8b5cf6);\n  border: 1px solid rgba(139, 92, 246, 0.3);\n}\n\n/* Step Quality Indicators */\n.aa-step-quality {\n  display: flex;\n  gap: 4px;\n  margin-top: 4px;\n}\n\n.aa-step-quality-item {\n  display: inline-flex;\n  align-items: center;\n  gap: 3px;\n  font-size: 10px;\n  color: var(--jp-ui-font-color3);\n}\n\n.aa-step-quality-item svg {\n  width: 12px;\n  height: 12px;\n}\n\n.aa-step-quality-item--pass {\n  color: var(--jp-success-color1, #22c55e);\n}\n\n.aa-step-quality-item--warn {\n  color: var(--jp-warn-color1, #f59e0b);\n}\n\n.aa-step-quality-item--fail {\n  color: var(--jp-error-color1, #ef4444);\n}\n\n/* Shimmer Animation for Active States */\n.aa-status--validating .aa-status-text,\n.aa-status--reflecting .aa-status-text {\n  background: linear-gradient(\n    90deg,\n    var(--jp-ui-font-color1) 0%,\n    var(--jp-ui-font-color3) 50%,\n    var(--jp-ui-font-color1) 100%\n  );\n  background-size: 200% 100%;\n  -webkit-background-clip: text;\n  -webkit-text-fill-color: transparent;\n  animation: aa-shimmer 2s linear infinite;\n}\n\n@keyframes aa-shimmer {\n  0% {\n    background-position: 200% 0;\n  }\n  100% {\n    background-position: -200% 0;\n  }\n}\n"],"sourceRoot":""}]);
 // Exports
 /* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (___CSS_LOADER_EXPORT___);
 
@@ -2604,4 +3160,4 @@ module.exports = "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYi
 /***/ })
 
 }]);
-//# sourceMappingURL=frontend_styles_index_js.4beaf4c3e1eba6607eeb.js.map
+//# sourceMappingURL=frontend_styles_index_js.471b8f0fdbcf672efb12.js.map

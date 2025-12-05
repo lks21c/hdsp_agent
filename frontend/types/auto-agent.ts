@@ -98,8 +98,10 @@ export type AgentPhase =
   | 'planned'
   | 'executing'
   | 'tool_calling'
+  | 'validating'      // 코드 사전 검증 중
   | 'self_healing'
   | 'replanning'
+  | 'reflecting'      // Reflection 분석 중
   | 'completed'
   | 'failed';
 
@@ -113,6 +115,10 @@ export interface AgentStatus {
   tool?: ToolName;
   attempt?: number;
   error?: ExecutionError;
+  // Validation & Reflection 상태
+  validationStatus?: 'checking' | 'passed' | 'warning' | 'failed';
+  reflectionStatus?: 'analyzing' | 'passed' | 'adjusting';
+  confidenceScore?: number;  // Reflection 신뢰도 점수 (0-100)
 }
 
 export interface ExecutionError {
@@ -207,6 +213,159 @@ export interface AutoAgentToolCallRequest {
   context?: NotebookContext;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Code Validation Types (Pyflakes/AST 기반 사전 검증)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export type IssueSeverity = 'error' | 'warning' | 'info';
+
+export type IssueCategory =
+  | 'syntax'
+  | 'undefined_name'
+  | 'unused_import'
+  | 'unused_variable'
+  | 'redefined'
+  | 'import_error'
+  | 'type_error';
+
+export interface ValidationIssue {
+  severity: IssueSeverity;
+  category: IssueCategory;
+  message: string;
+  line?: number;
+  column?: number;
+  code_snippet?: string;
+}
+
+export interface DependencyInfo {
+  imports: string[];
+  from_imports: Record<string, string[]>;
+  defined_names: string[];
+  used_names: string[];
+  undefined_names: string[];
+}
+
+export interface AutoAgentValidateRequest {
+  code: string;
+  notebookContext?: NotebookContext;
+}
+
+export interface AutoAgentValidateResponse {
+  valid: boolean;
+  issues: ValidationIssue[];
+  dependencies: DependencyInfo | null;
+  hasErrors: boolean;
+  hasWarnings: boolean;
+  summary: string;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Enhanced Planning Types (Checkpoint & Reflection 기반)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export type RiskLevel = 'low' | 'medium' | 'high';
+
+export interface Checkpoint {
+  expectedOutcome: string;
+  validationCriteria: string[];
+  successIndicators: string[];
+}
+
+export interface ProblemDecomposition {
+  core_goal: string;
+  essential_steps: string[];
+  optional_steps: string[];
+}
+
+export interface AnalysisDependency {
+  required_libraries: string[];
+  data_flow: string;
+  shared_variables: string[];
+}
+
+export interface RiskAssessment {
+  high_risk_steps: number[];
+  external_dependencies: string[];
+  estimated_complexity: 'low' | 'medium' | 'high';
+}
+
+export interface PlanAnalysis {
+  problem_decomposition: ProblemDecomposition;
+  dependency_analysis: AnalysisDependency;
+  risk_assessment: RiskAssessment;
+}
+
+export interface EnhancedPlanStep extends PlanStep {
+  checkpoint?: Checkpoint;
+  riskLevel?: RiskLevel;
+}
+
+export interface EnhancedExecutionPlan extends ExecutionPlan {
+  steps: EnhancedPlanStep[];
+  analysis?: PlanAnalysis;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Reflection Types (실행 결과 분석)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface ReflectionEvaluation {
+  checkpoint_passed: boolean;
+  output_matches_expected: boolean;
+  confidence_score: number;
+}
+
+export interface ReflectionAnalysis {
+  success_factors: string[];
+  failure_factors: string[];
+  unexpected_outcomes: string[];
+}
+
+export interface ReflectionImpact {
+  affected_steps: number[];
+  severity: 'none' | 'minor' | 'major' | 'critical';
+  description: string;
+}
+
+export type ReflectionAction = 'continue' | 'adjust' | 'retry' | 'replan';
+export type AdjustmentType = 'modify_code' | 'add_step' | 'remove_step' | 'change_approach';
+
+export interface ReflectionAdjustment {
+  step_number: number;
+  change_type: AdjustmentType;
+  description: string;
+  new_content?: string;
+}
+
+export interface ReflectionRecommendations {
+  action: ReflectionAction;
+  adjustments: ReflectionAdjustment[];
+  reasoning: string;
+}
+
+export interface ReflectionResult {
+  evaluation: ReflectionEvaluation;
+  analysis: ReflectionAnalysis;
+  impact_on_remaining: ReflectionImpact;
+  recommendations: ReflectionRecommendations;
+}
+
+export interface AutoAgentReflectRequest {
+  stepNumber: number;
+  stepDescription: string;
+  executedCode: string;
+  executionStatus: string;
+  executionOutput: string;
+  errorMessage?: string;
+  expectedOutcome?: string;
+  validationCriteria?: string[];
+  remainingSteps?: PlanStep[];
+}
+
+export interface AutoAgentReflectResponse {
+  reflection: ReflectionResult;
+}
+
 // Adaptive Replanning Types
 export type ReplanDecision = 'refine' | 'insert_steps' | 'replace_step' | 'replan_remaining';
 
@@ -268,12 +427,12 @@ export interface AutoAgentConfig {
   highlightCurrentCell: boolean;  // 현재 실행 중인 셀 하이라이트
 }
 
-// 속도 프리셋 (ms 단위 지연)
+// 속도 프리셋 (ms 단위 지연) - 전반적으로 느리게 조정
 export const EXECUTION_SPEED_DELAYS: Record<ExecutionSpeed, number> = {
   'instant': 0,
-  'fast': 300,
-  'normal': 800,
-  'slow': 1500,
+  'fast': 800,      // 기존 normal 수준
+  'normal': 1500,   // 기존 slow 수준 (사용자가 따라갈 수 있는 속도)
+  'slow': 3000,     // 충분히 느리게
   'step-by-step': -1,  // -1은 수동 진행 의미
 };
 
@@ -283,7 +442,7 @@ export const DEFAULT_AUTO_AGENT_CONFIG: AutoAgentConfig = {
   enableSafetyCheck: true,
   showDetailedProgress: true,
   executionSpeed: 'normal',
-  stepDelay: 800,
+  stepDelay: 1500,  // 기본값도 조정
   autoScrollToCell: true,
   highlightCurrentCell: true,
 };

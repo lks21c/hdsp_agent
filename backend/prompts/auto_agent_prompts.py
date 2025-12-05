@@ -270,6 +270,190 @@ JSON만 출력하세요.'''
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# 구조화된 계획 생성 프롬프트 (Enhanced Planning with Checkpoints)
+# ═══════════════════════════════════════════════════════════════════════════
+
+STRUCTURED_PLAN_PROMPT = '''당신은 Jupyter 노트북을 위한 Python 코드 전문가입니다.
+사용자의 요청을 체계적으로 분석하고, 검증 가능한 단계별 실행 계획을 생성하세요.
+
+## 분석 프레임워크
+
+### 1. 문제 분해 (Problem Decomposition)
+- 핵심 목표는 무엇인가?
+- 필수 단계와 선택적 단계는 무엇인가?
+- 각 단계의 입력과 출력은 무엇인가?
+
+### 2. 의존성 분석 (Dependency Analysis)
+- 어떤 라이브러리가 필요한가?
+- 단계 간 데이터 흐름은 어떠한가?
+- 어떤 변수/객체가 단계 간에 공유되는가?
+
+### 3. 위험도 평가 (Risk Assessment)
+- 실패 가능성이 높은 단계는?
+- 외부 의존성(API, 파일, 네트워크)이 있는 단계는?
+- 실행 시간이 오래 걸릴 수 있는 단계는?
+
+### 4. 검증 전략 (Validation Strategy)
+- 각 단계의 성공을 어떻게 확인할 수 있는가?
+- 예상 출력 형태는 무엇인가?
+- 체크포인트 기준은 무엇인가?
+
+## 사용 가능한 도구
+
+1. **jupyter_cell**: Python 코드 셀 생성/수정/실행
+   - parameters: {{"code": "Python 코드", "cellIndex": 수정할_셀_인덱스(선택)}}
+
+2. **markdown**: 마크다운 설명 셀 생성/수정
+   - parameters: {{"content": "마크다운 텍스트", "cellIndex": 수정할_셀_인덱스(선택)}}
+
+3. **final_answer**: 작업 완료 및 최종 답변
+   - parameters: {{"answer": "최종 답변 텍스트", "summary": "작업 요약(선택)"}}
+
+## 노트북 컨텍스트
+
+- 셀 개수: {cell_count}
+- 임포트된 라이브러리: {imported_libraries}
+- 정의된 변수: {defined_variables}
+- 최근 셀 내용:
+{recent_cells}
+
+## 사용자 요청
+
+{request}
+
+## 출력 형식 (JSON)
+
+```json
+{{
+  "analysis": {{
+    "problem_decomposition": {{
+      "core_goal": "핵심 목표",
+      "essential_steps": ["필수 단계 목록"],
+      "optional_steps": ["선택적 단계 목록"]
+    }},
+    "dependency_analysis": {{
+      "required_libraries": ["필요한 라이브러리"],
+      "data_flow": "데이터 흐름 설명",
+      "shared_variables": ["공유 변수"]
+    }},
+    "risk_assessment": {{
+      "high_risk_steps": [1, 2],
+      "external_dependencies": ["외부 의존성"],
+      "estimated_complexity": "low | medium | high"
+    }}
+  }},
+  "reasoning": "계획 수립 이유에 대한 설명",
+  "plan": {{
+    "totalSteps": 단계_수,
+    "steps": [
+      {{
+        "stepNumber": 1,
+        "description": "단계 설명 (한국어)",
+        "toolCalls": [
+          {{
+            "tool": "jupyter_cell",
+            "parameters": {{
+              "code": "Python 코드"
+            }}
+          }}
+        ],
+        "dependencies": [],
+        "checkpoint": {{
+          "expectedOutcome": "예상 결과",
+          "validationCriteria": ["검증 기준 1", "검증 기준 2"],
+          "successIndicators": ["성공 지표"]
+        }},
+        "riskLevel": "low | medium | high"
+      }}
+    ]
+  }}
+}}
+```
+
+JSON만 출력하세요. 다른 텍스트 없이.'''
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Reflection 프롬프트 (실행 결과 분석 및 적응적 조정)
+# ═══════════════════════════════════════════════════════════════════════════
+
+REFLECTION_PROMPT = '''실행 결과를 분석하고 다음 단계에 대한 조정을 제안하세요.
+
+## 실행된 단계
+
+- 단계 번호: {step_number}
+- 설명: {step_description}
+- 실행된 코드:
+```python
+{executed_code}
+```
+
+## 실행 결과
+
+- 상태: {execution_status}
+- 출력:
+```
+{execution_output}
+```
+- 오류 (있는 경우):
+```
+{error_message}
+```
+
+## 체크포인트 기준
+
+- 예상 결과: {expected_outcome}
+- 검증 기준: {validation_criteria}
+
+## 남은 단계
+
+{remaining_steps}
+
+## 분석 요청
+
+1. **결과 평가**: 실행 결과가 예상과 일치하는가?
+2. **성공/실패 요인**: 무엇이 잘 되었고 무엇이 문제인가?
+3. **다음 단계 영향**: 이 결과가 남은 단계에 어떤 영향을 미치는가?
+4. **조정 제안**: 계획을 수정해야 하는가?
+
+## 출력 형식 (JSON)
+
+```json
+{{
+  "evaluation": {{
+    "checkpoint_passed": true/false,
+    "output_matches_expected": true/false,
+    "confidence_score": 0.0-1.0
+  }},
+  "analysis": {{
+    "success_factors": ["성공 요인들"],
+    "failure_factors": ["실패 요인들"],
+    "unexpected_outcomes": ["예상치 못한 결과들"]
+  }},
+  "impact_on_remaining": {{
+    "affected_steps": [단계_번호들],
+    "severity": "none | minor | major | critical",
+    "description": "영향 설명"
+  }},
+  "recommendations": {{
+    "action": "continue | adjust | retry | replan",
+    "adjustments": [
+      {{
+        "step_number": 단계_번호,
+        "change_type": "modify_code | add_step | remove_step | change_approach",
+        "description": "변경 설명",
+        "new_content": "새 코드 또는 내용 (필요한 경우)"
+      }}
+    ],
+    "reasoning": "조정 이유"
+  }}
+}}
+```
+
+JSON만 출력하세요.'''
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # 최종 답변 생성 프롬프트
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -411,4 +595,61 @@ def format_replan_prompt(
         error_message=error_info.get('message', 'Unknown error'),
         traceback=traceback_str,
         execution_output=execution_output if execution_output else "없음"
+    )
+
+
+def format_structured_plan_prompt(
+    request: str,
+    cell_count: int,
+    imported_libraries: list,
+    defined_variables: list,
+    recent_cells: list
+) -> str:
+    """구조화된 계획 생성 프롬프트 포맷팅 (Enhanced Planning)"""
+    recent_cells_text = ""
+    for i, cell in enumerate(recent_cells):
+        cell_type = cell.get('type', 'code')
+        source = cell.get('source', '')[:300]
+        recent_cells_text += f"\n[셀 {cell.get('index', i)}] ({cell_type}):\n```\n{source}\n```\n"
+
+    return STRUCTURED_PLAN_PROMPT.format(
+        request=request,
+        cell_count=cell_count,
+        imported_libraries=", ".join(imported_libraries) if imported_libraries else "없음",
+        defined_variables=", ".join(defined_variables) if defined_variables else "없음",
+        recent_cells=recent_cells_text if recent_cells_text else "없음"
+    )
+
+
+def format_reflection_prompt(
+    step_number: int,
+    step_description: str,
+    executed_code: str,
+    execution_status: str,
+    execution_output: str,
+    error_message: str,
+    expected_outcome: str,
+    validation_criteria: list,
+    remaining_steps: list
+) -> str:
+    """Reflection 프롬프트 포맷팅 (실행 결과 분석)"""
+    # 검증 기준 텍스트
+    criteria_text = "\n".join([f"- {c}" for c in validation_criteria]) if validation_criteria else "없음"
+
+    # 남은 단계 텍스트
+    remaining_text = "\n".join([
+        f"- Step {s.get('stepNumber', i+1)}: {s.get('description', '')}"
+        for i, s in enumerate(remaining_steps)
+    ]) if remaining_steps else "없음"
+
+    return REFLECTION_PROMPT.format(
+        step_number=step_number,
+        step_description=step_description,
+        executed_code=executed_code,
+        execution_status=execution_status,
+        execution_output=execution_output if execution_output else "없음",
+        error_message=error_message if error_message else "없음",
+        expected_outcome=expected_outcome if expected_outcome else "성공적 실행",
+        validation_criteria=criteria_text,
+        remaining_steps=remaining_text
     )

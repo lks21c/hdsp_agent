@@ -738,9 +738,358 @@ body[data-jp-theme-light="false"] .jp-agent-mode-select {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
 }
 
-/* Standalone Mode Selector (for Auto Agent mode) */
-.jp-agent-mode-selector-standalone {
-  padding: 8px 16px;
-  border-top: 1px solid var(--jp-border-color2);
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* Cursor AI Style: Unified Chat + Agent Execution                             */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Empty State Hint */
+.jp-agent-empty-hint {
+  font-size: 12px;
+  color: var(--jp-ui-font-color3);
+  margin-top: 8px;
+}
+
+.jp-agent-empty-hint code {
   background: var(--jp-layout-color2);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: 'Menlo', 'Monaco', monospace;
+  font-size: 11px;
+}
+
+/* Input Hint */
+.jp-agent-input-hint {
+  font-size: 11px;
+  color: var(--jp-ui-font-color3);
+  margin-top: 6px;
+  padding-left: 2px;
+}
+
+.jp-agent-input-hint code {
+  background: var(--jp-layout-color3);
+  padding: 1px 4px;
+  border-radius: 2px;
+  font-family: 'Menlo', 'Monaco', monospace;
+  font-size: 10px;
+  margin: 0 2px;
+}
+
+/* Agent Execution Message Container */
+.jp-agent-message-agent-execution {
+  align-self: stretch !important;
+  max-width: 100% !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+}
+
+.jp-agent-execution-message {
+  background: var(--jp-layout-color2);
+  border: 1px solid var(--jp-border-color2);
+  border-radius: 8px;
+  padding: 12px;
+  width: 100%;
+}
+
+/* Agent Execution Header */
+.jp-agent-execution-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.jp-agent-execution-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.jp-agent-execution-badge svg {
+  width: 12px;
+  height: 12px;
+}
+
+.jp-agent-execution-request {
+  font-size: 13px;
+  color: var(--jp-ui-font-color1);
+  font-weight: 500;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Agent Execution Status */
+.jp-agent-execution-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  margin-bottom: 10px;
+  background: var(--jp-layout-color1);
+  border: 1px solid var(--jp-border-color2);
+}
+
+.jp-agent-execution-status--planning,
+.jp-agent-execution-status--executing,
+.jp-agent-execution-status--tool_calling,
+.jp-agent-execution-status--validating,
+.jp-agent-execution-status--reflecting {
+  background: linear-gradient(90deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.05));
+  border-color: rgba(102, 126, 234, 0.3);
+}
+
+.jp-agent-execution-status--completed {
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.05));
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.jp-agent-execution-status--failed {
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.05));
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.jp-agent-execution-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--jp-border-color2);
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: jp-agent-spin 0.8s linear infinite;
+}
+
+@keyframes jp-agent-spin {
+  to { transform: rotate(360deg); }
+}
+
+.jp-agent-execution-icon--success {
+  width: 16px;
+  height: 16px;
+  color: #10b981;
+}
+
+.jp-agent-execution-icon--error {
+  width: 16px;
+  height: 16px;
+  color: #ef4444;
+}
+
+.jp-agent-execution-status-text {
+  font-size: 12px;
+  color: var(--jp-ui-font-color1);
+  flex: 1;
+}
+
+.jp-agent-execution-confidence {
+  font-size: 11px;
+  color: var(--jp-ui-font-color2);
+  background: var(--jp-layout-color2);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* Agent Execution Plan */
+.jp-agent-execution-plan {
+  background: var(--jp-layout-color1);
+  border: 1px solid var(--jp-border-color2);
+  border-radius: 6px;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.jp-agent-execution-plan-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--jp-ui-font-color1);
+  margin-bottom: 8px;
+}
+
+.jp-agent-execution-plan-progress {
+  font-size: 11px;
+  color: var(--jp-ui-font-color2);
+  background: var(--jp-layout-color2);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* Progress Bar */
+.jp-agent-execution-progress-bar {
+  height: 4px;
+  background: var(--jp-layout-color3);
+  border-radius: 2px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+
+.jp-agent-execution-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #667eea, #764ba2);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+/* Execution Steps */
+.jp-agent-execution-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.jp-agent-execution-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: var(--jp-layout-color2);
+  border: 1px solid var(--jp-border-color3);
+  transition: all 0.2s ease;
+}
+
+.jp-agent-execution-step--current {
+  background: linear-gradient(90deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.05));
+  border-color: rgba(102, 126, 234, 0.3);
+}
+
+.jp-agent-execution-step--completed {
+  background: rgba(16, 185, 129, 0.05);
+  border-color: rgba(16, 185, 129, 0.2);
+}
+
+.jp-agent-execution-step--failed {
+  background: rgba(239, 68, 68, 0.05);
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.jp-agent-execution-step-indicator {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--jp-ui-font-color2);
+}
+
+.jp-agent-execution-step--completed .jp-agent-execution-step-indicator {
+  color: #10b981;
+}
+
+.jp-agent-execution-step--completed .jp-agent-execution-step-indicator svg {
+  width: 14px;
+  height: 14px;
+}
+
+.jp-agent-execution-step--failed .jp-agent-execution-step-indicator {
+  color: #ef4444;
+}
+
+.jp-agent-execution-step--failed .jp-agent-execution-step-indicator svg {
+  width: 14px;
+  height: 14px;
+}
+
+.jp-agent-execution-step-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--jp-border-color2);
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: jp-agent-spin 0.8s linear infinite;
+}
+
+.jp-agent-execution-step-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.jp-agent-execution-step-desc {
+  font-size: 12px;
+  color: var(--jp-ui-font-color1);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.jp-agent-execution-step-desc--done {
+  color: var(--jp-ui-font-color2);
+}
+
+.jp-agent-execution-step-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.jp-agent-execution-tool-tag {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--jp-layout-color3);
+  color: var(--jp-ui-font-color2);
+}
+
+/* Execution Result */
+.jp-agent-execution-result {
+  padding: 10px;
+  border-radius: 6px;
+  border: 1px solid var(--jp-border-color2);
+}
+
+.jp-agent-execution-result--success {
+  background: rgba(16, 185, 129, 0.05);
+  border-color: rgba(16, 185, 129, 0.2);
+}
+
+.jp-agent-execution-result--error {
+  background: rgba(239, 68, 68, 0.05);
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.jp-agent-execution-result-message {
+  font-size: 13px;
+  color: var(--jp-ui-font-color1);
+  margin: 0 0 8px 0;
+  line-height: 1.5;
+}
+
+.jp-agent-execution-result-error {
+  font-size: 12px;
+  color: #ef4444;
+  margin: 0 0 8px 0;
+}
+
+.jp-agent-execution-result-stats {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--jp-ui-font-color2);
+}
+
+.jp-agent-execution-result-stats span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Dark Theme Adjustments */
+body[data-jp-theme-light="false"] .jp-agent-execution-badge {
+  background: linear-gradient(135deg, #5a67d8, #6b46c1);
+}
+
+body[data-jp-theme-light="false"] .jp-agent-empty-hint code,
+body[data-jp-theme-light="false"] .jp-agent-input-hint code {
+  background: var(--jp-layout-color3);
 }
