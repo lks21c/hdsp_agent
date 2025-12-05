@@ -7,38 +7,38 @@ Cell Action Prompts
 # 코드 설명 프롬프트
 # ═══════════════════════════════════════════════════════════════════════════
 
-EXPLAIN_CODE_PROMPT = """Explain what this code does in clear, concise language.
+EXPLAIN_CODE_PROMPT = """이 코드가 무엇을 하는지 명확하고 간결하게 설명해주세요.
 
 ```python
 {cell_content}
 ```
 
-Focus on:
-1. Overall purpose and what problem it solves
-2. Key steps and logic flow
-3. Important implementation details
-4. Any notable patterns or techniques used
+다음 사항에 초점을 맞춰주세요:
+1. 전체적인 목적과 해결하는 문제
+2. 주요 단계와 로직 흐름
+3. 중요한 구현 세부사항
+4. 사용된 주목할 만한 패턴이나 기법
 
-Provide a clear explanation suitable for someone learning this code."""
+코드를 학습하는 사람에게 적합한 명확한 설명을 제공해주세요."""
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 코드 수정 프롬프트
 # ═══════════════════════════════════════════════════════════════════════════
 
-FIX_CODE_PROMPT = """Analyze this code for errors, bugs, or potential issues and provide fixes.
+FIX_CODE_PROMPT = """이 코드에서 오류, 버그 또는 잠재적인 문제를 분석하고 수정사항을 제공해주세요.
 
 ```python
 {cell_content}
 ```
 
-Please provide:
-1. **Issues Identified**: List any errors, bugs, or potential problems
-2. **Fixed Code**: The corrected version of the code
-3. **Explanation**: What was wrong and how you fixed it
-4. **Suggestions**: Any additional improvements that could be made
+다음 형식으로 제공해주세요:
+1. **발견된 문제점**: 오류, 버그 또는 잠재적 문제 목록
+2. **수정된 코드**: 수정된 버전의 코드
+3. **설명**: 무엇이 잘못되었고 어떻게 수정했는지
+4. **추가 제안**: 추가로 개선할 수 있는 사항
 
-If the code looks correct, please confirm and suggest potential improvements."""
+코드가 정상적으로 보인다면, 확인하고 잠재적인 개선사항을 제안해주세요."""
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -47,19 +47,19 @@ If the code looks correct, please confirm and suggest potential improvements."""
 
 CUSTOM_REQUEST_PROMPT = """{custom_prompt}
 
-Code:
+코드:
 ```python
 {cell_content}
 ```
 
-Please provide a detailed and helpful response to the above request."""
+위의 요청에 대해 상세하고 도움이 되는 응답을 제공해주세요."""
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 기본 시스템 프롬프트
 # ═══════════════════════════════════════════════════════════════════════════
 
-DEFAULT_SYSTEM_PROMPT = "You are a helpful AI assistant."
+DEFAULT_SYSTEM_PROMPT = "당신은 도움이 되는 AI 어시스턴트입니다."
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -90,9 +90,9 @@ def format_chat_prompt(message: str, context: dict = None) -> str:
 
     if context and context.get('selectedCells'):
         cells_text = '\n\n'.join([
-            f"Cell {i+1}:\n```python\n{cell}\n```"
+            f"셀 {i+1}:\n```python\n{cell}\n```"
             for i, cell in enumerate(context['selectedCells'])
         ])
-        prompt = f"{message}\n\nContext from notebook:\n{cells_text}"
+        prompt = f"{message}\n\n노트북 컨텍스트:\n{cells_text}"
 
     return prompt
