@@ -54,9 +54,6 @@ const extractAgentRequest = (input) => {
     }
     return trimmed;
 };
-/**
- * Chat Panel Component - Cursor AI Style Unified Interface
- */
 const ChatPanel = (0,react__WEBPACK_IMPORTED_MODULE_0__.forwardRef)(({ apiService, notebookTracker }, ref) => {
     // 통합 메시지 목록 (Chat + Agent 실행)
     const [messages, setMessages] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)([]);
@@ -71,6 +68,9 @@ const ChatPanel = (0,react__WEBPACK_IMPORTED_MODULE_0__.forwardRef)(({ apiServic
     const [isAgentRunning, setIsAgentRunning] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false);
     const [currentAgentMessageId, setCurrentAgentMessageId] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null);
     const [executionSpeed, setExecutionSpeed] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)('normal');
+    // 입력 모드 (Cursor AI 스타일)
+    const [inputMode, setInputMode] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)('chat');
+    const [showModeDropdown, setShowModeDropdown] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false);
     const messagesEndRef = (0,react__WEBPACK_IMPORTED_MODULE_0__.useRef)(null);
     const pendingLlmPromptRef = (0,react__WEBPACK_IMPORTED_MODULE_0__.useRef)(null);
     const allCodeBlocksRef = (0,react__WEBPACK_IMPORTED_MODULE_0__.useRef)([]);
@@ -784,7 +784,22 @@ const ChatPanel = (0,react__WEBPACK_IMPORTED_MODULE_0__.forwardRef)(({ apiServic
         if ((!input.trim() && !llmPrompt) || isLoading || isStreaming || isAgentRunning)
             return;
         const currentInput = input.trim();
-        // Check if this is an Agent command
+        // Agent 모드이면 Agent 실행
+        if (inputMode === 'agent') {
+            // User 메시지 추가
+            const userMessage = {
+                id: Date.now().toString(),
+                role: 'user',
+                content: `@agent ${currentInput}`,
+                timestamp: Date.now(),
+            };
+            setMessages(prev => [...prev, userMessage]);
+            setInput('');
+            // Agent 실행
+            await handleAgentExecution(currentInput);
+            return;
+        }
+        // Chat 모드에서도 명령어로 Agent 실행 가능
         if (isAgentCommand(currentInput)) {
             const agentRequest = extractAgentRequest(currentInput);
             if (agentRequest) {
@@ -919,10 +934,32 @@ const ChatPanel = (0,react__WEBPACK_IMPORTED_MODULE_0__.forwardRef)(({ apiServic
         }
     };
     const handleKeyDown = (e) => {
+        // Enter: 전송
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             handleSendMessage();
         }
+        // Shift+Tab: 모드 전환 (chat ↔ agent)
+        if (e.key === 'Tab' && e.shiftKey) {
+            e.preventDefault();
+            setInputMode(prev => prev === 'chat' ? 'agent' : 'chat');
+            return;
+        }
+        // Cmd/Ctrl + . : 모드 전환 (대체 단축키)
+        if (e.key === '.' && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            setInputMode(prev => prev === 'chat' ? 'agent' : 'chat');
+        }
+        // Tab (without Shift): Agent 모드일 때 드롭다운 토글
+        if (e.key === 'Tab' && !e.shiftKey && inputMode === 'agent') {
+            e.preventDefault();
+            setShowModeDropdown(prev => !prev);
+        }
+    };
+    // 모드 토글 함수
+    const toggleMode = () => {
+        setInputMode(prev => prev === 'chat' ? 'agent' : 'chat');
+        setShowModeDropdown(false);
     };
     const clearChat = () => {
         setMessages([]);
@@ -1026,12 +1063,9 @@ const ChatPanel = (0,react__WEBPACK_IMPORTED_MODULE_0__.forwardRef)(({ apiServic
         react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-messages" },
             messages.length === 0 ? (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-empty-state" },
                 react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", null, "\uC548\uB155\uD558\uC138\uC694! HDSP Agent\uC785\uB2C8\uB2E4."),
-                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", { className: "jp-agent-empty-hint" },
-                    "\uCC44\uD305\uC73C\uB85C \uB300\uD654\uD558\uAC70\uB098, ",
-                    react__WEBPACK_IMPORTED_MODULE_0___default().createElement("code", null, "/run"),
-                    " \uB610\uB294 ",
-                    react__WEBPACK_IMPORTED_MODULE_0___default().createElement("code", null, "@agent"),
-                    "\uB85C \uC791\uC5C5\uC744 \uC2E4\uD589\uD558\uC138\uC694."))) : (messages.map(msg => {
+                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", { className: "jp-agent-empty-hint" }, inputMode === 'agent'
+                    ? '노트북 작업을 자연어로 요청하세요. 예: "데이터 시각화 해줘"'
+                    : '메시지를 입력하거나 아래 버튼으로 Agent 모드를 선택하세요.'))) : (messages.map(msg => {
                 if (isChatMessage(msg)) {
                     // 일반 Chat 메시지
                     return (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { key: msg.id, className: `jp-agent-message jp-agent-message-${msg.role}` },
@@ -1059,13 +1093,34 @@ const ChatPanel = (0,react__WEBPACK_IMPORTED_MODULE_0__.forwardRef)(({ apiServic
             react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { ref: messagesEndRef })),
         react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-input-container" },
             react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-input-wrapper" },
-                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("textarea", { className: "jp-agent-input", value: input, onChange: (e) => setInput(e.target.value), onKeyDown: handleKeyDown, placeholder: "\uBA54\uC2DC\uC9C0 \uC785\uB825 \uB610\uB294 /run, @agent\uB85C \uC791\uC5C5 \uC2E4\uD589...", rows: 3, disabled: isLoading || isAgentRunning }),
+                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("textarea", { className: `jp-agent-input ${inputMode === 'agent' ? 'jp-agent-input--agent-mode' : ''}`, value: input, onChange: (e) => setInput(e.target.value), onKeyDown: handleKeyDown, placeholder: inputMode === 'agent'
+                        ? '노트북 작업을 입력하세요... (예: 데이터 시각화 해줘)'
+                        : '메시지를 입력하세요...', rows: 3, disabled: isLoading || isAgentRunning }),
                 react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", { className: "jp-agent-send-button", onClick: handleSendMessage, disabled: !input.trim() || isLoading || isStreaming || isAgentRunning, title: "\uC804\uC1A1 (Enter)" }, isAgentRunning ? '실행 중...' : '전송')),
-            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-input-hint" },
-                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("code", null, "/run"),
-                " \uB610\uB294 ",
-                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("code", null, "@agent"),
-                ": \uB178\uD2B8\uBD81 \uC791\uC5C5 \uC790\uB3D9 \uC2E4\uD589"))));
+            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-mode-bar" },
+                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-mode-toggle-container" },
+                    react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", { className: `jp-agent-mode-toggle ${inputMode === 'agent' ? 'jp-agent-mode-toggle--active' : ''}`, onClick: toggleMode, title: `${inputMode === 'agent' ? 'Agent' : 'Chat'} 모드 (⇧Tab)` },
+                        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("svg", { className: "jp-agent-mode-icon", viewBox: "0 0 16 16", fill: "currentColor", width: "14", height: "14" }, inputMode === 'agent' ? (
+                        // 무한대 아이콘 (Agent 모드)
+                        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("path", { d: "M4.5 8c0-1.38 1.12-2.5 2.5-2.5.9 0 1.68.48 2.12 1.2L8 8l1.12 1.3c-.44.72-1.22 1.2-2.12 1.2-1.38 0-2.5-1.12-2.5-2.5zm6.88 1.3c.44-.72 1.22-1.2 2.12-1.2 1.38 0 2.5 1.12 2.5 2.5s-1.12 2.5-2.5 2.5c-.9 0-1.68-.48-2.12-1.2L12.5 10.6c.3.24.68.4 1.1.4.83 0 1.5-.67 1.5-1.5S14.43 8 13.6 8c-.42 0-.8.16-1.1.4l-1.12 1.3zM7 9.5c-.42 0-.8-.16-1.1-.4L4.78 7.8c-.44.72-1.22 1.2-2.12 1.2C1.28 9 .17 7.88.17 6.5S1.29 4 2.67 4c.9 0 1.68.48 2.12 1.2L5.9 6.5c-.3-.24-.68-.4-1.1-.4C3.97 6.1 3.3 6.77 3.3 7.6s.67 1.5 1.5 1.5c.42 0 .8-.16 1.1-.4l1.12-1.3L8 8l-1 1.5z" })) : (
+                        // 채팅 아이콘 (Chat 모드)
+                        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("path", { d: "M8 1C3.58 1 0 4.13 0 8c0 1.5.5 2.88 1.34 4.04L.5 15l3.37-.92A8.56 8.56 0 008 15c4.42 0 8-3.13 8-7s-3.58-7-8-7zM4.5 9a1 1 0 110-2 1 1 0 010 2zm3.5 0a1 1 0 110-2 1 1 0 010 2zm3.5 0a1 1 0 110-2 1 1 0 010 2z" }))),
+                        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "jp-agent-mode-label" }, inputMode === 'agent' ? 'Agent' : 'Chat'),
+                        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("svg", { className: "jp-agent-mode-chevron", viewBox: "0 0 16 16", fill: "currentColor", width: "12", height: "12" },
+                            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("path", { d: "M4.47 5.47a.75.75 0 011.06 0L8 7.94l2.47-2.47a.75.75 0 111.06 1.06l-3 3a.75.75 0 01-1.06 0l-3-3a.75.75 0 010-1.06z" }))),
+                    showModeDropdown && (react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-mode-dropdown" },
+                        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", { className: `jp-agent-mode-option ${inputMode === 'chat' ? 'jp-agent-mode-option--selected' : ''}`, onClick: () => { setInputMode('chat'); setShowModeDropdown(false); } },
+                            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("svg", { viewBox: "0 0 16 16", fill: "currentColor", width: "14", height: "14" },
+                                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("path", { d: "M8 1C3.58 1 0 4.13 0 8c0 1.5.5 2.88 1.34 4.04L.5 15l3.37-.92A8.56 8.56 0 008 15c4.42 0 8-3.13 8-7s-3.58-7-8-7zM4.5 9a1 1 0 110-2 1 1 0 010 2zm3.5 0a1 1 0 110-2 1 1 0 010 2zm3.5 0a1 1 0 110-2 1 1 0 010 2z" })),
+                            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", null, "Chat"),
+                            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "jp-agent-mode-shortcut" }, "\uC77C\uBC18 \uB300\uD654")),
+                        react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", { className: `jp-agent-mode-option ${inputMode === 'agent' ? 'jp-agent-mode-option--selected' : ''}`, onClick: () => { setInputMode('agent'); setShowModeDropdown(false); } },
+                            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("svg", { viewBox: "0 0 16 16", fill: "currentColor", width: "14", height: "14" },
+                                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("path", { d: "M4.5 8c0-1.38 1.12-2.5 2.5-2.5.9 0 1.68.48 2.12 1.2L8 8l1.12 1.3c-.44.72-1.22 1.2-2.12 1.2-1.38 0-2.5-1.12-2.5-2.5z" })),
+                            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", null, "Agent"),
+                            react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "jp-agent-mode-shortcut" }, "\uB178\uD2B8\uBD81 \uC790\uB3D9 \uC2E4\uD589"))))),
+                react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", { className: "jp-agent-mode-hints" },
+                    react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", { className: "jp-agent-mode-hint" }, "\u21E7Tab \uBAA8\uB4DC \uC804\uD658"))))));
 });
 ChatPanel.displayName = 'ChatPanel';
 /**
@@ -1851,7 +1906,7 @@ function createButton(label, title, onClick) {
  * Handle cell action button click
  */
 async function handleCellAction(action, cell) {
-    const cellContent = cell.model.sharedModel.getSource();
+    const cellContent = cell?.model?.sharedModel?.getSource() || '';
     if (!cellContent.trim()) {
         showNotification('셀 내용이 비어있습니다.', 'warning');
         return;
@@ -1906,11 +1961,12 @@ function getCellIndex(cell) {
  * Extract output from a code cell
  */
 function getCellOutput(cell) {
-    if (cell.model.type !== 'code') {
+    // cell.model이 null일 수 있으므로 안전하게 체크
+    if (!cell?.model || cell.model.type !== 'code') {
         return '';
     }
     const codeCell = cell;
-    const outputs = codeCell.model.outputs;
+    const outputs = codeCell.model?.outputs;
     if (!outputs || outputs.length === 0) {
         return '';
     }
@@ -2342,7 +2398,7 @@ function showNotification(message, type = 'info') {
  * Based on chrome_agent's showCustomPromptDialog implementation
  */
 function showCustomPromptDialog(cell) {
-    const cellContent = cell.model.sharedModel.getSource();
+    const cellContent = cell?.model?.sharedModel?.getSource() || '';
     const cellIndex = getCellIndex(cell);
     const cellId = getOrAssignCellId(cell);
     console.log('커스텀 프롬프트 다이얼로그 표시', cellIndex, cellId);
@@ -3059,11 +3115,11 @@ async function collectAllCodeCells(panel) {
     const cells = [];
     for (let i = 0; i < notebook.widgets.length; i++) {
         const cell = notebook.widgets[i];
-        // Only collect code cells
-        if (cell.model.type !== 'code') {
+        // Only collect code cells - null safety 추가
+        if (!cell?.model || cell.model.type !== 'code') {
             continue;
         }
-        const content = cell.model.sharedModel.getSource();
+        const content = cell.model.sharedModel?.getSource() || '';
         if (!content.trim()) {
             continue;
         }
@@ -3136,11 +3192,12 @@ function getOrAssignCellId(cell) {
  * Extract output from a code cell
  */
 function getCellOutput(cell) {
-    if (cell.model.type !== 'code') {
+    // cell.model이 null일 수 있으므로 안전하게 체크
+    if (!cell?.model || cell.model.type !== 'code') {
         return '';
     }
     const codeCell = cell;
-    const outputs = codeCell.model.outputs;
+    const outputs = codeCell.model?.outputs;
     if (!outputs || outputs.length === 0) {
         return '';
     }
@@ -3744,6 +3801,38 @@ class AgentOrchestrator {
         return envErrorPatterns.some(pattern => pattern.test(fullText));
     }
     /**
+     * 출력 결과가 부정적인지 분석 (에러는 아니지만 실패 의미를 가진 출력)
+     * - FileNotFoundError 메시지 패턴
+     * - NameError (미정의 변수)
+     * - 명시적 실패/오류 메시지
+     */
+    analyzeOutputForFailure(output) {
+        if (!output) {
+            return { isNegative: false };
+        }
+        const negativePatterns = [
+            // 파일/경로 관련 오류 메시지
+            { pattern: /FileNotFoundError|No such file or directory|파일을 찾을 수 없습니다/i, reason: '파일을 찾을 수 없음' },
+            { pattern: /NameError:\s*name\s*'([^']+)'\s*is not defined/i, reason: '변수가 정의되지 않음' },
+            { pattern: /KeyError:\s*['"]?([^'"]+)['"]?/i, reason: '키를 찾을 수 없음' },
+            { pattern: /IndexError/i, reason: '인덱스 범위 초과' },
+            { pattern: /TypeError/i, reason: '타입 오류' },
+            { pattern: /ValueError/i, reason: '값 오류' },
+            { pattern: /AttributeError/i, reason: '속성 오류' },
+            // 명시적 실패 메시지
+            { pattern: /오류:|Error:|실패|failed|Fail/i, reason: '명시적 오류 메시지 감지' },
+            { pattern: /not found|cannot find|없습니다|찾을 수 없/i, reason: '리소스를 찾을 수 없음' },
+            // 빈 결과 경고
+            { pattern: /empty|Empty DataFrame|0\s+rows/i, reason: '결과가 비어있음' },
+        ];
+        for (const { pattern, reason } of negativePatterns) {
+            if (pattern.test(output)) {
+                return { isNegative: true, reason };
+            }
+        }
+        return { isNegative: false };
+    }
+    /**
      * Self-Healing: 단계별 재시도 로직
      * 환경/의존성 에러는 재시도하지 않고 바로 Adaptive Replanning으로 보냄
      * + Pre-Validation: 실행 전 Pyflakes/AST 검증
@@ -3880,6 +3969,62 @@ class AgentOrchestrator {
                 }
                 // 모든 도구 실행 성공
                 if (toolResults.every((r) => r.success)) {
+                    // ★ 출력 결과 분석: 실행은 성공했지만 출력이 부정적인 경우 실패로 처리
+                    const allOutputs = toolResults
+                        .map((r) => String(r.output || ''))
+                        .join('\n');
+                    const outputAnalysis = this.analyzeOutputForFailure(allOutputs);
+                    if (outputAnalysis.isNegative) {
+                        console.log('[AgentOrchestrator] Negative output detected:', outputAnalysis.reason);
+                        // 부정적 출력을 에러로 변환하여 Self-Healing 트리거
+                        lastError = {
+                            type: 'runtime',
+                            message: `출력 결과에서 문제 감지: ${outputAnalysis.reason}`,
+                            recoverable: true,
+                        };
+                        // Self-Healing 시도를 위해 continue (아래 self_healing 로직으로 진행)
+                        if (attempt < this.config.maxRetriesPerStep - 1) {
+                            onProgress({
+                                phase: 'self_healing',
+                                attempt: attempt + 1,
+                                error: lastError,
+                                currentStep: step.stepNumber,
+                                message: `출력 분석: ${outputAnalysis.reason}`,
+                            });
+                            // 마지막으로 실행된 코드 및 셀 인덱스 추출
+                            const lastJupyterCell = currentStep.toolCalls.find((tc) => tc.tool === 'jupyter_cell');
+                            const previousCode = lastJupyterCell
+                                ? lastJupyterCell.parameters.code
+                                : undefined;
+                            const failedCellIndex = toolResults.find(r => r.cellIndex !== undefined)?.cellIndex;
+                            // LLM에게 수정된 코드 요청 (출력 문제 포함)
+                            const refineResponse = await this.apiService.refineStepCode({
+                                step: currentStep,
+                                error: lastError,
+                                attempt: attempt + 1,
+                                previousCode,
+                            });
+                            // 기존 셀 인라인 수정
+                            if (failedCellIndex !== undefined) {
+                                currentStep.toolCalls = refineResponse.toolCalls.map(tc => {
+                                    if (tc.tool === 'jupyter_cell') {
+                                        return {
+                                            ...tc,
+                                            parameters: {
+                                                ...tc.parameters,
+                                                cellIndex: failedCellIndex,
+                                            },
+                                        };
+                                    }
+                                    return tc;
+                                });
+                            }
+                            else {
+                                currentStep.toolCalls = refineResponse.toolCalls;
+                            }
+                            continue; // 다음 시도로 진행
+                        }
+                    }
                     return {
                         success: true,
                         stepNumber: step.stepNumber,
@@ -3895,11 +4040,13 @@ class AgentOrchestrator {
                         error: lastError,
                         currentStep: step.stepNumber,
                     });
-                    // 마지막으로 실행된 코드 추출
+                    // 마지막으로 실행된 코드 추출 및 셀 인덱스 가져오기
                     const lastJupyterCell = currentStep.toolCalls.find((tc) => tc.tool === 'jupyter_cell');
                     const previousCode = lastJupyterCell
                         ? lastJupyterCell.parameters.code
                         : undefined;
+                    // 에러가 발생한 셀의 인덱스 가져오기 (기존 셀 수정을 위해)
+                    const failedCellIndex = toolResults.find(r => r.cellIndex !== undefined)?.cellIndex;
                     // LLM에게 수정된 코드 요청
                     const refineResponse = await this.apiService.refineStepCode({
                         step: currentStep,
@@ -3907,7 +4054,24 @@ class AgentOrchestrator {
                         attempt: attempt + 1,
                         previousCode,
                     });
-                    currentStep.toolCalls = refineResponse.toolCalls;
+                    // ★ 핵심 수정: 새 셀 생성 대신 기존 에러 셀을 직접 수정하도록 cellIndex 지정
+                    if (failedCellIndex !== undefined) {
+                        currentStep.toolCalls = refineResponse.toolCalls.map(tc => {
+                            if (tc.tool === 'jupyter_cell') {
+                                return {
+                                    ...tc,
+                                    parameters: {
+                                        ...tc.parameters,
+                                        cellIndex: failedCellIndex, // 기존 셀 인덱스 지정하여 인라인 수정
+                                    },
+                                };
+                            }
+                            return tc;
+                        });
+                    }
+                    else {
+                        currentStep.toolCalls = refineResponse.toolCalls;
+                    }
                 }
             }
             catch (error) {
@@ -4287,14 +4451,30 @@ class AgentOrchestrator {
             // Checkpoint 정보 추출 (EnhancedPlanStep인 경우)
             const enhancedStep = step;
             const checkpoint = enhancedStep.checkpoint;
+            // ★ 프론트엔드에서 먼저 출력 분석 수행
+            const outputString = String(jupyterResult.output || '');
+            const localOutputAnalysis = this.analyzeOutputForFailure(outputString);
+            // 부정적 출력이 감지되면 에러 메시지에 추가
+            let effectiveErrorMessage = jupyterResult.error;
+            let effectiveStatus = jupyterResult.success ? 'ok' : 'error';
+            if (localOutputAnalysis.isNegative) {
+                console.log('[Orchestrator] Reflection: Local output analysis detected issue:', localOutputAnalysis.reason);
+                effectiveErrorMessage = effectiveErrorMessage
+                    ? `${effectiveErrorMessage}; 출력 분석: ${localOutputAnalysis.reason}`
+                    : `출력 분석: ${localOutputAnalysis.reason}`;
+                // 실행은 성공했지만 출력이 부정적인 경우도 'error'로 표시
+                if (jupyterResult.success && localOutputAnalysis.isNegative) {
+                    effectiveStatus = 'warning'; // 백엔드에 경고 상태 전달
+                }
+            }
             console.log('[Orchestrator] Performing reflection for step', step.stepNumber);
             const reflectResponse = await this.apiService.reflectOnExecution({
                 stepNumber: step.stepNumber,
                 stepDescription: step.description,
                 executedCode,
-                executionStatus: jupyterResult.success ? 'ok' : 'error',
-                executionOutput: String(jupyterResult.output || ''),
-                errorMessage: jupyterResult.error,
+                executionStatus: effectiveStatus,
+                executionOutput: outputString,
+                errorMessage: effectiveErrorMessage,
                 expectedOutcome: checkpoint?.expectedOutcome,
                 validationCriteria: checkpoint?.validationCriteria,
                 remainingSteps,
@@ -5256,8 +5436,8 @@ class ToolExecutor {
     updateCellContent(cellIndex, content) {
         const notebookContent = this.notebook.content;
         const cell = notebookContent.widgets[cellIndex];
-        if (!cell) {
-            throw new Error(`Cell at index ${cellIndex} not found`);
+        if (!cell || !cell.model?.sharedModel) {
+            throw new Error(`Cell at index ${cellIndex} not found or model not available`);
         }
         cell.model.sharedModel.setSource(content);
     }
@@ -5283,9 +5463,11 @@ class ToolExecutor {
         let stderr = '';
         let result = null;
         let error = undefined;
-        if (cell.model.outputs) {
-            for (let i = 0; i < cell.model.outputs.length; i++) {
-                const output = cell.model.outputs.get(i);
+        // cell.model과 outputs가 존재하는지 안전하게 체크
+        const outputs = cell.model?.outputs;
+        if (outputs && outputs.length > 0) {
+            for (let i = 0; i < outputs.length; i++) {
+                const output = outputs.get(i);
                 if (output.type === 'stream') {
                     const streamOutput = output;
                     if (streamOutput.name === 'stdout') {
@@ -5333,19 +5515,21 @@ class ToolExecutor {
      */
     getCellContent(cellIndex) {
         const cell = this.notebook.content.widgets[cellIndex];
-        return cell?.model.sharedModel.getSource() || '';
+        return cell?.model?.sharedModel?.getSource() || '';
     }
     /**
      * 특정 셀의 출력 반환
      */
     getCellOutput(cellIndex) {
         const cell = this.notebook.content.widgets[cellIndex];
-        if (!cell || !cell.model.outputs) {
+        // cell, cell.model, cell.model.outputs 모두 안전하게 체크
+        const cellOutputs = cell?.model?.outputs;
+        if (!cell || !cellOutputs) {
             return '';
         }
         const outputs = [];
-        for (let i = 0; i < cell.model.outputs.length; i++) {
-            const output = cell.model.outputs.get(i);
+        for (let i = 0; i < cellOutputs.length; i++) {
+            const output = cellOutputs.get(i);
             if (output.type === 'stream') {
                 outputs.push(output.text || '');
             }
@@ -6502,4 +6686,4 @@ __webpack_require__.r(__webpack_exports__);
 /***/ })
 
 }]);
-//# sourceMappingURL=lib_index_js.4e8624a68bbcd33d60cd.js.map
+//# sourceMappingURL=lib_index_js.687f7fb569c23c3f0e36.js.map

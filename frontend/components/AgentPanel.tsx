@@ -77,6 +77,9 @@ const extractAgentRequest = (input: string): string => {
 /**
  * Chat Panel Component - Cursor AI Style Unified Interface
  */
+// 입력 모드 타입
+type InputMode = 'chat' | 'agent';
+
 const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, notebookTracker }, ref) => {
   // 통합 메시지 목록 (Chat + Agent 실행)
   const [messages, setMessages] = useState<UnifiedMessage[]>([]);
@@ -91,6 +94,9 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
   const [isAgentRunning, setIsAgentRunning] = useState(false);
   const [currentAgentMessageId, setCurrentAgentMessageId] = useState<string | null>(null);
   const [executionSpeed, setExecutionSpeed] = useState<ExecutionSpeed>('normal');
+  // 입력 모드 (Cursor AI 스타일)
+  const [inputMode, setInputMode] = useState<InputMode>('chat');
+  const [showModeDropdown, setShowModeDropdown] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const pendingLlmPromptRef = useRef<string | null>(null);
@@ -912,7 +918,24 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
 
     const currentInput = input.trim();
 
-    // Check if this is an Agent command
+    // Agent 모드이면 Agent 실행
+    if (inputMode === 'agent') {
+      // User 메시지 추가
+      const userMessage: IChatMessage = {
+        id: Date.now().toString(),
+        role: 'user',
+        content: `@agent ${currentInput}`,
+        timestamp: Date.now(),
+      };
+      setMessages(prev => [...prev, userMessage]);
+      setInput('');
+
+      // Agent 실행
+      await handleAgentExecution(currentInput);
+      return;
+    }
+
+    // Chat 모드에서도 명령어로 Agent 실행 가능
     if (isAgentCommand(currentInput)) {
       const agentRequest = extractAgentRequest(currentInput);
       if (agentRequest) {
@@ -1069,10 +1092,33 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Enter: 전송
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
     }
+    // Shift+Tab: 모드 전환 (chat ↔ agent)
+    if (e.key === 'Tab' && e.shiftKey) {
+      e.preventDefault();
+      setInputMode(prev => prev === 'chat' ? 'agent' : 'chat');
+      return;
+    }
+    // Cmd/Ctrl + . : 모드 전환 (대체 단축키)
+    if (e.key === '.' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      setInputMode(prev => prev === 'chat' ? 'agent' : 'chat');
+    }
+    // Tab (without Shift): Agent 모드일 때 드롭다운 토글
+    if (e.key === 'Tab' && !e.shiftKey && inputMode === 'agent') {
+      e.preventDefault();
+      setShowModeDropdown(prev => !prev);
+    }
+  };
+
+  // 모드 토글 함수
+  const toggleMode = () => {
+    setInputMode(prev => prev === 'chat' ? 'agent' : 'chat');
+    setShowModeDropdown(false);
   };
 
   const clearChat = () => {
@@ -1264,7 +1310,10 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
           <div className="jp-agent-empty-state">
             <p>안녕하세요! HDSP Agent입니다.</p>
             <p className="jp-agent-empty-hint">
-              채팅으로 대화하거나, <code>/run</code> 또는 <code>@agent</code>로 작업을 실행하세요.
+              {inputMode === 'agent'
+                ? '노트북 작업을 자연어로 요청하세요. 예: "데이터 시각화 해줘"'
+                : '메시지를 입력하거나 아래 버튼으로 Agent 모드를 선택하세요.'
+              }
             </p>
           </div>
         ) : (
@@ -1316,15 +1365,18 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Unified Input Container */}
+      {/* Unified Input Container - Cursor AI Style */}
       <div className="jp-agent-input-container">
         <div className="jp-agent-input-wrapper">
           <textarea
-            className="jp-agent-input"
+            className={`jp-agent-input ${inputMode === 'agent' ? 'jp-agent-input--agent-mode' : ''}`}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="메시지 입력 또는 /run, @agent로 작업 실행..."
+            placeholder={inputMode === 'agent'
+              ? '노트북 작업을 입력하세요... (예: 데이터 시각화 해줘)'
+              : '메시지를 입력하세요...'
+            }
             rows={3}
             disabled={isLoading || isAgentRunning}
           />
@@ -1337,9 +1389,64 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
             {isAgentRunning ? '실행 중...' : '전송'}
           </button>
         </div>
-        {/* 힌트 */}
-        <div className="jp-agent-input-hint">
-          <code>/run</code> 또는 <code>@agent</code>: 노트북 작업 자동 실행
+
+        {/* Mode Toggle Bar - Cursor AI Style */}
+        <div className="jp-agent-mode-bar">
+          <div className="jp-agent-mode-toggle-container">
+            <button
+              className={`jp-agent-mode-toggle ${inputMode === 'agent' ? 'jp-agent-mode-toggle--active' : ''}`}
+              onClick={toggleMode}
+              title={`${inputMode === 'agent' ? 'Agent' : 'Chat'} 모드 (⇧Tab)`}
+            >
+              {/* Agent 아이콘 */}
+              <svg className="jp-agent-mode-icon" viewBox="0 0 16 16" fill="currentColor" width="14" height="14">
+                {inputMode === 'agent' ? (
+                  // 무한대 아이콘 (Agent 모드)
+                  <path d="M4.5 8c0-1.38 1.12-2.5 2.5-2.5.9 0 1.68.48 2.12 1.2L8 8l1.12 1.3c-.44.72-1.22 1.2-2.12 1.2-1.38 0-2.5-1.12-2.5-2.5zm6.88 1.3c.44-.72 1.22-1.2 2.12-1.2 1.38 0 2.5 1.12 2.5 2.5s-1.12 2.5-2.5 2.5c-.9 0-1.68-.48-2.12-1.2L12.5 10.6c.3.24.68.4 1.1.4.83 0 1.5-.67 1.5-1.5S14.43 8 13.6 8c-.42 0-.8.16-1.1.4l-1.12 1.3zM7 9.5c-.42 0-.8-.16-1.1-.4L4.78 7.8c-.44.72-1.22 1.2-2.12 1.2C1.28 9 .17 7.88.17 6.5S1.29 4 2.67 4c.9 0 1.68.48 2.12 1.2L5.9 6.5c-.3-.24-.68-.4-1.1-.4C3.97 6.1 3.3 6.77 3.3 7.6s.67 1.5 1.5 1.5c.42 0 .8-.16 1.1-.4l1.12-1.3L8 8l-1 1.5z"/>
+                ) : (
+                  // 채팅 아이콘 (Chat 모드)
+                  <path d="M8 1C3.58 1 0 4.13 0 8c0 1.5.5 2.88 1.34 4.04L.5 15l3.37-.92A8.56 8.56 0 008 15c4.42 0 8-3.13 8-7s-3.58-7-8-7zM4.5 9a1 1 0 110-2 1 1 0 010 2zm3.5 0a1 1 0 110-2 1 1 0 010 2zm3.5 0a1 1 0 110-2 1 1 0 010 2z"/>
+                )}
+              </svg>
+              <span className="jp-agent-mode-label">
+                {inputMode === 'agent' ? 'Agent' : 'Chat'}
+              </span>
+              <svg className="jp-agent-mode-chevron" viewBox="0 0 16 16" fill="currentColor" width="12" height="12">
+                <path d="M4.47 5.47a.75.75 0 011.06 0L8 7.94l2.47-2.47a.75.75 0 111.06 1.06l-3 3a.75.75 0 01-1.06 0l-3-3a.75.75 0 010-1.06z"/>
+              </svg>
+            </button>
+
+            {/* Mode Dropdown */}
+            {showModeDropdown && (
+              <div className="jp-agent-mode-dropdown">
+                <button
+                  className={`jp-agent-mode-option ${inputMode === 'chat' ? 'jp-agent-mode-option--selected' : ''}`}
+                  onClick={() => { setInputMode('chat'); setShowModeDropdown(false); }}
+                >
+                  <svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14">
+                    <path d="M8 1C3.58 1 0 4.13 0 8c0 1.5.5 2.88 1.34 4.04L.5 15l3.37-.92A8.56 8.56 0 008 15c4.42 0 8-3.13 8-7s-3.58-7-8-7zM4.5 9a1 1 0 110-2 1 1 0 010 2zm3.5 0a1 1 0 110-2 1 1 0 010 2zm3.5 0a1 1 0 110-2 1 1 0 010 2z"/>
+                  </svg>
+                  <span>Chat</span>
+                  <span className="jp-agent-mode-shortcut">일반 대화</span>
+                </button>
+                <button
+                  className={`jp-agent-mode-option ${inputMode === 'agent' ? 'jp-agent-mode-option--selected' : ''}`}
+                  onClick={() => { setInputMode('agent'); setShowModeDropdown(false); }}
+                >
+                  <svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14">
+                    <path d="M4.5 8c0-1.38 1.12-2.5 2.5-2.5.9 0 1.68.48 2.12 1.2L8 8l1.12 1.3c-.44.72-1.22 1.2-2.12 1.2-1.38 0-2.5-1.12-2.5-2.5z"/>
+                  </svg>
+                  <span>Agent</span>
+                  <span className="jp-agent-mode-shortcut">노트북 자동 실행</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* 단축키 힌트 */}
+          <div className="jp-agent-mode-hints">
+            <span className="jp-agent-mode-hint">⇧Tab 모드 전환</span>
+          </div>
         </div>
       </div>
     </div>

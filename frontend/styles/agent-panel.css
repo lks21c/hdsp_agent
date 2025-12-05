@@ -1093,3 +1093,180 @@ body[data-jp-theme-light="false"] .jp-agent-empty-hint code,
 body[data-jp-theme-light="false"] .jp-agent-input-hint code {
   background: var(--jp-layout-color3);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* Cursor AI Style: Mode Toggle Bar                                            */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Mode Bar Container */
+.jp-agent-mode-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 2px;
+  margin-top: 4px;
+}
+
+/* Mode Toggle Container */
+.jp-agent-mode-toggle-container {
+  position: relative;
+}
+
+/* Mode Toggle Button - Cursor AI Style */
+.jp-agent-mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--jp-border-color2);
+  border-radius: 6px;
+  background: var(--jp-layout-color1);
+  color: var(--jp-ui-font-color2);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.jp-agent-mode-toggle:hover {
+  background: var(--jp-layout-color2);
+  border-color: var(--jp-border-color1);
+  color: var(--jp-ui-font-color1);
+}
+
+/* Active (Agent Mode) */
+.jp-agent-mode-toggle--active {
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  border-color: #6366f1;
+  color: white;
+}
+
+.jp-agent-mode-toggle--active:hover {
+  background: linear-gradient(135deg, #5558e8 0%, #7c4ddb 100%);
+  border-color: #5558e8;
+  color: white;
+}
+
+/* Mode Icon */
+.jp-agent-mode-icon {
+  flex-shrink: 0;
+}
+
+/* Mode Label */
+.jp-agent-mode-label {
+  min-width: 40px;
+}
+
+/* Chevron */
+.jp-agent-mode-chevron {
+  flex-shrink: 0;
+  opacity: 0.6;
+  transition: transform 0.15s ease;
+}
+
+.jp-agent-mode-toggle:hover .jp-agent-mode-chevron {
+  opacity: 1;
+}
+
+/* Mode Dropdown */
+.jp-agent-mode-dropdown {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 4px;
+  background: var(--jp-layout-color1);
+  border: 1px solid var(--jp-border-color2);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+  z-index: 1000;
+  min-width: 180px;
+}
+
+/* Mode Option */
+.jp-agent-mode-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  color: var(--jp-ui-font-color1);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.jp-agent-mode-option:hover {
+  background: var(--jp-layout-color2);
+}
+
+.jp-agent-mode-option--selected {
+  background: var(--jp-layout-color2);
+}
+
+.jp-agent-mode-option svg {
+  flex-shrink: 0;
+  color: var(--jp-ui-font-color2);
+}
+
+.jp-agent-mode-option--selected svg {
+  color: #6366f1;
+}
+
+/* Mode Shortcut */
+.jp-agent-mode-shortcut {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--jp-ui-font-color3);
+}
+
+/* Mode Hints */
+.jp-agent-mode-hints {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.jp-agent-mode-hint {
+  font-size: 11px;
+  color: var(--jp-ui-font-color3);
+  padding: 2px 6px;
+  background: var(--jp-layout-color2);
+  border-radius: 4px;
+}
+
+/* Agent Mode Input Style */
+.jp-agent-input--agent-mode {
+  border-color: #6366f1 !important;
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.2) !important;
+}
+
+.jp-agent-input--agent-mode:focus {
+  border-color: #6366f1 !important;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3) !important;
+}
+
+/* Dark Theme */
+body[data-jp-theme-light="false"] .jp-agent-mode-toggle {
+  background: var(--jp-layout-color2);
+}
+
+body[data-jp-theme-light="false"] .jp-agent-mode-toggle--active {
+  background: linear-gradient(135deg, #5a67d8 0%, #7c3aed 100%);
+}
+
+body[data-jp-theme-light="false"] .jp-agent-mode-dropdown {
+  background: var(--jp-layout-color2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+body[data-jp-theme-light="false"] .jp-agent-mode-option:hover {
+  background: var(--jp-layout-color3);
+}
+
+body[data-jp-theme-light="false"] .jp-agent-mode-option--selected {
+  background: var(--jp-layout-color3);
+}

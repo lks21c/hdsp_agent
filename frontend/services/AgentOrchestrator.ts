@@ -397,6 +397,42 @@ export class AgentOrchestrator {
   }
 
   /**
+   * 출력 결과가 부정적인지 분석 (에러는 아니지만 실패 의미를 가진 출력)
+   * - FileNotFoundError 메시지 패턴
+   * - NameError (미정의 변수)
+   * - 명시적 실패/오류 메시지
+   */
+  private analyzeOutputForFailure(output: string): { isNegative: boolean; reason?: string } {
+    if (!output) {
+      return { isNegative: false };
+    }
+
+    const negativePatterns = [
+      // 파일/경로 관련 오류 메시지
+      { pattern: /FileNotFoundError|No such file or directory|파일을 찾을 수 없습니다/i, reason: '파일을 찾을 수 없음' },
+      { pattern: /NameError:\s*name\s*'([^']+)'\s*is not defined/i, reason: '변수가 정의되지 않음' },
+      { pattern: /KeyError:\s*['"]?([^'"]+)['"]?/i, reason: '키를 찾을 수 없음' },
+      { pattern: /IndexError/i, reason: '인덱스 범위 초과' },
+      { pattern: /TypeError/i, reason: '타입 오류' },
+      { pattern: /ValueError/i, reason: '값 오류' },
+      { pattern: /AttributeError/i, reason: '속성 오류' },
+      // 명시적 실패 메시지
+      { pattern: /오류:|Error:|실패|failed|Fail/i, reason: '명시적 오류 메시지 감지' },
+      { pattern: /not found|cannot find|없습니다|찾을 수 없/i, reason: '리소스를 찾을 수 없음' },
+      // 빈 결과 경고
+      { pattern: /empty|Empty DataFrame|0\s+rows/i, reason: '결과가 비어있음' },
+    ];
+
+    for (const { pattern, reason } of negativePatterns) {
+      if (pattern.test(output)) {
+        return { isNegative: true, reason };
+      }
+    }
+
+    return { isNegative: false };
+  }
+
+  /**
    * Self-Healing: 단계별 재시도 로직
    * 환경/의존성 에러는 재시도하지 않고 바로 Adaptive Replanning으로 보냄
    * + Pre-Validation: 실행 전 Pyflakes/AST 검증
@@ -557,6 +593,70 @@ export class AgentOrchestrator {
 
         // 모든 도구 실행 성공
         if (toolResults.every((r) => r.success)) {
+          // ★ 출력 결과 분석: 실행은 성공했지만 출력이 부정적인 경우 실패로 처리
+          const allOutputs = toolResults
+            .map((r) => String(r.output || ''))
+            .join('\n');
+          const outputAnalysis = this.analyzeOutputForFailure(allOutputs);
+
+          if (outputAnalysis.isNegative) {
+            console.log('[AgentOrchestrator] Negative output detected:', outputAnalysis.reason);
+
+            // 부정적 출력을 에러로 변환하여 Self-Healing 트리거
+            lastError = {
+              type: 'runtime',
+              message: `출력 결과에서 문제 감지: ${outputAnalysis.reason}`,
+              recoverable: true,
+            };
+
+            // Self-Healing 시도를 위해 continue (아래 self_healing 로직으로 진행)
+            if (attempt < this.config.maxRetriesPerStep - 1) {
+              onProgress({
+                phase: 'self_healing',
+                attempt: attempt + 1,
+                error: lastError,
+                currentStep: step.stepNumber,
+                message: `출력 분석: ${outputAnalysis.reason}`,
+              });
+
+              // 마지막으로 실행된 코드 및 셀 인덱스 추출
+              const lastJupyterCell = currentStep.toolCalls.find(
+                (tc) => tc.tool === 'jupyter_cell'
+              );
+              const previousCode = lastJupyterCell
+                ? (lastJupyterCell.parameters as JupyterCellParams).code
+                : undefined;
+              const failedCellIndex = toolResults.find(r => r.cellIndex !== undefined)?.cellIndex;
+
+              // LLM에게 수정된 코드 요청 (출력 문제 포함)
+              const refineResponse = await this.apiService.refineStepCode({
+                step: currentStep,
+                error: lastError,
+                attempt: attempt + 1,
+                previousCode,
+              });
+
+              // 기존 셀 인라인 수정
+              if (failedCellIndex !== undefined) {
+                currentStep.toolCalls = refineResponse.toolCalls.map(tc => {
+                  if (tc.tool === 'jupyter_cell') {
+                    return {
+                      ...tc,
+                      parameters: {
+                        ...(tc.parameters as JupyterCellParams),
+                        cellIndex: failedCellIndex,
+                      },
+                    };
+                  }
+                  return tc;
+                });
+              } else {
+                currentStep.toolCalls = refineResponse.toolCalls;
+              }
+              continue; // 다음 시도로 진행
+            }
+          }
+
           return {
             success: true,
             stepNumber: step.stepNumber,
@@ -574,13 +674,16 @@ export class AgentOrchestrator {
             currentStep: step.stepNumber,
           });
 
-          // 마지막으로 실행된 코드 추출
+          // 마지막으로 실행된 코드 추출 및 셀 인덱스 가져오기
           const lastJupyterCell = currentStep.toolCalls.find(
             (tc) => tc.tool === 'jupyter_cell'
           );
           const previousCode = lastJupyterCell
             ? (lastJupyterCell.parameters as JupyterCellParams).code
             : undefined;
+
+          // 에러가 발생한 셀의 인덱스 가져오기 (기존 셀 수정을 위해)
+          const failedCellIndex = toolResults.find(r => r.cellIndex !== undefined)?.cellIndex;
 
           // LLM에게 수정된 코드 요청
           const refineResponse = await this.apiService.refineStepCode({
@@ -590,7 +693,23 @@ export class AgentOrchestrator {
             previousCode,
           });
 
-          currentStep.toolCalls = refineResponse.toolCalls;
+          // ★ 핵심 수정: 새 셀 생성 대신 기존 에러 셀을 직접 수정하도록 cellIndex 지정
+          if (failedCellIndex !== undefined) {
+            currentStep.toolCalls = refineResponse.toolCalls.map(tc => {
+              if (tc.tool === 'jupyter_cell') {
+                return {
+                  ...tc,
+                  parameters: {
+                    ...(tc.parameters as JupyterCellParams),
+                    cellIndex: failedCellIndex, // 기존 셀 인덱스 지정하여 인라인 수정
+                  },
+                };
+              }
+              return tc;
+            });
+          } else {
+            currentStep.toolCalls = refineResponse.toolCalls;
+          }
         }
       } catch (error: any) {
         const isTimeout = error.message?.includes('timeout');
@@ -1027,15 +1146,34 @@ export class AgentOrchestrator {
       const enhancedStep = step as EnhancedPlanStep;
       const checkpoint = enhancedStep.checkpoint;
 
+      // ★ 프론트엔드에서 먼저 출력 분석 수행
+      const outputString = String(jupyterResult.output || '');
+      const localOutputAnalysis = this.analyzeOutputForFailure(outputString);
+
+      // 부정적 출력이 감지되면 에러 메시지에 추가
+      let effectiveErrorMessage = jupyterResult.error;
+      let effectiveStatus = jupyterResult.success ? 'ok' : 'error';
+
+      if (localOutputAnalysis.isNegative) {
+        console.log('[Orchestrator] Reflection: Local output analysis detected issue:', localOutputAnalysis.reason);
+        effectiveErrorMessage = effectiveErrorMessage
+          ? `${effectiveErrorMessage}; 출력 분석: ${localOutputAnalysis.reason}`
+          : `출력 분석: ${localOutputAnalysis.reason}`;
+        // 실행은 성공했지만 출력이 부정적인 경우도 'error'로 표시
+        if (jupyterResult.success && localOutputAnalysis.isNegative) {
+          effectiveStatus = 'warning';  // 백엔드에 경고 상태 전달
+        }
+      }
+
       console.log('[Orchestrator] Performing reflection for step', step.stepNumber);
 
       const reflectResponse = await this.apiService.reflectOnExecution({
         stepNumber: step.stepNumber,
         stepDescription: step.description,
         executedCode,
-        executionStatus: jupyterResult.success ? 'ok' : 'error',
-        executionOutput: String(jupyterResult.output || ''),
-        errorMessage: jupyterResult.error,
+        executionStatus: effectiveStatus,
+        executionOutput: outputString,
+        errorMessage: effectiveErrorMessage,
         expectedOutcome: checkpoint?.expectedOutcome,
         validationCriteria: checkpoint?.validationCriteria,
         remainingSteps,

@@ -1,0 +1,27 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": "1",
+        "title": "Add Shift+Tab shortcut to toggle chat/agent mode",
+        "description": "Implement keyboard shortcut (Shift+Tab) to toggle between chat and agent mode selection in the HDSP Agent panel UI",
+        "details": "",
+        "testStrategy": "",
+        "status": "done",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2025-12-05T08:17:45.569Z"
+      }
+    ],
+    "metadata": {
+      "version": "1.0.0",
+      "lastModified": "2025-12-05T08:17:45.569Z",
+      "taskCount": 1,
+      "completedCount": 1,
+      "tags": [
+        "master"
+      ]
+    }
+  }
+}

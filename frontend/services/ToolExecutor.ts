@@ -279,8 +279,8 @@ export class ToolExecutor {
     const notebookContent = this.notebook.content;
     const cell = notebookContent.widgets[cellIndex];
 
-    if (!cell) {
-      throw new Error(`Cell at index ${cellIndex} not found`);
+    if (!cell || !cell.model?.sharedModel) {
+      throw new Error(`Cell at index ${cellIndex} not found or model not available`);
     }
 
     cell.model.sharedModel.setSource(content);
@@ -315,9 +315,11 @@ export class ToolExecutor {
     let result: any = null;
     let error: ExecutionResult['error'] = undefined;
 
-    if (cell.model.outputs) {
-      for (let i = 0; i < cell.model.outputs.length; i++) {
-        const output = cell.model.outputs.get(i);
+    // cell.model과 outputs가 존재하는지 안전하게 체크
+    const outputs = cell.model?.outputs;
+    if (outputs && outputs.length > 0) {
+      for (let i = 0; i < outputs.length; i++) {
+        const output = outputs.get(i);
 
         if (output.type === 'stream') {
           const streamOutput = output as any;
@@ -367,7 +369,7 @@ export class ToolExecutor {
    */
   getCellContent(cellIndex: number): string {
     const cell = this.notebook.content.widgets[cellIndex];
-    return cell?.model.sharedModel.getSource() || '';
+    return cell?.model?.sharedModel?.getSource() || '';
   }
 
   /**
@@ -375,13 +377,15 @@ export class ToolExecutor {
    */
   getCellOutput(cellIndex: number): string {
     const cell = this.notebook.content.widgets[cellIndex] as CodeCell;
-    if (!cell || !cell.model.outputs) {
+    // cell, cell.model, cell.model.outputs 모두 안전하게 체크
+    const cellOutputs = cell?.model?.outputs;
+    if (!cell || !cellOutputs) {
       return '';
     }
 
     const outputs: string[] = [];
-    for (let i = 0; i < cell.model.outputs.length; i++) {
-      const output = cell.model.outputs.get(i);
+    for (let i = 0; i < cellOutputs.length; i++) {
+      const output = cellOutputs.get(i);
       if (output.type === 'stream') {
         outputs.push((output as any).text || '');
       } else if (output.type === 'execute_result' || output.type === 'display_data') {

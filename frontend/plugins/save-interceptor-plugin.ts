@@ -382,12 +382,12 @@ async function collectAllCodeCells(panel: any): Promise<CollectedCell[]> {
   for (let i = 0; i < notebook.widgets.length; i++) {
     const cell = notebook.widgets[i];
 
-    // Only collect code cells
-    if (cell.model.type !== 'code') {
+    // Only collect code cells - null safety 추가
+    if (!cell?.model || cell.model.type !== 'code') {
       continue;
     }
 
-    const content = cell.model.sharedModel.getSource();
+    const content = cell.model.sharedModel?.getSource() || '';
     if (!content.trim()) {
       continue;
     }
@@ -468,12 +468,13 @@ function getOrAssignCellId(cell: Cell): string {
  * Extract output from a code cell
  */
 function getCellOutput(cell: Cell): string {
-  if (cell.model.type !== 'code') {
+  // cell.model이 null일 수 있으므로 안전하게 체크
+  if (!cell?.model || cell.model.type !== 'code') {
     return '';
   }
 
   const codeCell = cell as any;
-  const outputs = codeCell.model.outputs;
+  const outputs = codeCell.model?.outputs;
 
   if (!outputs || outputs.length === 0) {
     return '';

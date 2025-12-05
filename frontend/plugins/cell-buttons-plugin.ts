@@ -196,7 +196,7 @@ function createButton(
  * Handle cell action button click
  */
 async function handleCellAction(action: CellAction, cell: Cell): Promise<void> {
-  const cellContent = cell.model.sharedModel.getSource();
+  const cellContent = cell?.model?.sharedModel?.getSource() || '';
 
   if (!cellContent.trim()) {
     showNotification('셀 내용이 비어있습니다.', 'warning');
@@ -262,12 +262,13 @@ function getCellIndex(cell: Cell): number {
  * Extract output from a code cell
  */
 function getCellOutput(cell: Cell): string {
-  if (cell.model.type !== 'code') {
+  // cell.model이 null일 수 있으므로 안전하게 체크
+  if (!cell?.model || cell.model.type !== 'code') {
     return '';
   }
 
   const codeCell = cell as any;
-  const outputs = codeCell.model.outputs;
+  const outputs = codeCell.model?.outputs;
 
   if (!outputs || outputs.length === 0) {
     return '';
@@ -745,7 +746,7 @@ function showNotification(message: string, type: 'info' | 'warning' | 'error' = 
  * Based on chrome_agent's showCustomPromptDialog implementation
  */
 function showCustomPromptDialog(cell: Cell): void {
-  const cellContent = cell.model.sharedModel.getSource();
+  const cellContent = cell?.model?.sharedModel?.getSource() || '';
   const cellIndex = getCellIndex(cell);
   const cellId = getOrAssignCellId(cell);
 
