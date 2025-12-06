@@ -55,6 +55,9 @@ export class AgentOrchestrator {
   private enablePreValidation: boolean = true;
   private enableReflection: boolean = true;
 
+  // ★ 현재 Plan 실행 중 정의된 변수 추적 (cross-step validation용)
+  private executedStepVariables: Set<string> = new Set();
+
   constructor(
     notebook: NotebookPanel,
     sessionContext: ISessionContext,
@@ -69,6 +72,10 @@ export class AgentOrchestrator {
       maxExecutionTime: (config?.executionTimeout ?? 30000) / 1000,
     });
     this.config = { ...DEFAULT_AUTO_AGENT_CONFIG, ...config };
+    console.log('[Orchestrator] Initialized with config:', {
+      executionSpeed: this.config.executionSpeed,
+      stepDelay: this.config.stepDelay,
+    });
 
     // ToolExecutor에 자동 스크롤 설정 연동
     this.toolExecutor.setAutoScroll(this.config.autoScrollToCell);
@@ -96,6 +103,8 @@ export class AgentOrchestrator {
 
     this.isRunning = true;
     this.abortController = new AbortController();
+    // ★ 새 실행 시작 시 이전 실행에서 추적된 변수 초기화
+    this.executedStepVariables.clear();
 
     const createdCells: number[] = [];
     const modifiedCells: number[] = [];
@@ -229,11 +238,16 @@ export class AgentOrchestrator {
             console.log('[Orchestrator] Replan decision:', replanResponse.decision);
             console.log('[Orchestrator] Replan reasoning:', replanResponse.reasoning);
 
-            // Replan 결과에 따른 계획 수정
+            // 실패한 스텝에서 생성된 셀 인덱스 추출 (재사용 위해)
+            const failedCellIndex = stepResult.toolResults.find(r => r.cellIndex !== undefined)?.cellIndex;
+            console.log('[Orchestrator] Failed cell index for reuse:', failedCellIndex);
+
+            // Replan 결과에 따른 계획 수정 (실패한 셀 인덱스 전달)
             currentPlan = this.applyReplanChanges(
               currentPlan,
               stepIndex,
-              replanResponse
+              replanResponse,
+              failedCellIndex
             );
 
             // ★ 업데이트된 계획을 UI에 반영 (plan item list에 새 스텝 표시)
@@ -270,6 +284,9 @@ export class AgentOrchestrator {
         // 성공한 단계 기록
         executedSteps.push(stepResult);
         replanAttempts = 0; // 성공 시 재계획 시도 횟수 리셋
+
+        // ★ 성공한 Step에서 정의된 변수 추적 (cross-step validation용)
+        this.trackVariablesFromStep(step);
 
         // ═══════════════════════════════════════════════════════════════════════
         // REFLECTION: 실행 결과 분석 및 적응적 조정
@@ -495,7 +512,34 @@ export class AgentOrchestrator {
 
           if (validation) {
             if (validation.hasErrors) {
-              console.log('[Orchestrator] Pre-validation detected errors:', validation.summary);
+              // ★ 디버깅용 상세 로그 (robust version)
+              console.log('');
+              console.log('╔══════════════════════════════════════════════════════════════╗');
+              console.log('║  🔴 [Orchestrator] PRE-VALIDATION FAILED                     ║');
+              console.log('╠══════════════════════════════════════════════════════════════╣');
+              console.log(`║  Step: ${step.stepNumber} - ${step.description?.substring(0, 45) || 'N/A'}...`);
+              console.log(`║  Summary: ${validation.summary || 'No summary'}`);
+              console.log('╠══════════════════════════════════════════════════════════════╣');
+              console.log('║  Code:');
+              console.log('║  ' + (params.code || '').split('\n').join('\n║  '));
+              console.log('╠══════════════════════════════════════════════════════════════╣');
+              console.log('║  Issues:');
+              if (validation.issues && validation.issues.length > 0) {
+                validation.issues.forEach((issue, idx) => {
+                  console.log(`║    ${idx + 1}. [${issue.severity || 'unknown'}] ${issue.category || 'unknown'}: ${issue.message || 'no message'}`);
+                  if (issue.line) console.log(`║       Line ${issue.line}${issue.column ? `:${issue.column}` : ''}`);
+                  if (issue.code_snippet) console.log(`║       Snippet: ${issue.code_snippet}`);
+                });
+              } else {
+                console.log('║    (No issues array available)');
+              }
+              if (validation.dependencies) {
+                console.log('╠══════════════════════════════════════════════════════════════╣');
+                console.log('║  Dependencies:', JSON.stringify(validation.dependencies));
+              }
+              console.log('╚══════════════════════════════════════════════════════════════╝');
+              console.log('');
+
               onProgress({
                 phase: 'validating',
                 validationStatus: 'failed',
@@ -512,6 +556,7 @@ export class AgentOrchestrator {
                 error: `사전 검증 오류: ${validation.summary}`,
               };
             } else if (validation.hasWarnings) {
+              console.log('[Orchestrator] ⚠️ Pre-validation warnings:', validation.issues.map(i => i.message).join('; '));
               onProgress({
                 phase: 'validating',
                 validationStatus: 'warning',
@@ -519,6 +564,7 @@ export class AgentOrchestrator {
                 message: `경고 감지: ${validation.issues.length}건 (실행 계속)`,
               });
             } else {
+              console.log('[Orchestrator] ✅ Pre-validation passed for step', step.stepNumber);
               onProgress({
                 phase: 'validating',
                 validationStatus: 'passed',
@@ -698,6 +744,10 @@ export class AgentOrchestrator {
 
   /**
    * 정의된 변수 감지
+   *
+   * ★ 수정: 인덴트된 코드 (try/except, with, if 블록 내부)에서도 변수 감지
+   * 기존 regex: /^(\w+)\s*=/gm - 라인 시작에서만 매칭
+   * 수정 regex: /^[ \t]*(\w+)\s*=/gm - 인덴트된 할당문도 매칭
    */
   private detectDefinedVariables(notebook: NotebookPanel): string[] {
     const variables = new Set<string>();
@@ -709,13 +759,53 @@ export class AgentOrchestrator {
       const cell = cells.get(i);
       if (cell.type === 'code') {
         const source = cell.sharedModel.getSource();
-        // 간단한 할당 패턴: variable = ...
-        const assignMatches = source.matchAll(/^(\w+)\s*=/gm);
+        // ★ 인덴트 허용하는 할당 패턴: [공백/탭]* variable = ...
+        const assignMatches = source.matchAll(/^[ \t]*(\w+)\s*=/gm);
         for (const match of assignMatches) {
-          // 예약어 제외
-          if (!['if', 'for', 'while', 'def', 'class', 'import', 'from'].includes(match[1])) {
-            variables.add(match[1]);
+          // 예약어 및 비교 연산자 제외
+          // == 는 비교연산자이므로 제외 (예: if x == 1)
+          const varName = match[1];
+          if (!['if', 'for', 'while', 'def', 'class', 'import', 'from', 'elif', 'return', 'yield', 'assert', 'raise', 'del', 'pass', 'break', 'continue', 'global', 'nonlocal', 'lambda', 'with', 'as', 'try', 'except', 'finally'].includes(varName)) {
+            // == 비교 연산자 체크 (matchAll 결과에서 원래 문자열 확인)
+            const fullMatch = match[0];
+            if (!fullMatch.includes('==') && !fullMatch.includes('!=') && !fullMatch.includes('<=') && !fullMatch.includes('>=')) {
+              variables.add(varName);
+            }
           }
+        }
+
+        // ★ 추가: 튜플 언패킹 패턴도 감지 (예: x, y = func())
+        const tupleMatches = source.matchAll(/^[ \t]*(\w+(?:\s*,\s*\w+)+)\s*=/gm);
+        for (const match of tupleMatches) {
+          const tupleVars = match[1].split(',').map(v => v.trim());
+          for (const varName of tupleVars) {
+            if (varName && /^\w+$/.test(varName)) {
+              variables.add(varName);
+            }
+          }
+        }
+
+        // ★ 추가: for 루프 변수 감지 (예: for x in items:, for i, v in enumerate())
+        const forMatches = source.matchAll(/^[ \t]*for\s+(\w+(?:\s*,\s*\w+)*)\s+in\s+/gm);
+        for (const match of forMatches) {
+          const loopVars = match[1].split(',').map(v => v.trim());
+          for (const varName of loopVars) {
+            if (varName && /^\w+$/.test(varName)) {
+              variables.add(varName);
+            }
+          }
+        }
+
+        // ★ 추가: with 문 변수 감지 (예: with open() as f:)
+        const withMatches = source.matchAll(/^[ \t]*with\s+.*\s+as\s+(\w+)/gm);
+        for (const match of withMatches) {
+          variables.add(match[1]);
+        }
+
+        // ★ 추가: except 문 변수 감지 (예: except Exception as e:)
+        const exceptMatches = source.matchAll(/^[ \t]*except\s+.*\s+as\s+(\w+)/gm);
+        for (const match of exceptMatches) {
+          variables.add(match[1]);
         }
       }
     }
@@ -724,22 +814,95 @@ export class AgentOrchestrator {
   }
 
   /**
+   * ★ 단일 코드 문자열에서 정의된 변수 추출
+   * detectDefinedVariables와 동일한 로직을 단일 코드 블록에 적용
+   */
+  private extractVariablesFromCode(code: string): string[] {
+    const variables = new Set<string>();
+    const reservedWords = ['if', 'for', 'while', 'def', 'class', 'import', 'from', 'elif', 'return', 'yield', 'assert', 'raise', 'del', 'pass', 'break', 'continue', 'global', 'nonlocal', 'lambda', 'with', 'as', 'try', 'except', 'finally'];
+
+    // 인덴트 허용하는 할당 패턴
+    const assignMatches = code.matchAll(/^[ \t]*(\w+)\s*=/gm);
+    for (const match of assignMatches) {
+      const varName = match[1];
+      if (!reservedWords.includes(varName)) {
+        const fullMatch = match[0];
+        if (!fullMatch.includes('==') && !fullMatch.includes('!=') && !fullMatch.includes('<=') && !fullMatch.includes('>=')) {
+          variables.add(varName);
+        }
+      }
+    }
+
+    // 튜플 언패킹
+    const tupleMatches = code.matchAll(/^[ \t]*(\w+(?:\s*,\s*\w+)+)\s*=/gm);
+    for (const match of tupleMatches) {
+      const tupleVars = match[1].split(',').map(v => v.trim());
+      for (const varName of tupleVars) {
+        if (varName && /^\w+$/.test(varName)) {
+          variables.add(varName);
+        }
+      }
+    }
+
+    // for 루프 변수
+    const forMatches = code.matchAll(/^[ \t]*for\s+(\w+(?:\s*,\s*\w+)*)\s+in\s+/gm);
+    for (const match of forMatches) {
+      const loopVars = match[1].split(',').map(v => v.trim());
+      for (const varName of loopVars) {
+        if (varName && /^\w+$/.test(varName)) {
+          variables.add(varName);
+        }
+      }
+    }
+
+    // with 문 변수
+    const withMatches = code.matchAll(/^[ \t]*with\s+.*\s+as\s+(\w+)/gm);
+    for (const match of withMatches) {
+      variables.add(match[1]);
+    }
+
+    // except 문 변수
+    const exceptMatches = code.matchAll(/^[ \t]*except\s+.*\s+as\s+(\w+)/gm);
+    for (const match of exceptMatches) {
+      variables.add(match[1]);
+    }
+
+    return Array.from(variables);
+  }
+
+  /**
+   * ★ 실행된 Step의 코드에서 변수를 추적
+   */
+  private trackVariablesFromStep(step: PlanStep): void {
+    for (const toolCall of step.toolCalls) {
+      if (toolCall.tool === 'jupyter_cell') {
+        const params = toolCall.parameters as JupyterCellParams;
+        const vars = this.extractVariablesFromCode(params.code);
+        vars.forEach(v => this.executedStepVariables.add(v));
+        console.log('[Orchestrator] Tracked variables from step', step.stepNumber, ':', vars);
+      }
+    }
+  }
+
+  /**
    * Adaptive Replanning 결과 적용
+   * @param failedCellIndex - 실패한 스텝에서 이미 생성된 셀 인덱스 (재사용 위해)
    */
   private applyReplanChanges(
     plan: ExecutionPlan,
     currentStepIndex: number,
-    replanResponse: AutoAgentReplanResponse
+    replanResponse: AutoAgentReplanResponse,
+    failedCellIndex?: number
   ): ExecutionPlan {
     const { decision, changes } = replanResponse;
     const steps = [...plan.steps];
     const currentStep = steps[currentStepIndex];
 
-    console.log('[Orchestrator] Applying replan changes:', decision);
+    console.log('[Orchestrator] Applying replan changes:', decision, 'failedCellIndex:', failedCellIndex);
 
     switch (decision) {
       case 'refine':
-        // 현재 단계의 코드만 수정
+        // 현재 단계의 코드만 수정 - 기존 셀 재사용
         if (changes.refined_code) {
           const newToolCalls = currentStep.toolCalls.map(tc => {
             if (tc.tool === 'jupyter_cell') {
@@ -748,6 +911,8 @@ export class AgentOrchestrator {
                 parameters: {
                   ...(tc.parameters as JupyterCellParams),
                   code: changes.refined_code!,
+                  // ★ 기존에 생성된 셀이 있으면 그 셀을 수정 (새 셀 생성 방지)
+                  cellIndex: failedCellIndex,
                 },
               };
             }
@@ -761,12 +926,34 @@ export class AgentOrchestrator {
         break;
 
       case 'insert_steps':
-        // 현재 단계 전에 새로운 단계들 삽입
+        // 현재 단계 전에 새로운 단계들 삽입 (예: pip install)
+        // 삽입 후 원래 실패한 단계가 실행될 때 기존 셀 재사용
         if (changes.new_steps && changes.new_steps.length > 0) {
           const newSteps = changes.new_steps.map((newStep, idx) => ({
             ...newStep,
             stepNumber: currentStep.stepNumber + idx * 0.1, // 임시 번호
           }));
+
+          // ★ 원래 실패한 단계에 failedCellIndex 주입 (새 셀 생성 방지)
+          if (failedCellIndex !== undefined) {
+            const updatedCurrentStep = {
+              ...currentStep,
+              toolCalls: currentStep.toolCalls.map(tc => {
+                if (tc.tool === 'jupyter_cell') {
+                  return {
+                    ...tc,
+                    parameters: {
+                      ...(tc.parameters as JupyterCellParams),
+                      cellIndex: failedCellIndex,
+                    },
+                  };
+                }
+                return tc;
+              }),
+            };
+            steps[currentStepIndex] = updatedCurrentStep;
+          }
+
           steps.splice(currentStepIndex, 0, ...newSteps);
           // 단계 번호 재정렬
           steps.forEach((step, idx) => {
@@ -776,12 +963,26 @@ export class AgentOrchestrator {
         break;
 
       case 'replace_step':
-        // 현재 단계를 완전히 교체
+        // 현재 단계를 완전히 교체 - 기존 셀 재사용
         if (changes.replacement) {
-          steps[currentStepIndex] = {
+          // ★ 교체된 단계에도 failedCellIndex 주입
+          const replacementWithCellIndex = {
             ...changes.replacement,
             stepNumber: currentStep.stepNumber,
+            toolCalls: changes.replacement.toolCalls?.map(tc => {
+              if (tc.tool === 'jupyter_cell' && failedCellIndex !== undefined) {
+                return {
+                  ...tc,
+                  parameters: {
+                    ...(tc.parameters as JupyterCellParams),
+                    cellIndex: failedCellIndex,
+                  },
+                };
+              }
+              return tc;
+            }) || [],
           };
+          steps[currentStepIndex] = replacementWithCellIndex;
         }
         break;
 
@@ -789,10 +990,31 @@ export class AgentOrchestrator {
         // 현재 단계부터 끝까지 새로운 계획으로 교체
         if (changes.new_plan && changes.new_plan.length > 0) {
           const existingSteps = steps.slice(0, currentStepIndex);
-          const newPlanSteps = changes.new_plan.map((newStep, idx) => ({
-            ...newStep,
-            stepNumber: currentStepIndex + idx + 1,
-          }));
+          const newPlanSteps = changes.new_plan.map((newStep, idx) => {
+            // ★ 첫 번째 단계에 failedCellIndex 주입 (기존 셀 재사용)
+            if (idx === 0 && failedCellIndex !== undefined) {
+              return {
+                ...newStep,
+                stepNumber: currentStepIndex + idx + 1,
+                toolCalls: newStep.toolCalls?.map(tc => {
+                  if (tc.tool === 'jupyter_cell') {
+                    return {
+                      ...tc,
+                      parameters: {
+                        ...(tc.parameters as JupyterCellParams),
+                        cellIndex: failedCellIndex,
+                      },
+                    };
+                  }
+                  return tc;
+                }) || [],
+              };
+            }
+            return {
+              ...newStep,
+              stepNumber: currentStepIndex + idx + 1,
+            };
+          });
 
           // 새 계획에 final_answer가 없으면 경고 로그
           const hasFinalAnswer = newPlanSteps.some(step =>
@@ -939,6 +1161,7 @@ export class AgentOrchestrator {
    */
   private async applyStepDelay(): Promise<void> {
     const delay = this.getEffectiveDelay();
+    console.log(`[Orchestrator] applyStepDelay called: speed=${this.config.executionSpeed}, delay=${delay}ms`);
 
     // step-by-step 모드: 사용자가 다음 버튼을 누를 때까지 대기
     if (this.config.executionSpeed === 'step-by-step' || delay < 0) {
@@ -998,6 +1221,16 @@ export class AgentOrchestrator {
     try {
       console.log('[Orchestrator] Pre-validation: Checking code quality');
       const notebookContext = this.extractNotebookContext(this.notebook);
+
+      // ★ 이전 Step에서 추적된 변수들을 notebookContext에 병합
+      const allDefinedVariables = new Set([
+        ...notebookContext.definedVariables,
+        ...this.executedStepVariables,
+      ]);
+      notebookContext.definedVariables = Array.from(allDefinedVariables);
+
+      console.log('[Orchestrator] Validation context - tracked vars:', Array.from(this.executedStepVariables));
+
       const validationResult = await this.apiService.validateCode({
         code,
         notebookContext,

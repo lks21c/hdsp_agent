@@ -118,9 +118,18 @@ class CodeValidator:
 
     # 일반적인 데이터 과학 라이브러리들 (미정의로 잡히면 안 되는 것들)
     COMMON_LIBRARY_NAMES = {
-        'pd', 'np', 'plt', 'sns', 'tf', 'torch', 'sk',
+        # 데이터 처리
+        'pd', 'np', 'dd', 'da', 'xr',  # pandas, numpy, dask.dataframe, dask.array, xarray
+        # 시각화
+        'plt', 'sns', 'px', 'go', 'fig', 'ax',  # matplotlib, seaborn, plotly
+        # 머신러닝
+        'tf', 'torch', 'sk', 'nn', 'F', 'optim',  # tensorflow, pytorch, sklearn
+        # 기타 라이브러리
         'scipy', 'cv2', 'PIL', 'Image', 'requests', 'json', 'os', 'sys', 're',
         'datetime', 'time', 'math', 'random', 'collections', 'itertools', 'functools',
+        # 추가 common aliases
+        'tqdm', 'glob', 'Path', 'pickle', 'csv', 'io', 'logging', 'warnings',
+        'gc', 'subprocess', 'shutil', 'pathlib', 'typing', 'copy', 'multiprocessing',
     }
 
     def __init__(self, notebook_context: Optional[Dict[str, Any]] = None):
@@ -131,6 +140,31 @@ class CodeValidator:
         self.notebook_context = notebook_context or {}
         self.known_names = set()
         self._init_known_names()
+
+    def _preprocess_jupyter_code(self, code: str) -> str:
+        """Jupyter magic command 전처리 (AST 파싱 전)
+
+        ! 로 시작하는 셸 명령과 % 로 시작하는 매직 명령을
+        pass 문으로 대체하여 AST 파싱이 가능하도록 함
+        """
+        lines = code.split('\n')
+        processed_lines = []
+
+        for line in lines:
+            stripped = line.lstrip()
+            # ! 셸 명령어 (예: !pip install, !{sys.executable})
+            if stripped.startswith('!'):
+                # 들여쓰기 유지하면서 pass로 대체
+                indent = len(line) - len(stripped)
+                processed_lines.append(' ' * indent + 'pass  # shell command')
+            # % 매직 명령어 (예: %matplotlib inline, %%time)
+            elif stripped.startswith('%'):
+                indent = len(line) - len(stripped)
+                processed_lines.append(' ' * indent + 'pass  # magic command')
+            else:
+                processed_lines.append(line)
+
+        return '\n'.join(processed_lines)
 
     def _init_known_names(self):
         """노트북 컨텍스트에서 알려진 이름들 초기화"""
@@ -149,8 +183,11 @@ class CodeValidator:
         """AST 기반 문법 검사"""
         issues = []
 
+        # Jupyter magic command 전처리
+        processed_code = self._preprocess_jupyter_code(code)
+
         try:
-            ast.parse(code)
+            ast.parse(processed_code)
         except SyntaxError as e:
             issues.append(ValidationIssue(
                 severity=IssueSeverity.ERROR,
@@ -175,8 +212,11 @@ class CodeValidator:
         """코드의 의존성 분석 (import, 정의된 이름, 사용된 이름)"""
         deps = DependencyInfo()
 
+        # Jupyter magic command 전처리
+        processed_code = self._preprocess_jupyter_code(code)
+
         try:
-            tree = ast.parse(code)
+            tree = ast.parse(processed_code)
         except SyntaxError:
             return deps
 
@@ -213,8 +253,26 @@ class CodeValidator:
                                 deps.defined_names.append(elt.id)
             elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
                 deps.defined_names.append(node.target.id)
-            elif isinstance(node, ast.For) and isinstance(node.target, ast.Name):
-                deps.defined_names.append(node.target.id)
+            elif isinstance(node, ast.For):
+                # for 루프 변수 처리 (단일 변수 및 튜플 언패킹)
+                if isinstance(node.target, ast.Name):
+                    deps.defined_names.append(node.target.id)
+                elif isinstance(node.target, ast.Tuple):
+                    for elt in node.target.elts:
+                        if isinstance(elt, ast.Name):
+                            deps.defined_names.append(elt.id)
+            # ★ Exception handler 변수 처리 (except Exception as e:)
+            elif isinstance(node, ast.ExceptHandler) and node.name:
+                deps.defined_names.append(node.name)
+            # ★ List/Set/Dict comprehension 및 Generator expression의 루프 변수 처리
+            elif isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp)):
+                for generator in node.generators:
+                    if isinstance(generator.target, ast.Name):
+                        deps.defined_names.append(generator.target.id)
+                    elif isinstance(generator.target, ast.Tuple):
+                        for elt in generator.target.elts:
+                            if isinstance(elt, ast.Name):
+                                deps.defined_names.append(elt.id)
             elif isinstance(node, (ast.With, ast.AsyncWith)):
                 for item in node.items:
                     if item.optional_vars and isinstance(item.optional_vars, ast.Name):
@@ -240,8 +298,11 @@ class CodeValidator:
         """
         issues = []
 
+        # Jupyter magic command 전처리
+        processed_code = self._preprocess_jupyter_code(code)
+
         try:
-            tree = ast.parse(code)
+            tree = ast.parse(processed_code)
         except SyntaxError:
             return issues
 
@@ -315,10 +376,13 @@ class CodeValidator:
             # pyflakes가 설치되지 않은 경우 스킵
             return issues
 
+        # Jupyter magic command 전처리
+        processed_code = self._preprocess_jupyter_code(code)
+
         # attribute access 패턴 감지를 위해 AST 분석
         attribute_access_names = set()
         try:
-            tree = ast.parse(code)
+            tree = ast.parse(processed_code)
             for node in ast.walk(tree):
                 if isinstance(node, ast.Attribute):
                     current = node.value
@@ -336,7 +400,7 @@ class CodeValidator:
         reporter = pyflakes_reporter.Reporter(warning_stream, error_stream)
 
         try:
-            pyflakes_api.check(code, '<code>', reporter)
+            pyflakes_api.check(processed_code, '<code>', reporter)
         except Exception:
             return issues
 
@@ -360,12 +424,15 @@ class CodeValidator:
 
                     if 'undefined name' in message.lower():
                         category = IssueCategory.UNDEFINED_NAME
-                        # undefined name에서 이름 추출하여 attribute access 패턴 확인
+                        # undefined name에서 이름 추출하여 패턴 확인
                         # 형식: "undefined name 'xxx'"
                         match = re.search(r"'([^']+)'", message)
                         if match:
                             undef_name = match.group(1)
-                            if undef_name in attribute_access_names:
+                            # ★ 노트북 컨텍스트에서 이미 알려진 이름이면 무시
+                            if undef_name in self.known_names:
+                                continue  # 이 이슈는 추가하지 않음
+                            elif undef_name in attribute_access_names:
                                 # 모듈 패턴이면 WARNING (실제 실행에서 구체적인 에러 확인)
                                 severity = IssueSeverity.WARNING
                                 message = f"{message} (모듈 import 필요 가능성)"
