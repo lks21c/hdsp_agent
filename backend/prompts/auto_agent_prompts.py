@@ -154,7 +154,28 @@ ERROR_REFINEMENT_PROMPT = '''다음 코드가 오류로 실패했습니다. 수�
 1. 오류의 근본 원인을 분석하세요
 2. 수정된 코드를 제공하세요
 3. 같은 오류가 반복되지 않도록 하세요
-4. 필요하면 대안적인 접근법을 사용하세요
+
+## ⚠️ 중요 규칙 (절대 위반 금지)
+
+**ModuleNotFoundError/ImportError 처리**:
+- 모듈이 없는 에러의 경우, **절대로 다른 라이브러리로 대체하지 마세요**
+- 예: `import dask` 실패 시 → `import pandas`로 대체 ❌ 금지!
+- 이런 에러는 시스템이 자동으로 패키지 설치로 해결합니다
+- Self-Healing에서는 **코드 문법/로직 수정만** 수행하세요
+
+**수정 가능한 에러 유형**:
+- SyntaxError (문법 오류)
+- TypeError (타입 불일치)
+- ValueError (값 오류)
+- KeyError (잘못된 키)
+- IndexError (인덱스 범위)
+- AttributeError (잘못된 속성)
+- NameError (변수명 오타)
+
+**수정 불가 - 원래 코드 그대로 반환해야 하는 에러 유형**:
+- ModuleNotFoundError
+- ImportError
+- FileNotFoundError (경로 문제는 시스템이 처리)
 
 ## 출력 형식 (JSON)
 
@@ -213,18 +234,111 @@ ADAPTIVE_REPLAN_PROMPT = '''에러가 발생했습니다. 출력과 에러를 �
 {execution_output}
 ```
 
+## ⚠️ 필수 규칙 (MANDATORY RULES - 반드시 따를 것!)
+
+### 🚨🚨🚨 ModuleNotFoundError / ImportError → 무조건 `insert_steps` 사용! 🚨🚨🚨
+
+**⛔ 절대적 금지 사항 (이 규칙은 어떤 경우에도 위반 불가)**:
+- `ModuleNotFoundError`나 `ImportError` 발생 시:
+  - ❌ `refine` 사용 금지!
+  - ❌ `replace_step` 사용 금지!
+  - ❌ `replan_remaining` 사용 금지!
+  - ✅ 오직 `insert_steps`만 허용!
+
+**🔍 간접 의존성 오류 (CRITICAL - 매우 중요!)**:
+- 실행한 코드와 오류 메시지의 패키지가 **달라도** `insert_steps` 사용!
+- 예시 1: `import dask.dataframe as dd` 실행 → `No module named 'pyarrow'` 오류
+  → pyarrow는 dask의 **내부 의존성**
+  → `insert_steps`로 `!pip install pyarrow` 추가!
+  → ❌ "dask 대신 pandas 사용" 같은 접근법 변경 금지!
+- 예시 2: `import tensorflow` 실행 → `No module named 'keras'` 오류
+  → `insert_steps`로 `!pip install keras` 추가!
+- 예시 3: `from transformers import AutoModel` 실행 → `No module named 'accelerate'` 오류
+  → `insert_steps`로 `!pip install accelerate` 추가!
+
+**📋 판단 기준**: 에러 메시지에 `No module named` 또는 `ImportError`가 있으면:
+1. **⚠️ 에러 메시지에서 패키지명 추출 (코드가 아님!)** ⚠️
+2. 무조건 `insert_steps` 선택
+3. `!pip install 에러메시지의_패키지명` 단계 추가
+4. **사용자가 요청한 원래 라이브러리(dask 등)는 그대로 유지!**
+
+### 🚨🚨🚨 패키지명 추출 - 매우 중요!!! 🚨🚨🚨
+
+**반드시 에러 메시지에서 추출하세요! 사용자 코드에서 추출하면 안 됩니다!**
+
+**예시 상황**:
+- 사용자 코드: `import dask.dataframe as dd`
+- 에러 메시지: `ModuleNotFoundError: No module named 'pyarrow'`
+
+| 추출 방법 | 결과 | 판정 |
+|----------|------|------|
+| 사용자 코드에서 추출 | `!pip install dask` | ❌ **완전히 틀림!** |
+| 에러 메시지에서 추출 | `!pip install pyarrow` | ✅ **정답!** |
+
+**왜 중요한가?**:
+- dask는 이미 설치되어 있음 (그래서 import dask가 시작됨)
+- 하지만 dask 내부에서 pyarrow를 로드하려다 실패
+- 따라서 설치해야 할 패키지는 pyarrow!
+
+### 패키지명 추출 규칙
+- "No module named 'xxx'" → `!pip install xxx` (에러 메시지의 xxx!)
+- "No module named 'xxx.yyy'" → `!pip install xxx` (최상위 패키지만)
+- 예외: `sklearn` → `!pip install scikit-learn`
+- 예외: `cv2` → `!pip install opencv-python`
+- 예외: `PIL` → `!pip install pillow`
+
 ## 분석 지침
 
 1. **근본 원인 분석**: 단순 코드 버그인가, 접근법 자체의 문제인가?
 2. **필요한 선행 작업**: 누락된 import, 데이터 변환, 환경 설정이 있는가?
 3. **대안적 접근법**: 다른 라이브러리나 방법을 사용해야 하는가?
 
+## 에러 유형별 해결 전략
+
+### 🚨 ModuleNotFoundError / ImportError → ⚡ `insert_steps` 필수! (예외 없음)
+- **decision**: 반드시 `"insert_steps"` 선택 (다른 옵션 절대 불가!)
+- **changes.new_steps**: `!pip install 에러메시지의_패키지명` 단계 추가
+  - ⚠️ **패키지명은 반드시 에러 메시지에서 추출!**
+  - ⚠️ **사용자 코드의 패키지가 아님!** (예: dask가 아니라 pyarrow)
+- ❌ `refine` 금지 - 코드 수정으로 해결 불가!
+- ❌ `replace_step` 금지 - 다른 라이브러리로 대체 금지!
+- ❌ `replan_remaining` 금지 - 접근법 변경 금지!
+- ⚠️ **간접 의존성**: 실행 코드와 에러의 패키지가 달라도 에러 메시지의 패키지 설치!
+
+### FileNotFoundError
+- 파일 경로 확인 또는 파일 존재 여부 체크 단계 추가
+- 가능하면 `os.path.exists()` 검증 후 적절한 에러 메시지
+
+### NameError (변수 미정의)
+- 이전 단계에서 정의해야 할 변수가 누락된 경우 → 해당 정의 단계 추가
+- 단순 오타면 `refine`으로 수정
+
+### TypeError / ValueError
+- 대부분 `refine`으로 코드 수정
+- 데이터 타입 변환이 필요하면 변환 로직 추가
+
 ## 결정 옵션
 
-1. **refine**: 같은 접근법으로 코드만 수정 (단순 버그)
+1. **refine**: 같은 접근법으로 코드만 수정
+   - ✅ 사용 가능: SyntaxError, TypeError, ValueError, KeyError, IndexError, AttributeError
+   - ❌ 사용 금지: ModuleNotFoundError, ImportError
+
 2. **insert_steps**: 현재 단계 전에 필요한 단계 추가 (선행 작업 필요)
+   - ✅ **ModuleNotFoundError, ImportError 발생 시 유일하게 허용되는 옵션!**
+   - 패키지 설치: `!pip install 패키지명` 단계 추가
+   - 에러 메시지의 패키지명을 정확히 추출하여 설치
+
 3. **replace_step**: 현재 단계를 완전히 다른 접근법으로 교체
-4. **replan_remaining**: 남은 모든 단계를 새로 계획
+   - ❌ ModuleNotFoundError, ImportError 시 사용 금지! (라이브러리 대체 금지)
+
+4. **replan_remaining**: 남은 모든 단계를 새로 계획 (final_answer도 새로 작성!)
+   - ❌ ModuleNotFoundError, ImportError 시 사용 금지! (접근법 변경 금지)
+
+## 중요 규칙
+
+- **replan_remaining 또는 replace_step 선택 시**: 접근법이 변경되면 final_answer 메시지도 반드시 실제 사용된 방법을 반영해야 합니다.
+  - 예: dask → pandas로 변경 시, final_answer는 "pandas를 사용하여..."로 작성
+- **final_answer는 실제 실행된 코드를 정확히 반영**해야 합니다.
 
 ## 출력 형식 (JSON)
 
@@ -241,11 +355,12 @@ ADAPTIVE_REPLAN_PROMPT = '''에러가 발생했습니다. 출력과 에러를 �
     // decision이 "refine"인 경우:
     "refined_code": "수정된 코드",
 
-    // decision이 "insert_steps"인 경우:
+    // decision이 "insert_steps"인 경우 (예: 패키지 설치):
+    // ⚠️ 중요: 에러메시지의 패키지명 사용! (예: pyarrow, 사용자코드의 dask 아님!)
     "new_steps": [
       {{
-        "description": "새 단계 설명",
-        "toolCalls": [{{"tool": "jupyter_cell", "parameters": {{"code": "코드"}}}}]
+        "description": "에러메시지에서 확인된 패키지(예: pyarrow) 설치",
+        "toolCalls": [{{"tool": "jupyter_cell", "parameters": {{"code": "!pip install 에러메시지의_패키지명"}}}}]
       }}
     ],
 
@@ -255,11 +370,15 @@ ADAPTIVE_REPLAN_PROMPT = '''에러가 발생했습니다. 출력과 에러를 �
       "toolCalls": [{{"tool": "jupyter_cell", "parameters": {{"code": "코드"}}}}]
     }},
 
-    // decision이 "replan_remaining"인 경우:
+    // decision이 "replan_remaining"인 경우 (final_answer 필수 포함!):
     "new_plan": [
       {{
         "description": "단계 설명",
         "toolCalls": [{{"tool": "jupyter_cell", "parameters": {{"code": "코드"}}}}]
+      }},
+      {{
+        "description": "최종 결과 제시",
+        "toolCalls": [{{"tool": "final_answer", "parameters": {{"answer": "실제 사용된 방법을 반영한 완료 메시지"}}}}]
       }}
     ]
   }}

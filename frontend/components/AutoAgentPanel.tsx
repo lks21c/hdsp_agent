@@ -169,7 +169,6 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({ status }) => {
       case 'executing': return `실행 중 (${status.currentStep}/${status.totalSteps})`;
       case 'tool_calling': return `${status.tool} 실행 중`;
       case 'validating': return status.message || '코드 검증 중...';
-      case 'self_healing': return `재시도 중 (${status.attempt}/3)`;
       case 'replanning': return `계획 수정 중 (Step ${status.currentStep})`;
       case 'reflecting': return status.message || '결과 분석 중...';
       case 'completed': return '완료';
@@ -178,7 +177,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({ status }) => {
     }
   };
 
-  const isActive = ['planning', 'executing', 'tool_calling', 'self_healing', 'replanning', 'validating', 'reflecting'].includes(status.phase);
+  const isActive = ['planning', 'executing', 'tool_calling', 'replanning', 'validating', 'reflecting'].includes(status.phase);
 
   // Validation/Reflection 상태 아이콘
   const getStatusIcon = () => {
@@ -245,7 +244,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({ status }) => {
           <span className="aa-confidence-value">{status.confidenceScore}%</span>
         </span>
       )}
-      {status.phase === 'self_healing' && status.error && (
+      {status.phase === 'failed' && status.error && (
         <span className="aa-status-error">{status.error.message}</span>
       )}
     </div>

@@ -124,7 +124,7 @@ __webpack_require__.d(exports, {
 /******/ 		// This function allow to reference async chunks
 /******/ 		__webpack_require__.u = (chunkId) => {
 /******/ 			// return url for filenames based on template
-/******/ 			return "" + chunkId + "." + {"vendors-node_modules_emotion_cache_dist_emotion-cache_browser_development_esm_js":"2f78e897ea9ffc4b86fe","vendors-node_modules_babel_runtime_helpers_esm_extends_js-node_modules_emotion_serialize_dist-051195":"0df8755bcdc0dc71c29b","vendors-node_modules_mui_material_utils_createSvgIcon_js":"d6e7bc8b3c1656caf49b","lib_index_js":"687f7fb569c23c3f0e36","frontend_styles_index_js":"200b279686bc3d55c7d4","vendors-node_modules_emotion_react_dist_emotion-react_browser_development_esm_js":"1581ebd0ddb8edd13e8a","node_modules_emotion_use-insertion-effect-with-fallbacks_dist_emotion-use-insertion-effect-wi-3ba6b80":"551c0777885681ee5ac4","vendors-node_modules_emotion_styled_dist_emotion-styled_browser_development_esm_js":"ac8004993f50447adad8","vendors-node_modules_mui_material_index_js":"f6ccf6a456a55e840adc","node_modules_emotion_use-insertion-effect-with-fallbacks_dist_emotion-use-insertion-effect-wi-3ba6b81":"751aa38fd79db4a4cd1e"}[chunkId] + ".js";
+/******/ 			return "" + chunkId + "." + {"vendors-node_modules_emotion_cache_dist_emotion-cache_browser_development_esm_js":"2f78e897ea9ffc4b86fe","vendors-node_modules_babel_runtime_helpers_esm_extends_js-node_modules_emotion_serialize_dist-051195":"0df8755bcdc0dc71c29b","vendors-node_modules_mui_material_utils_createSvgIcon_js":"d6e7bc8b3c1656caf49b","lib_index_js":"586fc6e3fb7285701ed1","frontend_styles_index_js":"200b279686bc3d55c7d4","vendors-node_modules_emotion_react_dist_emotion-react_browser_development_esm_js":"1581ebd0ddb8edd13e8a","node_modules_emotion_use-insertion-effect-with-fallbacks_dist_emotion-use-insertion-effect-wi-3ba6b80":"551c0777885681ee5ac4","vendors-node_modules_emotion_styled_dist_emotion-styled_browser_development_esm_js":"ac8004993f50447adad8","vendors-node_modules_mui_material_index_js":"f6ccf6a456a55e840adc","node_modules_emotion_use-insertion-effect-with-fallbacks_dist_emotion-use-insertion-effect-wi-3ba6b81":"751aa38fd79db4a4cd1e"}[chunkId] + ".js";
 /******/ 		};
 /******/ 	})();
 /******/ 	
@@ -403,15 +403,16 @@ __webpack_require__.d(exports, {
 /******/ 		var installedModules = {};
 /******/ 		var moduleToHandlerMapping = {
 /******/ 			"webpack/sharing/consume/default/react": () => (loadSingletonVersion("default", "react", false, [1,18,2,0])),
-/******/ 			"webpack/sharing/consume/default/@emotion/react/@emotion/react?98f9": () => (loadStrictVersion("default", "@emotion/react", false, [1,11,4,1], () => (Promise.all([__webpack_require__.e("vendors-node_modules_emotion_react_dist_emotion-react_browser_development_esm_js"), __webpack_require__.e("node_modules_emotion_use-insertion-effect-with-fallbacks_dist_emotion-use-insertion-effect-wi-3ba6b81")]).then(() => (() => (__webpack_require__(/*! @emotion/react */ "./node_modules/@emotion/react/dist/emotion-react.browser.development.esm.js"))))))),
 /******/ 			"webpack/sharing/consume/default/@emotion/styled/@emotion/styled": () => (loadStrictVersion("default", "@emotion/styled", false, [1,11,3,0], () => (Promise.all([__webpack_require__.e("vendors-node_modules_emotion_styled_dist_emotion-styled_browser_development_esm_js"), __webpack_require__.e("webpack_sharing_consume_default_emotion_react_emotion_react")]).then(() => (() => (__webpack_require__(/*! @emotion/styled */ "./node_modules/@emotion/styled/dist/emotion-styled.browser.development.esm.js"))))))),
-/******/ 			"webpack/sharing/consume/default/@jupyterlab/application": () => (loadSingletonVersion("default", "@jupyterlab/application", false, [1,4,5,0])),
-/******/ 			"webpack/sharing/consume/default/@jupyterlab/apputils": () => (loadSingletonVersion("default", "@jupyterlab/apputils", false, [1,4,6,0])),
-/******/ 			"webpack/sharing/consume/default/@jupyterlab/notebook": () => (loadSingletonVersion("default", "@jupyterlab/notebook", false, [1,4,5,0])),
-/******/ 			"webpack/sharing/consume/default/@jupyterlab/ui-components": () => (loadSingletonVersion("default", "@jupyterlab/ui-components", false, [1,4,5,0])),
-/******/ 			"webpack/sharing/consume/default/@jupyterlab/launcher": () => (loadSingletonVersion("default", "@jupyterlab/launcher", false, [1,4,5,0])),
-/******/ 			"webpack/sharing/consume/default/@jupyterlab/docmanager": () => (loadSingletonVersion("default", "@jupyterlab/docmanager", false, [1,4,5,0])),
-/******/ 			"webpack/sharing/consume/default/@lumino/widgets": () => (loadSingletonVersion("default", "@lumino/widgets", false, [1,2,3,1,,"alpha",1])),
+/******/ 			"webpack/sharing/consume/default/@emotion/react/@emotion/react?98f9": () => (loadStrictVersion("default", "@emotion/react", false, [1,11,4,1], () => (Promise.all([__webpack_require__.e("vendors-node_modules_emotion_react_dist_emotion-react_browser_development_esm_js"), __webpack_require__.e("node_modules_emotion_use-insertion-effect-with-fallbacks_dist_emotion-use-insertion-effect-wi-3ba6b81")]).then(() => (() => (__webpack_require__(/*! @emotion/react */ "./node_modules/@emotion/react/dist/emotion-react.browser.development.esm.js"))))))),
+/******/ 			"webpack/sharing/consume/default/@jupyterlab/application": () => (loadSingletonVersion("default", "@jupyterlab/application", false, [1,4,4,10])),
+/******/ 			"webpack/sharing/consume/default/@jupyterlab/apputils": () => (loadSingletonVersion("default", "@jupyterlab/apputils", false, [1,4,5,10])),
+/******/ 			"webpack/sharing/consume/default/@jupyterlab/notebook": () => (loadSingletonVersion("default", "@jupyterlab/notebook", false, [1,4,4,10])),
+/******/ 			"webpack/sharing/consume/default/@jupyterlab/ui-components": () => (loadSingletonVersion("default", "@jupyterlab/ui-components", false, [1,4,4,10])),
+/******/ 			"webpack/sharing/consume/default/@jupyterlab/coreutils": () => (loadSingletonVersion("default", "@jupyterlab/coreutils", false, [1,6,4,10])),
+/******/ 			"webpack/sharing/consume/default/@jupyterlab/launcher": () => (loadSingletonVersion("default", "@jupyterlab/launcher", false, [1,4,4,10])),
+/******/ 			"webpack/sharing/consume/default/@jupyterlab/docmanager": () => (loadSingletonVersion("default", "@jupyterlab/docmanager", false, [1,4,4,10])),
+/******/ 			"webpack/sharing/consume/default/@lumino/widgets": () => (loadSingletonVersion("default", "@lumino/widgets", false, [1,2,3,1,,"alpha",0])),
 /******/ 			"webpack/sharing/consume/default/@mui/material/@mui/material": () => (loadStrictVersion("default", "@mui/material", false, [1,5,14,0], () => (Promise.all([__webpack_require__.e("vendors-node_modules_mui_material_index_js"), __webpack_require__.e("webpack_sharing_consume_default_react-dom")]).then(() => (() => (__webpack_require__(/*! @mui/material */ "./node_modules/@mui/material/index.js"))))))),
 /******/ 			"webpack/sharing/consume/default/@emotion/react/@emotion/react?6a66": () => (loadStrictVersion("default", "@emotion/react", false, [1,11,0,0,,"rc",0], () => (Promise.all([__webpack_require__.e("vendors-node_modules_emotion_cache_dist_emotion-cache_browser_development_esm_js"), __webpack_require__.e("vendors-node_modules_emotion_react_dist_emotion-react_browser_development_esm_js")]).then(() => (() => (__webpack_require__(/*! @emotion/react */ "./node_modules/@emotion/react/dist/emotion-react.browser.development.esm.js"))))))),
 /******/ 			"webpack/sharing/consume/default/react-dom": () => (loadSingletonVersion("default", "react-dom", false, [1,18,2,0]))
@@ -422,14 +423,15 @@ __webpack_require__.d(exports, {
 /******/ 				"webpack/sharing/consume/default/react"
 /******/ 			],
 /******/ 			"webpack_sharing_consume_default_emotion_react_emotion_react-webpack_sharing_consume_default_e-2f734f": [
-/******/ 				"webpack/sharing/consume/default/@emotion/react/@emotion/react?98f9",
-/******/ 				"webpack/sharing/consume/default/@emotion/styled/@emotion/styled"
+/******/ 				"webpack/sharing/consume/default/@emotion/styled/@emotion/styled",
+/******/ 				"webpack/sharing/consume/default/@emotion/react/@emotion/react?98f9"
 /******/ 			],
 /******/ 			"lib_index_js": [
 /******/ 				"webpack/sharing/consume/default/@jupyterlab/application",
 /******/ 				"webpack/sharing/consume/default/@jupyterlab/apputils",
 /******/ 				"webpack/sharing/consume/default/@jupyterlab/notebook",
 /******/ 				"webpack/sharing/consume/default/@jupyterlab/ui-components",
+/******/ 				"webpack/sharing/consume/default/@jupyterlab/coreutils",
 /******/ 				"webpack/sharing/consume/default/@jupyterlab/launcher",
 /******/ 				"webpack/sharing/consume/default/@jupyterlab/docmanager",
 /******/ 				"webpack/sharing/consume/default/@lumino/widgets",
@@ -580,4 +582,4 @@ __webpack_require__.d(exports, {
 /******/ 	
 /******/ })()
 ;
-//# sourceMappingURL=remoteEntry.ff0dd36b9456c79edd28.js.map
+//# sourceMappingURL=remoteEntry.6d0a16022d9623572145.js.map

@@ -99,8 +99,7 @@ export type AgentPhase =
   | 'executing'
   | 'tool_calling'
   | 'validating'      // 코드 사전 검증 중
-  | 'self_healing'
-  | 'replanning'
+  | 'replanning'      // Adaptive Replanning (Fast Fail 후 계획 수정)
   | 'reflecting'      // Reflection 분석 중
   | 'completed'
   | 'failed';
@@ -122,7 +121,7 @@ export interface AgentStatus {
 }
 
 export interface ExecutionError {
-  type: 'runtime' | 'timeout' | 'safety' | 'validation';
+  type: 'runtime' | 'timeout' | 'safety' | 'validation' | 'environment';
   message: string;
   traceback?: string[];
   recoverable: boolean;

@@ -6,6 +6,7 @@ Pyflakes/AST 기반 코드 품질 검증 서비스
 """
 
 import ast
+import re
 import sys
 from dataclasses import dataclass, field
 from enum import Enum
@@ -231,7 +232,12 @@ class CodeValidator:
         return deps
 
     def check_undefined_names(self, code: str) -> List[ValidationIssue]:
-        """미정의 변수/함수 감지"""
+        """미정의 변수/함수 감지
+
+        모듈 attribute access 패턴(xxx.yyy)에서 xxx가 undefined인 경우:
+        - WARNING으로 처리 (import 가능성 있음)
+        - 실제 실행에서 ModuleNotFoundError로 구체적인 에러를 받을 수 있음
+        """
         issues = []
 
         try:
@@ -244,6 +250,17 @@ class CodeValidator:
         # 코드에서 정의된 이름들 수집
         local_defined = set(deps.defined_names)
 
+        # attribute access의 대상이 되는 이름들 수집 (xxx.yyy 패턴의 xxx)
+        attribute_access_names = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute):
+                # xxx.yyy 형태에서 xxx 추출
+                current = node.value
+                while isinstance(current, ast.Attribute):
+                    current = current.value
+                if isinstance(current, ast.Name):
+                    attribute_access_names.add(current.id)
+
         # 사용된 이름 중 정의되지 않은 것 찾기
         for node in ast.walk(tree):
             if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
@@ -251,13 +268,25 @@ class CodeValidator:
                 if (name not in local_defined and
                     name not in self.known_names and
                     not name.startswith('_')):
-                    issues.append(ValidationIssue(
-                        severity=IssueSeverity.ERROR,
-                        category=IssueCategory.UNDEFINED_NAME,
-                        message=f"'{name}'이(가) 정의되지 않았습니다",
-                        line=node.lineno,
-                        column=node.col_offset
-                    ))
+
+                    # 모듈 attribute access 패턴인지 확인 (xxx.yyy의 xxx)
+                    # 이 경우 import 가능성이 있으므로 WARNING으로 처리
+                    if name in attribute_access_names:
+                        issues.append(ValidationIssue(
+                            severity=IssueSeverity.WARNING,
+                            category=IssueCategory.UNDEFINED_NAME,
+                            message=f"'{name}'이(가) 정의되지 않았습니다 (모듈 import 필요 가능성)",
+                            line=node.lineno,
+                            column=node.col_offset
+                        ))
+                    else:
+                        issues.append(ValidationIssue(
+                            severity=IssueSeverity.ERROR,
+                            category=IssueCategory.UNDEFINED_NAME,
+                            message=f"'{name}'이(가) 정의되지 않았습니다",
+                            line=node.lineno,
+                            column=node.col_offset
+                        ))
                     deps.undefined_names.append(name)
 
         # 중복 이슈 제거 (같은 이름에 대해 여러 번 보고하지 않음)
@@ -272,7 +301,11 @@ class CodeValidator:
         return unique_issues
 
     def check_with_pyflakes(self, code: str) -> List[ValidationIssue]:
-        """Pyflakes 정적 분석 (사용 가능한 경우)"""
+        """Pyflakes 정적 분석 (사용 가능한 경우)
+
+        undefined name 처리 시 모듈 attribute access 패턴을 확인하여
+        WARNING으로 처리 (실제 실행에서 구체적인 에러를 받을 수 있도록)
+        """
         issues = []
 
         try:
@@ -281,6 +314,20 @@ class CodeValidator:
         except ImportError:
             # pyflakes가 설치되지 않은 경우 스킵
             return issues
+
+        # attribute access 패턴 감지를 위해 AST 분석
+        attribute_access_names = set()
+        try:
+            tree = ast.parse(code)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Attribute):
+                    current = node.value
+                    while isinstance(current, ast.Attribute):
+                        current = current.value
+                    if isinstance(current, ast.Name):
+                        attribute_access_names.add(current.id)
+        except SyntaxError:
+            pass
 
         # Pyflakes 출력 캡처
         warning_stream = StringIO()
@@ -313,7 +360,19 @@ class CodeValidator:
 
                     if 'undefined name' in message.lower():
                         category = IssueCategory.UNDEFINED_NAME
-                        severity = IssueSeverity.ERROR
+                        # undefined name에서 이름 추출하여 attribute access 패턴 확인
+                        # 형식: "undefined name 'xxx'"
+                        match = re.search(r"'([^']+)'", message)
+                        if match:
+                            undef_name = match.group(1)
+                            if undef_name in attribute_access_names:
+                                # 모듈 패턴이면 WARNING (실제 실행에서 구체적인 에러 확인)
+                                severity = IssueSeverity.WARNING
+                                message = f"{message} (모듈 import 필요 가능성)"
+                            else:
+                                severity = IssueSeverity.ERROR
+                        else:
+                            severity = IssueSeverity.ERROR
                     elif 'imported but unused' in message.lower():
                         category = IssueCategory.UNUSED_IMPORT
                         severity = IssueSeverity.WARNING

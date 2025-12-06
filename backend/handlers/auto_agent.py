@@ -67,6 +67,22 @@ class AutoAgentPlanHandler(BaseAgentHandler):
                 return self.write_error_json(500, error_msg)
 
             print(f"[AutoAgent] Success! Steps: {plan_data['plan'].get('totalSteps', 'N/A')}", flush=True)
+            # DEBUG: 전체 plan 구조 출력
+            import json
+            print("[AutoAgent] DEBUG Full plan structure:", flush=True)
+            print(json.dumps(plan_data['plan'], indent=2, ensure_ascii=False), flush=True)
+
+            # 각 step의 toolCalls 검증
+            for step in plan_data['plan'].get('steps', []):
+                print(f"[AutoAgent] DEBUG Step {step.get('stepNumber')}: {step.get('description', 'N/A')[:50]}", flush=True)
+                for tc in step.get('toolCalls', []):
+                    tool = tc.get('tool')
+                    params = tc.get('parameters', {})
+                    code = params.get('code', '')
+                    print(f"[AutoAgent] DEBUG   Tool: {tool}, code length: {len(code) if code else 0}", flush=True)
+                    if tool == 'jupyter_cell' and not code:
+                        print(f"[AutoAgent] WARNING: jupyter_cell tool has empty code!", flush=True)
+
             self.write_json({
                 'plan': plan_data['plan'],
                 'reasoning': plan_data.get('reasoning', '')

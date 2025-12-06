@@ -236,6 +236,15 @@ export class AgentOrchestrator {
               replanResponse
             );
 
+            // ★ 업데이트된 계획을 UI에 반영 (plan item list에 새 스텝 표시)
+            onProgress({
+              phase: 'planned',
+              plan: currentPlan,
+              message: `계획 수정됨 (${this.getReplanDecisionLabel(replanResponse.decision)})`,
+              currentStep: step.stepNumber,
+              totalSteps: currentPlan.totalSteps,
+            });
+
             replanAttempts++;
             // stepIndex는 그대로 유지 (수정된 현재 단계를 다시 실행)
             continue;
@@ -376,55 +385,42 @@ export class AgentOrchestrator {
   }
 
   /**
-   * 환경/의존성 관련 에러인지 판단 (Adaptive Replanning으로 바로 보내야 하는 에러)
-   */
-  private isEnvironmentError(errorMessage: string, traceback?: string[]): boolean {
-    const envErrorPatterns = [
-      /ModuleNotFoundError/i,
-      /ImportError/i,
-      /No module named/i,
-      /cannot import name/i,
-      /FileNotFoundError/i,
-      /PermissionError/i,
-      /OSError/i,
-      /ConnectionError/i,
-      /pip install/i,
-      /conda install/i,
-    ];
-
-    const fullText = [errorMessage, ...(traceback || [])].join('\n');
-    return envErrorPatterns.some(pattern => pattern.test(fullText));
-  }
-
-  /**
    * 출력 결과가 부정적인지 분석 (에러는 아니지만 실패 의미를 가진 출력)
-   * - FileNotFoundError 메시지 패턴
-   * - NameError (미정의 변수)
-   * - 명시적 실패/오류 메시지
+   * Fast Fail: 모든 에러 → Adaptive Replanning으로 처리
    */
-  private analyzeOutputForFailure(output: string): { isNegative: boolean; reason?: string } {
+  private analyzeOutputForFailure(output: string): {
+    isNegative: boolean;
+    reason?: string;
+  } {
     if (!output) {
       return { isNegative: false };
     }
 
     const negativePatterns = [
-      // 파일/경로 관련 오류 메시지
+      // 환경/의존성 에러
+      { pattern: /ModuleNotFoundError/i, reason: '모듈을 찾을 수 없음 (패키지 설치 필요)' },
+      { pattern: /ImportError/i, reason: 'import 에러 (패키지 설치 필요)' },
+      { pattern: /No module named/i, reason: '모듈이 없음 (패키지 설치 필요)' },
+      { pattern: /cannot import name/i, reason: 'import 실패' },
+      // 파일/경로 관련 오류
       { pattern: /FileNotFoundError|No such file or directory|파일을 찾을 수 없습니다/i, reason: '파일을 찾을 수 없음' },
+      // 런타임 에러
       { pattern: /NameError:\s*name\s*'([^']+)'\s*is not defined/i, reason: '변수가 정의되지 않음' },
-      { pattern: /KeyError:\s*['"]?([^'"]+)['"]?/i, reason: '키를 찾을 수 없음' },
+      { pattern: /KeyError/i, reason: '키를 찾을 수 없음' },
       { pattern: /IndexError/i, reason: '인덱스 범위 초과' },
       { pattern: /TypeError/i, reason: '타입 오류' },
       { pattern: /ValueError/i, reason: '값 오류' },
       { pattern: /AttributeError/i, reason: '속성 오류' },
       // 명시적 실패 메시지
-      { pattern: /오류:|Error:|실패|failed|Fail/i, reason: '명시적 오류 메시지 감지' },
+      { pattern: /실패|failed|Fail/i, reason: '명시적 오류 메시지 감지' },
       { pattern: /not found|cannot find|없습니다|찾을 수 없/i, reason: '리소스를 찾을 수 없음' },
-      // 빈 결과 경고
+      // 빈 결과
       { pattern: /empty|Empty DataFrame|0\s+rows/i, reason: '결과가 비어있음' },
     ];
 
     for (const { pattern, reason } of negativePatterns) {
       if (pattern.test(output)) {
+        console.log('[Orchestrator] Negative output detected:', reason);
         return { isNegative: true, reason };
       }
     }
@@ -433,8 +429,8 @@ export class AgentOrchestrator {
   }
 
   /**
-   * Self-Healing: 단계별 재시도 로직
-   * 환경/의존성 에러는 재시도하지 않고 바로 Adaptive Replanning으로 보냄
+   * 단계 실행 (Fast Fail 방식)
+   * 에러 발생 시 재시도 없이 바로 실패 반환 → Adaptive Replanning으로 처리
    * + Pre-Validation: 실행 전 Pyflakes/AST 검증
    */
   private async executeStepWithRetry(
@@ -442,302 +438,202 @@ export class AgentOrchestrator {
     notebook: NotebookPanel,
     onProgress: (status: AgentStatus) => void
   ): Promise<StepResult> {
-    console.log('[Orchestrator] executeStepWithRetry called for step:', step.stepNumber);
+    console.log('[Orchestrator] executeStep called for step:', step.stepNumber);
     console.log('[Orchestrator] Step toolCalls:', JSON.stringify(step.toolCalls, null, 2));
-    let lastError: ExecutionError | null = null;
-    let currentStep = { ...step };
 
-    for (let attempt = 0; attempt < this.config.maxRetriesPerStep; attempt++) {
-      console.log('[Orchestrator] Attempt', attempt + 1, 'of', this.config.maxRetriesPerStep);
-      const toolResults: ToolResult[] = [];
+    const toolResults: ToolResult[] = [];
 
-      try {
-        // Tool Calling 실행
-        console.log('[Orchestrator] Processing', currentStep.toolCalls.length, 'tool calls');
-        for (const toolCall of currentStep.toolCalls) {
-          console.log('[Orchestrator] Processing toolCall:', toolCall.tool);
-          // 중단 요청 확인
-          if (this.abortController?.signal.aborted) {
+    try {
+      // Tool Calling 실행
+      console.log('[Orchestrator] Processing', step.toolCalls.length, 'tool calls');
+      for (const toolCall of step.toolCalls) {
+        console.log('[Orchestrator] Processing toolCall:', toolCall.tool);
+
+        // 중단 요청 확인
+        if (this.abortController?.signal.aborted) {
+          return {
+            success: false,
+            stepNumber: step.stepNumber,
+            toolResults,
+            attempts: 1,
+            error: '사용자에 의해 취소됨',
+          };
+        }
+
+        onProgress({
+          phase: 'tool_calling',
+          tool: toolCall.tool,
+          attempt: 1,
+          currentStep: step.stepNumber,
+        });
+
+        // jupyter_cell인 경우: 안전성 검사 + Pre-Validation
+        if (toolCall.tool === 'jupyter_cell') {
+          const params = toolCall.parameters as JupyterCellParams;
+
+          // 1. 안전성 검사
+          const safetyResult = this.safetyChecker.checkCodeSafety(params.code);
+          if (!safetyResult.safe) {
             return {
               success: false,
               stepNumber: step.stepNumber,
               toolResults,
-              attempts: attempt + 1,
-              error: '사용자에 의해 취소됨',
+              attempts: 1,
+              error: `안전성 검사 실패: ${safetyResult.blockedPatterns?.join(', ')}`,
             };
           }
 
+          // 2. Pre-Validation (Pyflakes/AST 기반)
           onProgress({
-            phase: 'tool_calling',
-            tool: toolCall.tool,
-            attempt: attempt + 1,
+            phase: 'validating',
+            validationStatus: 'checking',
             currentStep: step.stepNumber,
+            message: '코드 품질 검증 중...',
           });
 
-          // jupyter_cell인 경우: 안전성 검사 + Pre-Validation
-          if (toolCall.tool === 'jupyter_cell') {
-            const params = toolCall.parameters as JupyterCellParams;
+          const validation = await this.validateCodeBeforeExecution(params.code);
 
-            // 1. 기존 안전성 검사
-            const safetyResult = this.safetyChecker.checkCodeSafety(params.code);
-            if (!safetyResult.safe) {
+          if (validation) {
+            if (validation.hasErrors) {
+              console.log('[Orchestrator] Pre-validation detected errors:', validation.summary);
+              onProgress({
+                phase: 'validating',
+                validationStatus: 'failed',
+                currentStep: step.stepNumber,
+                message: `검증 실패: ${validation.summary}`,
+              });
+
+              // Fast Fail: 검증 오류 → 바로 Adaptive Replanning
               return {
                 success: false,
                 stepNumber: step.stepNumber,
                 toolResults,
-                attempts: attempt + 1,
-                error: `안전성 검사 실패: ${safetyResult.blockedPatterns?.join(', ')}`,
+                attempts: 1,
+                error: `사전 검증 오류: ${validation.summary}`,
               };
+            } else if (validation.hasWarnings) {
+              onProgress({
+                phase: 'validating',
+                validationStatus: 'warning',
+                currentStep: step.stepNumber,
+                message: `경고 감지: ${validation.issues.length}건 (실행 계속)`,
+              });
+            } else {
+              onProgress({
+                phase: 'validating',
+                validationStatus: 'passed',
+                currentStep: step.stepNumber,
+                message: '코드 검증 통과',
+              });
             }
-
-            // 2. Pre-Validation (Pyflakes/AST 기반)
-            onProgress({
-              phase: 'validating',
-              validationStatus: 'checking',
-              currentStep: step.stepNumber,
-              message: '코드 품질 검증 중...',
-            });
-
-            const validation = await this.validateCodeBeforeExecution(params.code);
-
-            if (validation) {
-              if (validation.hasErrors) {
-                console.log('[Orchestrator] Pre-validation detected errors:', validation.summary);
-
-                onProgress({
-                  phase: 'validating',
-                  validationStatus: 'failed',
-                  currentStep: step.stepNumber,
-                  message: `검증 실패: ${validation.summary}`,
-                });
-
-                // 검증 오류가 있으면 Self-Healing으로 수정 시도
-                lastError = {
-                  type: 'validation',
-                  message: `사전 검증 오류: ${validation.summary}`,
-                  traceback: validation.issues.map(i => `Line ${i.line || '?'}: [${i.category}] ${i.message}`),
-                  recoverable: true,
-                };
-
-                // 다음 재시도에서 LLM에게 수정 요청
-                break;
-              } else if (validation.hasWarnings) {
-                onProgress({
-                  phase: 'validating',
-                  validationStatus: 'warning',
-                  currentStep: step.stepNumber,
-                  message: `경고 감지: ${validation.issues.length}건 (실행 계속)`,
-                });
-              } else {
-                onProgress({
-                  phase: 'validating',
-                  validationStatus: 'passed',
-                  currentStep: step.stepNumber,
-                  message: '코드 검증 통과',
-                });
-              }
-            }
-          }
-
-          // 타임아웃과 함께 실행
-          console.log('[Orchestrator] Calling toolExecutor.executeTool for:', toolCall.tool);
-          console.log('[Orchestrator] toolCall parameters:', JSON.stringify(toolCall.parameters));
-          const result = await this.executeWithTimeout(
-            () => this.toolExecutor.executeTool(toolCall),
-            this.config.executionTimeout
-          );
-          console.log('[Orchestrator] Tool execution result:', JSON.stringify(result));
-
-          toolResults.push(result);
-
-          // jupyter_cell 실행 실패 시
-          if (!result.success && toolCall.tool === 'jupyter_cell') {
-            const errorMsg = result.error || '알 수 없는 오류';
-            const isEnvError = this.isEnvironmentError(errorMsg, result.traceback);
-
-            lastError = {
-              type: isEnvError ? 'validation' : 'runtime', // 환경 에러는 validation 타입으로 표시
-              message: errorMsg,
-              traceback: result.traceback || [],
-              recoverable: !isEnvError, // 환경 에러는 Self-Healing으로 복구 불가
-            };
-
-            // 환경/의존성 에러는 Self-Healing 재시도 없이 바로 실패 반환
-            // → 메인 루프에서 Adaptive Replanning 호출
-            if (isEnvError) {
-              console.log('[Orchestrator] Environment error detected, skipping to Adaptive Replanning');
-              return {
-                success: false,
-                stepNumber: step.stepNumber,
-                toolResults,
-                attempts: attempt + 1,
-                error: errorMsg,
-              };
-            }
-
-            break;
-          }
-
-          // final_answer 도구 감지
-          if (toolCall.tool === 'final_answer') {
-            return {
-              success: true,
-              stepNumber: step.stepNumber,
-              toolResults,
-              attempts: attempt + 1,
-              isFinalAnswer: true,
-              finalAnswer: result.output as string,
-            };
           }
         }
 
-        // 모든 도구 실행 성공
-        if (toolResults.every((r) => r.success)) {
-          // ★ 출력 결과 분석: 실행은 성공했지만 출력이 부정적인 경우 실패로 처리
-          const allOutputs = toolResults
-            .map((r) => String(r.output || ''))
-            .join('\n');
-          const outputAnalysis = this.analyzeOutputForFailure(allOutputs);
+        // 타임아웃과 함께 실행
+        console.log('[Orchestrator] Calling toolExecutor.executeTool for:', toolCall.tool);
+        const result = await this.executeWithTimeout(
+          () => this.toolExecutor.executeTool(toolCall),
+          this.config.executionTimeout
+        );
+        console.log('[Orchestrator] Tool execution result:', JSON.stringify(result));
 
-          if (outputAnalysis.isNegative) {
-            console.log('[AgentOrchestrator] Negative output detected:', outputAnalysis.reason);
+        toolResults.push(result);
 
-            // 부정적 출력을 에러로 변환하여 Self-Healing 트리거
-            lastError = {
-              type: 'runtime',
-              message: `출력 결과에서 문제 감지: ${outputAnalysis.reason}`,
-              recoverable: true,
-            };
+        // jupyter_cell 실행 실패 시 → Fast Fail
+        if (!result.success && toolCall.tool === 'jupyter_cell') {
+          const errorMsg = result.error || '알 수 없는 오류';
+          console.log('[Orchestrator] jupyter_cell execution failed:', errorMsg.substring(0, 100));
 
-            // Self-Healing 시도를 위해 continue (아래 self_healing 로직으로 진행)
-            if (attempt < this.config.maxRetriesPerStep - 1) {
-              onProgress({
-                phase: 'self_healing',
-                attempt: attempt + 1,
-                error: lastError,
-                currentStep: step.stepNumber,
-                message: `출력 분석: ${outputAnalysis.reason}`,
-              });
+          return {
+            success: false,
+            stepNumber: step.stepNumber,
+            toolResults,
+            attempts: 1,
+            error: errorMsg,
+          };
+        }
 
-              // 마지막으로 실행된 코드 및 셀 인덱스 추출
-              const lastJupyterCell = currentStep.toolCalls.find(
-                (tc) => tc.tool === 'jupyter_cell'
-              );
-              const previousCode = lastJupyterCell
-                ? (lastJupyterCell.parameters as JupyterCellParams).code
-                : undefined;
-              const failedCellIndex = toolResults.find(r => r.cellIndex !== undefined)?.cellIndex;
-
-              // LLM에게 수정된 코드 요청 (출력 문제 포함)
-              const refineResponse = await this.apiService.refineStepCode({
-                step: currentStep,
-                error: lastError,
-                attempt: attempt + 1,
-                previousCode,
-              });
-
-              // 기존 셀 인라인 수정
-              if (failedCellIndex !== undefined) {
-                currentStep.toolCalls = refineResponse.toolCalls.map(tc => {
-                  if (tc.tool === 'jupyter_cell') {
-                    return {
-                      ...tc,
-                      parameters: {
-                        ...(tc.parameters as JupyterCellParams),
-                        cellIndex: failedCellIndex,
-                      },
-                    };
-                  }
-                  return tc;
-                });
-              } else {
-                currentStep.toolCalls = refineResponse.toolCalls;
-              }
-              continue; // 다음 시도로 진행
-            }
-          }
-
+        // final_answer 도구 감지
+        if (toolCall.tool === 'final_answer') {
           return {
             success: true,
             stepNumber: step.stepNumber,
             toolResults,
-            attempts: attempt + 1,
+            attempts: 1,
+            isFinalAnswer: true,
+            finalAnswer: result.output as string,
+          };
+        }
+      }
+
+      // 모든 도구 실행 성공
+      if (toolResults.length > 0 && toolResults.every((r) => r.success)) {
+        // 출력 결과 분석: 실행은 성공했지만 출력이 부정적인 경우
+        const allOutputs = toolResults
+          .map((r) => {
+            const output = r.output;
+            if (!output) return '';
+            if (typeof output === 'string') return output;
+            if (typeof output === 'object') {
+              // Jupyter output format: {text/plain: ..., text/html: ...}
+              if ('text/plain' in output) return (output as Record<string, string>)['text/plain'];
+              try {
+                return JSON.stringify(output);
+              } catch {
+                return '[object]';
+              }
+            }
+            return String(output);
+          })
+          .join('\n');
+        const outputAnalysis = this.analyzeOutputForFailure(allOutputs);
+
+        if (outputAnalysis.isNegative) {
+          console.log('[Orchestrator] Negative output detected:', outputAnalysis.reason);
+
+          // Fast Fail: 부정적 출력 → 바로 Adaptive Replanning
+          return {
+            success: false,
+            stepNumber: step.stepNumber,
+            toolResults,
+            attempts: 1,
+            error: outputAnalysis.reason || '출력 결과에서 문제 감지',
           };
         }
 
-        // 일반 런타임 에러 발생 시 LLM에게 수정 요청 (Self-Healing)
-        if (lastError && lastError.recoverable && attempt < this.config.maxRetriesPerStep - 1) {
-          onProgress({
-            phase: 'self_healing',
-            attempt: attempt + 1,
-            error: lastError,
-            currentStep: step.stepNumber,
-          });
-
-          // 마지막으로 실행된 코드 추출 및 셀 인덱스 가져오기
-          const lastJupyterCell = currentStep.toolCalls.find(
-            (tc) => tc.tool === 'jupyter_cell'
-          );
-          const previousCode = lastJupyterCell
-            ? (lastJupyterCell.parameters as JupyterCellParams).code
-            : undefined;
-
-          // 에러가 발생한 셀의 인덱스 가져오기 (기존 셀 수정을 위해)
-          const failedCellIndex = toolResults.find(r => r.cellIndex !== undefined)?.cellIndex;
-
-          // LLM에게 수정된 코드 요청
-          const refineResponse = await this.apiService.refineStepCode({
-            step: currentStep,
-            error: lastError,
-            attempt: attempt + 1,
-            previousCode,
-          });
-
-          // ★ 핵심 수정: 새 셀 생성 대신 기존 에러 셀을 직접 수정하도록 cellIndex 지정
-          if (failedCellIndex !== undefined) {
-            currentStep.toolCalls = refineResponse.toolCalls.map(tc => {
-              if (tc.tool === 'jupyter_cell') {
-                return {
-                  ...tc,
-                  parameters: {
-                    ...(tc.parameters as JupyterCellParams),
-                    cellIndex: failedCellIndex, // 기존 셀 인덱스 지정하여 인라인 수정
-                  },
-                };
-              }
-              return tc;
-            });
-          } else {
-            currentStep.toolCalls = refineResponse.toolCalls;
-          }
-        }
-      } catch (error: any) {
-        const isTimeout = error.message?.includes('timeout');
-        lastError = {
-          type: isTimeout ? 'timeout' : 'runtime',
-          message: error.message,
-          recoverable: !isTimeout,
+        return {
+          success: true,
+          stepNumber: step.stepNumber,
+          toolResults,
+          attempts: 1,
         };
-
-        if (isTimeout) {
-          // 타임아웃 시 커널 인터럽트
-          await this.toolExecutor.interruptKernel();
-        }
       }
 
-      // Exponential backoff
-      if (attempt < this.config.maxRetriesPerStep - 1) {
-        await this.delay(1000 * Math.pow(2, attempt));
+      // 도구 실행 결과가 없는 경우
+      return {
+        success: false,
+        stepNumber: step.stepNumber,
+        toolResults,
+        attempts: 1,
+        error: '도구 실행 결과 없음',
+      };
+
+    } catch (error: any) {
+      const isTimeout = error.message?.includes('timeout');
+
+      if (isTimeout) {
+        // 타임아웃 시 커널 인터럽트
+        await this.toolExecutor.interruptKernel();
       }
+
+      return {
+        success: false,
+        stepNumber: step.stepNumber,
+        toolResults,
+        attempts: 1,
+        error: error.message || '알 수 없는 오류',
+      };
     }
-
-    return {
-      success: false,
-      stepNumber: step.stepNumber,
-      toolResults: [],
-      attempts: this.config.maxRetriesPerStep,
-      error: lastError?.message || '알 수 없는 오류',
-    };
   }
 
   /**
@@ -897,6 +793,15 @@ export class AgentOrchestrator {
             ...newStep,
             stepNumber: currentStepIndex + idx + 1,
           }));
+
+          // 새 계획에 final_answer가 없으면 경고 로그
+          const hasFinalAnswer = newPlanSteps.some(step =>
+            step.toolCalls?.some((tc: ToolCall) => tc.tool === 'final_answer')
+          );
+          if (!hasFinalAnswer) {
+            console.warn('[Orchestrator] replan_remaining: new_plan does not include final_answer');
+          }
+
           steps.length = 0;
           steps.push(...existingSteps, ...newPlanSteps);
         }
@@ -1147,7 +1052,20 @@ export class AgentOrchestrator {
       const checkpoint = enhancedStep.checkpoint;
 
       // ★ 프론트엔드에서 먼저 출력 분석 수행
-      const outputString = String(jupyterResult.output || '');
+      const outputString = (() => {
+        const output = jupyterResult.output;
+        if (!output) return '';
+        if (typeof output === 'string') return output;
+        if (typeof output === 'object') {
+          if ('text/plain' in output) return (output as Record<string, string>)['text/plain'];
+          try {
+            return JSON.stringify(output);
+          } catch {
+            return '[object]';
+          }
+        }
+        return String(output);
+      })();
       const localOutputAnalysis = this.analyzeOutputForFailure(outputString);
 
       // 부정적 출력이 감지되면 에러 메시지에 추가
@@ -1307,6 +1225,24 @@ export class AgentOrchestrator {
 
   getReflectionEnabled(): boolean {
     return this.enableReflection;
+  }
+
+  /**
+   * Replan decision 레이블 반환
+   */
+  private getReplanDecisionLabel(decision: ReplanDecision): string {
+    switch (decision) {
+      case 'refine':
+        return '코드 수정';
+      case 'insert_steps':
+        return '단계 추가';
+      case 'replace_step':
+        return '단계 교체';
+      case 'replan_remaining':
+        return '남은 계획 재수립';
+      default:
+        return decision;
+    }
   }
 }
 
