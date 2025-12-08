@@ -430,9 +430,8 @@ export class AgentOrchestrator {
       { pattern: /AttributeError/i, reason: '속성 오류' },
       // 명시적 실패 메시지
       { pattern: /실패|failed|Fail/i, reason: '명시적 오류 메시지 감지' },
-      { pattern: /not found|cannot find|없습니다|찾을 수 없/i, reason: '리소스를 찾을 수 없음' },
-      // 빈 결과
-      { pattern: /empty|Empty DataFrame|0\s+rows/i, reason: '결과가 비어있음' },
+      { pattern: /not found|cannot find|찾을 수 없/i, reason: '리소스를 찾을 수 없음' },
+      // Note: Empty DataFrame, 0 rows 등은 정상적인 분석 결과일 수 있으므로 부정적 패턴에서 제외
     ];
 
     for (const { pattern, reason } of negativePatterns) {
@@ -620,16 +619,24 @@ export class AgentOrchestrator {
             const output = r.output;
             if (!output) return '';
             if (typeof output === 'string') return output;
-            if (typeof output === 'object') {
+            if (typeof output === 'object' && output !== null) {
               // Jupyter output format: {text/plain: ..., text/html: ...}
-              if ('text/plain' in output) return (output as Record<string, string>)['text/plain'];
+              if ('text/plain' in output) {
+                const textPlain = (output as Record<string, unknown>)['text/plain'];
+                return typeof textPlain === 'string' ? textPlain : String(textPlain || '');
+              }
               try {
                 return JSON.stringify(output);
               } catch {
                 return '[object]';
               }
             }
-            return String(output);
+            // Primitive types (number, boolean, etc.)
+            try {
+              return String(output);
+            } catch {
+              return '[unknown]';
+            }
           })
           .join('\n');
         const outputAnalysis = this.analyzeOutputForFailure(allOutputs);
@@ -886,23 +893,26 @@ export class AgentOrchestrator {
 
   /**
    * Adaptive Replanning 결과 적용
-   * @param failedCellIndex - 실패한 스텝에서 이미 생성된 셀 인덱스 (재사용 위해)
+   *
+   * ★ 순차 실행 원칙: 모든 새 셀은 항상 맨 끝에 추가됨
+   * - 기존 셀 재사용(cellIndex 주입) 제거 → 항상 새 셀 생성
+   * - 이렇게 하면 셀이 항상 위에서 아래로 순서대로 추가됨
    */
   private applyReplanChanges(
     plan: ExecutionPlan,
     currentStepIndex: number,
     replanResponse: AutoAgentReplanResponse,
-    failedCellIndex?: number
+    failedCellIndex?: number  // 이제 사용하지 않음 (API 호환성 유지)
   ): ExecutionPlan {
     const { decision, changes } = replanResponse;
     const steps = [...plan.steps];
     const currentStep = steps[currentStepIndex];
 
-    console.log('[Orchestrator] Applying replan changes:', decision, 'failedCellIndex:', failedCellIndex);
+    console.log('[Orchestrator] Applying replan changes:', decision, '(always append new cells)');
 
     switch (decision) {
       case 'refine':
-        // 현재 단계의 코드만 수정 - 기존 셀 재사용
+        // 현재 단계의 코드만 수정 - 새 셀 생성 (맨 끝에 추가됨)
         if (changes.refined_code) {
           const newToolCalls = currentStep.toolCalls.map(tc => {
             if (tc.tool === 'jupyter_cell') {
@@ -911,12 +921,17 @@ export class AgentOrchestrator {
                 parameters: {
                   ...(tc.parameters as JupyterCellParams),
                   code: changes.refined_code!,
-                  // ★ 기존에 생성된 셀이 있으면 그 셀을 수정 (새 셀 생성 방지)
-                  cellIndex: failedCellIndex,
+                  // cellIndex 제거 → 항상 새 셀 생성
                 },
               };
             }
             return tc;
+          });
+          // cellIndex 속성 명시적 제거
+          newToolCalls.forEach(tc => {
+            if (tc.tool === 'jupyter_cell' && tc.parameters) {
+              delete (tc.parameters as any).cellIndex;
+            }
           });
           steps[currentStepIndex] = {
             ...currentStep,
@@ -926,33 +941,13 @@ export class AgentOrchestrator {
         break;
 
       case 'insert_steps':
-        // 현재 단계 전에 새로운 단계들 삽입 (예: pip install)
-        // 삽입 후 원래 실패한 단계가 실행될 때 기존 셀 재사용
+        // 새로운 단계들을 현재 위치에 삽입 (예: pip install)
+        // 실행 시 모든 셀은 순차적으로 맨 끝에 추가됨
         if (changes.new_steps && changes.new_steps.length > 0) {
           const newSteps = changes.new_steps.map((newStep, idx) => ({
             ...newStep,
             stepNumber: currentStep.stepNumber + idx * 0.1, // 임시 번호
           }));
-
-          // ★ 원래 실패한 단계에 failedCellIndex 주입 (새 셀 생성 방지)
-          if (failedCellIndex !== undefined) {
-            const updatedCurrentStep = {
-              ...currentStep,
-              toolCalls: currentStep.toolCalls.map(tc => {
-                if (tc.tool === 'jupyter_cell') {
-                  return {
-                    ...tc,
-                    parameters: {
-                      ...(tc.parameters as JupyterCellParams),
-                      cellIndex: failedCellIndex,
-                    },
-                  };
-                }
-                return tc;
-              }),
-            };
-            steps[currentStepIndex] = updatedCurrentStep;
-          }
 
           steps.splice(currentStepIndex, 0, ...newSteps);
           // 단계 번호 재정렬
@@ -963,26 +958,20 @@ export class AgentOrchestrator {
         break;
 
       case 'replace_step':
-        // 현재 단계를 완전히 교체 - 기존 셀 재사용
+        // 현재 단계를 완전히 교체 - 새 셀 생성
         if (changes.replacement) {
-          // ★ 교체된 단계에도 failedCellIndex 주입
-          const replacementWithCellIndex = {
+          const replacementStep = {
             ...changes.replacement,
             stepNumber: currentStep.stepNumber,
-            toolCalls: changes.replacement.toolCalls?.map(tc => {
-              if (tc.tool === 'jupyter_cell' && failedCellIndex !== undefined) {
-                return {
-                  ...tc,
-                  parameters: {
-                    ...(tc.parameters as JupyterCellParams),
-                    cellIndex: failedCellIndex,
-                  },
-                };
-              }
-              return tc;
-            }) || [],
+            toolCalls: changes.replacement.toolCalls || [],
           };
-          steps[currentStepIndex] = replacementWithCellIndex;
+          // cellIndex 속성 명시적 제거
+          replacementStep.toolCalls.forEach(tc => {
+            if (tc.tool === 'jupyter_cell' && tc.parameters) {
+              delete (tc.parameters as any).cellIndex;
+            }
+          });
+          steps[currentStepIndex] = replacementStep;
         }
         break;
 
@@ -990,31 +979,10 @@ export class AgentOrchestrator {
         // 현재 단계부터 끝까지 새로운 계획으로 교체
         if (changes.new_plan && changes.new_plan.length > 0) {
           const existingSteps = steps.slice(0, currentStepIndex);
-          const newPlanSteps = changes.new_plan.map((newStep, idx) => {
-            // ★ 첫 번째 단계에 failedCellIndex 주입 (기존 셀 재사용)
-            if (idx === 0 && failedCellIndex !== undefined) {
-              return {
-                ...newStep,
-                stepNumber: currentStepIndex + idx + 1,
-                toolCalls: newStep.toolCalls?.map(tc => {
-                  if (tc.tool === 'jupyter_cell') {
-                    return {
-                      ...tc,
-                      parameters: {
-                        ...(tc.parameters as JupyterCellParams),
-                        cellIndex: failedCellIndex,
-                      },
-                    };
-                  }
-                  return tc;
-                }) || [],
-              };
-            }
-            return {
-              ...newStep,
-              stepNumber: currentStepIndex + idx + 1,
-            };
-          });
+          const newPlanSteps = changes.new_plan.map((newStep, idx) => ({
+            ...newStep,
+            stepNumber: currentStepIndex + idx + 1,
+          }));
 
           // 새 계획에 final_answer가 없으면 경고 로그
           const hasFinalAnswer = newPlanSteps.some(step =>
@@ -1289,15 +1257,23 @@ export class AgentOrchestrator {
         const output = jupyterResult.output;
         if (!output) return '';
         if (typeof output === 'string') return output;
-        if (typeof output === 'object') {
-          if ('text/plain' in output) return (output as Record<string, string>)['text/plain'];
+        if (typeof output === 'object' && output !== null) {
+          if ('text/plain' in output) {
+            const textPlain = (output as Record<string, unknown>)['text/plain'];
+            return typeof textPlain === 'string' ? textPlain : String(textPlain || '');
+          }
           try {
             return JSON.stringify(output);
           } catch {
             return '[object]';
           }
         }
-        return String(output);
+        // Primitive types (number, boolean, etc.)
+        try {
+          return String(output);
+        } catch {
+          return '[unknown]';
+        }
       })();
       const localOutputAnalysis = this.analyzeOutputForFailure(outputString);
 

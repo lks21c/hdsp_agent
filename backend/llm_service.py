@@ -209,7 +209,7 @@ class LLMService:
             "stream": stream
         }
 
-    def _build_gemini_payload(self, prompt: str) -> Dict[str, Any]:
+    def _build_gemini_payload(self, prompt: str, max_output_tokens: int = 8192) -> Dict[str, Any]:
         """Build Gemini API request payload"""
         return {
             "contents": [{"parts": [{"text": prompt}]}],
@@ -217,7 +217,7 @@ class LLMService:
                 "temperature": 0.7,
                 "topK": 40,
                 "topP": 0.95,
-                "maxOutputTokens": 4096
+                "maxOutputTokens": max_output_tokens
             },
             "safetySettings": [
                 {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},

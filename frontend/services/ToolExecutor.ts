@@ -184,7 +184,22 @@ export class ToolExecutor {
   }
 
   /**
-   * 코드 셀 생성 (빈 셀이 있으면 재사용)
+   * 마지막으로 생성된 셀 인덱스 추적 (순차 삽입용)
+   */
+  private lastCreatedCellIndex: number = -1;
+
+  /**
+   * 순차 실행 시작 시 호출 (마지막 셀 인덱스 초기화)
+   */
+  resetSequentialExecution(): void {
+    const model = this.notebook.content.model;
+    // 현재 노트북 맨 끝 셀 인덱스로 초기화
+    this.lastCreatedCellIndex = model ? model.cells.length - 1 : -1;
+    console.log('[ToolExecutor] Reset sequential execution, lastCreatedCellIndex:', this.lastCreatedCellIndex);
+  }
+
+  /**
+   * 코드 셀 생성 (항상 순차적으로 맨 끝에 추가)
    */
   private async createCodeCell(code: string, insertAfter?: number): Promise<number> {
     const notebookContent = this.notebook.content;
@@ -204,36 +219,35 @@ export class ToolExecutor {
         if (source === '') {
           // 빈 셀 재사용
           activeCell.sharedModel.setSource(code);
+          this.lastCreatedCellIndex = activeIndex;
           return activeIndex;
         }
       }
     }
 
-    // 삽입 위치 결정: 항상 노트북 맨 끝에 추가 (순서 보장)
-    // insertAfter가 지정되면 그 다음 위치, 아니면 맨 끝
-    let insertIndex: number;
-    if (insertAfter !== undefined) {
-      insertIndex = insertAfter + 1;
-    } else {
-      // 맨 끝에 추가하여 순서 보장
-      insertIndex = model.cells.length;
-    }
+    // ★ 순차 삽입: 항상 노트북 맨 끝에 추가 (중간 삽입 금지)
+    // 이렇게 하면 셀이 항상 아래로만 추가됨
+    const insertIndex = model.cells.length;
 
     // 새 코드 셀 생성
-    const cellModel = model.sharedModel.insertCell(insertIndex, {
+    model.sharedModel.insertCell(insertIndex, {
       cell_type: 'code',
       source: code,
       metadata: {},
     });
 
+    // 마지막 생성 셀 인덱스 업데이트
+    this.lastCreatedCellIndex = insertIndex;
+
     // 새 셀로 포커스 이동
     notebookContent.activeCellIndex = insertIndex;
 
+    console.log('[ToolExecutor] Created cell at index:', insertIndex, '(always at end)');
     return insertIndex;
   }
 
   /**
-   * 마크다운 셀 생성
+   * 마크다운 셀 생성 (항상 순차적으로 맨 끝에 추가)
    */
   private async createMarkdownCell(content: string, insertAfter?: number): Promise<number> {
     const notebookContent = this.notebook.content;
@@ -243,15 +257,8 @@ export class ToolExecutor {
       throw new Error('Notebook model not available');
     }
 
-    // 삽입 위치 결정: 항상 노트북 맨 끝에 추가 (순서 보장)
-    // insertAfter가 지정되면 그 다음 위치, 아니면 맨 끝
-    let insertIndex: number;
-    if (insertAfter !== undefined) {
-      insertIndex = insertAfter + 1;
-    } else {
-      // 맨 끝에 추가하여 순서 보장
-      insertIndex = model.cells.length;
-    }
+    // ★ 순차 삽입: 항상 노트북 맨 끝에 추가 (중간 삽입 금지)
+    const insertIndex = model.cells.length;
 
     // 새 마크다운 셀 생성
     model.sharedModel.insertCell(insertIndex, {
@@ -266,9 +273,13 @@ export class ToolExecutor {
       cell.rendered = true;
     }
 
-    // 새 셀로 활성 셀 업데이트 (다음 셀이 이 셀 다음에 삽입되도록)
+    // 마지막 생성 셀 인덱스 업데이트
+    this.lastCreatedCellIndex = insertIndex;
+
+    // 새 셀로 활성 셀 업데이트
     notebookContent.activeCellIndex = insertIndex;
 
+    console.log('[ToolExecutor] Created markdown cell at index:', insertIndex, '(always at end)');
     return insertIndex;
   }
 
@@ -317,9 +328,11 @@ export class ToolExecutor {
 
     // cell.model과 outputs가 존재하는지 안전하게 체크
     const outputs = cell.model?.outputs;
+    console.log('[ToolExecutor] Cell outputs count:', outputs?.length ?? 0);
     if (outputs && outputs.length > 0) {
       for (let i = 0; i < outputs.length; i++) {
         const output = outputs.get(i);
+        console.log(`[ToolExecutor] Output ${i} type:`, output.type);
 
         if (output.type === 'stream') {
           const streamOutput = output as any;
@@ -335,16 +348,21 @@ export class ToolExecutor {
           }
         } else if (output.type === 'error') {
           const errorOutput = output as any;
-          error = {
-            ename: errorOutput.ename,
-            evalue: errorOutput.evalue,
-            traceback: errorOutput.traceback,
-          };
+          console.log('[ToolExecutor] Error output detected:', JSON.stringify(errorOutput));
+          // 실제로 에러 내용이 있는 경우에만 에러로 처리
+          if (errorOutput.ename || errorOutput.evalue) {
+            error = {
+              ename: errorOutput.ename,
+              evalue: errorOutput.evalue,
+              traceback: errorOutput.traceback,
+            };
+          }
         }
       }
     }
 
     const status = error ? 'error' : 'ok';
+    console.log('[ToolExecutor] Final status:', status, 'error:', error);
 
     return {
       status,

@@ -94,9 +94,25 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
   const [isAgentRunning, setIsAgentRunning] = useState(false);
   const [currentAgentMessageId, setCurrentAgentMessageId] = useState<string | null>(null);
   const [executionSpeed, setExecutionSpeed] = useState<ExecutionSpeed>('normal');
-  // 입력 모드 (Cursor AI 스타일)
-  const [inputMode, setInputMode] = useState<InputMode>('chat');
+  // 입력 모드 (Cursor AI 스타일) - 로컬 스토리지에서 복원
+  const [inputMode, setInputMode] = useState<InputMode>(() => {
+    try {
+      const saved = localStorage.getItem('hdsp-agent-input-mode');
+      return (saved === 'agent' || saved === 'chat') ? saved : 'chat';
+    } catch {
+      return 'chat';
+    }
+  });
   const [showModeDropdown, setShowModeDropdown] = useState(false);
+
+  // 모드 변경 시 로컬 스토리지에 저장
+  useEffect(() => {
+    try {
+      localStorage.setItem('hdsp-agent-input-mode', inputMode);
+    } catch {
+      // 로컬 스토리지 접근 불가 시 무시
+    }
+  }, [inputMode]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const pendingLlmPromptRef = useRef<string | null>(null);
@@ -1198,7 +1214,16 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
               {plan.steps.map((step) => {
                 const stepStatus = getStepStatus(step.stepNumber);
                 return (
-                  <div key={step.stepNumber} className={`jp-agent-execution-step jp-agent-execution-step--${stepStatus}`}>
+                  <div
+                    key={step.stepNumber}
+                    className={`jp-agent-execution-step jp-agent-execution-step--${stepStatus}`}
+                    ref={(el) => {
+                      // 현재 진행 중인 단계로 자동 스크롤
+                      if (stepStatus === 'current' && el) {
+                        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                      }
+                    }}
+                  >
                     <div className="jp-agent-execution-step-indicator">
                       {stepStatus === 'completed' && (
                         <svg viewBox="0 0 16 16" fill="currentColor">

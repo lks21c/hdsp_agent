@@ -47,6 +47,14 @@ PLAN_GENERATION_PROMPT = '''당신은 Jupyter 노트북을 위한 Python 코드 
 5. 마지막 단계는 반드시 final_answer를 포함하세요
 6. 한국어로 설명을 작성하세요
 
+## 🔴 라이브러리 일관성 규칙 (CRITICAL!)
+
+**사용자가 특정 라이브러리를 명시한 경우, 모든 단계에서 일관되게 해당 라이브러리를 사용하세요!**
+- 예: "dask로 EDA 해줘" → 모든 단계에서 dask 사용, pandas 혼용 금지!
+- 예: "polars로 분석해줘" → 모든 단계에서 polars 사용
+
+**참고**: 특정 라이브러리가 감지되면 해당 API 가이드가 아래에 자동으로 추가됩니다.
+
 ## 🔍 파일 탐색 규칙 (중요!)
 
 사용자 요청에 **파일명이 언급된 경우**, 반드시 다음 순서로 처리하세요:
@@ -639,20 +647,38 @@ def format_plan_prompt(
     defined_variables: list,
     recent_cells: list
 ) -> str:
-    """실행 계획 생성 프롬프트 포맷팅"""
+    """실행 계획 생성 프롬프트 포맷팅 (Mini RAG 지식 자동 로드)"""
+    from ..knowledge.loader import get_knowledge_loader
+
     recent_cells_text = ""
     for i, cell in enumerate(recent_cells):
         cell_type = cell.get('type', 'code')
         source = cell.get('source', '')[:300]  # 최대 300자
         recent_cells_text += f"\n[셀 {cell.get('index', i)}] ({cell_type}):\n```\n{source}\n```\n"
 
-    return PLAN_GENERATION_PROMPT.format(
+    # Mini RAG: 사용자 요청에서 라이브러리 감지 및 지식 로드
+    knowledge_loader = get_knowledge_loader()
+    context = ", ".join(imported_libraries) if imported_libraries else ""
+    library_knowledge = knowledge_loader.format_knowledge_section(request, context)
+
+    # 기본 프롬프트 생성
+    base_prompt = PLAN_GENERATION_PROMPT.format(
         request=request,
         cell_count=cell_count,
         imported_libraries=", ".join(imported_libraries) if imported_libraries else "없음",
         defined_variables=", ".join(defined_variables) if defined_variables else "없음",
         recent_cells=recent_cells_text if recent_cells_text else "없음"
     )
+
+    # 라이브러리 지식이 있으면 프롬프트에 추가
+    if library_knowledge:
+        # JSON 출력 형식 앞에 지식 삽입
+        base_prompt = base_prompt.replace(
+            "## 출력 형식 (JSON)",
+            f"{library_knowledge}\n## 출력 형식 (JSON)"
+        )
+
+    return base_prompt
 
 
 def format_refine_prompt(
