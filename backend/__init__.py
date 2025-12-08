@@ -2,7 +2,18 @@
 HDSP Agent - AI-powered code assistance for JupyterLab
 """
 
+import os
+import sys
 from ._version import __version__
+
+
+if sys.platform == 'darwin':
+    try:
+        import certifi
+        os.environ['SSL_CERT_FILE'] = certifi.where()
+        os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
+    except ImportError:
+        pass
 
 def _jupyter_labextension_paths():
     """Called by JupyterLab to find extension"""
