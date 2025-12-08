@@ -308,22 +308,18 @@ export class AgentOrchestrator {
             console.log('[Orchestrator] Reflection decision:', { shouldContinue, action, reason });
 
             // Reflection 결과 UI 업데이트
-            const confidencePercent = Math.round(reflection.evaluation.confidence_score * 100);
-
             if (reflection.evaluation.checkpoint_passed) {
               onProgress({
                 phase: 'reflecting',
                 reflectionStatus: 'passed',
                 currentStep: step.stepNumber,
-                confidenceScore: confidencePercent,
-                message: `검증 통과 (신뢰도: ${confidencePercent}%)`,
+                message: '검증 통과',
               });
             } else {
               onProgress({
                 phase: 'reflecting',
                 reflectionStatus: 'adjusting',
                 currentStep: step.stepNumber,
-                confidenceScore: confidencePercent,
                 message: `조정 권고: ${reason}`,
               });
             }

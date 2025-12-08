@@ -47,6 +47,26 @@ PLAN_GENERATION_PROMPT = '''당신은 Jupyter 노트북을 위한 Python 코드 
 5. 마지막 단계는 반드시 final_answer를 포함하세요
 6. 한국어로 설명을 작성하세요
 
+## ⚠️ 초기 설정 (첫 번째 코드 셀에 포함)
+
+첫 번째 코드 셀에 항상 다음 코드를 포함하세요:
+```python
+import warnings
+warnings.filterwarnings('ignore', category=RuntimeWarning)
+warnings.filterwarnings('ignore', category=FutureWarning)
+
+# matplotlib 한글 폰트 설정 (Mac/Windows/Linux 호환)
+import matplotlib.pyplot as plt
+import platform
+if platform.system() == 'Darwin':  # Mac
+    plt.rcParams['font.family'] = 'Apple SD Gothic Neo'
+elif platform.system() == 'Windows':
+    plt.rcParams['font.family'] = 'Malgun Gothic'
+else:  # Linux
+    plt.rcParams['font.family'] = 'NanumGothic'
+plt.rcParams['axes.unicode_minus'] = False
+```
+
 ## 🔴 라이브러리 일관성 규칙 (CRITICAL!)
 
 **사용자가 특정 라이브러리를 명시한 경우, 모든 단계에서 일관되게 해당 라이브러리를 사용하세요!**
@@ -67,6 +87,26 @@ PLAN_GENERATION_PROMPT = '''당신은 Jupyter 노트북을 위한 Python 코드 
 예시:
 - "train.csv 파일을 로드해줘" → 먼저 `glob.glob('**/train.csv', recursive=True)`로 파일 탐색
 - "data.xlsx를 읽어줘" → 먼저 로컬에서 해당 파일 검색 후 로드
+
+## 📊 시각화 전 데이터 검증 (중요!)
+
+**시각화하기 전에 항상 데이터가 비어있는지 확인하세요!**
+
+빈 데이터로 `.plot()` 호출 시 `IndexError`가 발생합니다. 다음 패턴을 사용하세요:
+
+```python
+# ❌ 잘못된 예시 - 빈 데이터일 때 에러 발생
+missing_pct[missing_pct > 0].head(20).plot(kind='bar')
+
+# ✅ 올바른 예시 - 데이터 존재 여부 확인
+data_to_plot = missing_pct[missing_pct > 0].head(20)
+if len(data_to_plot) > 0:
+    data_to_plot.plot(kind='bar')
+    plt.title('결측치 비율')
+    plt.show()
+else:
+    print("시각화할 데이터가 없습니다 (결측치 없음)")
+```
 
 ## 출력 형식 (JSON)
 
@@ -461,6 +501,26 @@ STRUCTURED_PLAN_PROMPT = '''당신은 Jupyter 노트북을 위한 Python 코드 
 
 {request}
 
+## ⚠️ 초기 설정 (첫 번째 코드 셀에 포함)
+
+첫 번째 코드 셀에 항상 다음 코드를 포함하세요:
+```python
+import warnings
+warnings.filterwarnings('ignore', category=RuntimeWarning)
+warnings.filterwarnings('ignore', category=FutureWarning)
+
+# matplotlib 한글 폰트 설정 (Mac/Windows/Linux 호환)
+import matplotlib.pyplot as plt
+import platform
+if platform.system() == 'Darwin':  # Mac
+    plt.rcParams['font.family'] = 'Apple SD Gothic Neo'
+elif platform.system() == 'Windows':
+    plt.rcParams['font.family'] = 'Malgun Gothic'
+else:  # Linux
+    plt.rcParams['font.family'] = 'NanumGothic'
+plt.rcParams['axes.unicode_minus'] = False
+```
+
 ## 🔍 파일 탐색 규칙 (중요!)
 
 사용자 요청에 **파일명이 언급된 경우**, 반드시 다음 순서로 처리하세요:
@@ -473,6 +533,26 @@ STRUCTURED_PLAN_PROMPT = '''당신은 Jupyter 노트북을 위한 Python 코드 
 예시:
 - "train.csv 파일을 로드해줘" → 먼저 `glob.glob('**/train.csv', recursive=True)`로 파일 탐색
 - "data.xlsx를 읽어줘" → 먼저 로컬에서 해당 파일 검색 후 로드
+
+## 📊 시각화 전 데이터 검증 (중요!)
+
+**시각화하기 전에 항상 데이터가 비어있는지 확인하세요!**
+
+빈 데이터로 `.plot()` 호출 시 `IndexError`가 발생합니다. 다음 패턴을 사용하세요:
+
+```python
+# ❌ 잘못된 예시 - 빈 데이터일 때 에러 발생
+missing_pct[missing_pct > 0].head(20).plot(kind='bar')
+
+# ✅ 올바른 예시 - 데이터 존재 여부 확인
+data_to_plot = missing_pct[missing_pct > 0].head(20)
+if len(data_to_plot) > 0:
+    data_to_plot.plot(kind='bar')
+    plt.title('결측치 비율')
+    plt.show()
+else:
+    print("시각화할 데이터가 없습니다 (결측치 없음)")
+```
 
 ## 출력 형식 (JSON)
 

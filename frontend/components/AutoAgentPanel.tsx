@@ -233,17 +233,6 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({ status }) => {
     <div className={`aa-status aa-status--${status.phase} ${status.validationStatus ? `aa-status--validation-${status.validationStatus}` : ''} ${status.reflectionStatus ? `aa-status--reflection-${status.reflectionStatus}` : ''}`}>
       {getStatusIcon()}
       <span className="aa-status-text">{getMessage()}</span>
-      {status.confidenceScore !== undefined && (
-        <span className="aa-status-confidence">
-          <span className="aa-confidence-bar">
-            <span
-              className="aa-confidence-fill"
-              style={{ width: `${status.confidenceScore}%` }}
-            />
-          </span>
-          <span className="aa-confidence-value">{status.confidenceScore}%</span>
-        </span>
-      )}
       {status.phase === 'failed' && status.error && (
         <span className="aa-status-error">{status.error.message}</span>
       )}

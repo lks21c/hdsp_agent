@@ -1186,11 +1186,6 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
           <span className="jp-agent-execution-status-text">
             {status.message || status.phase}
           </span>
-          {status.confidenceScore !== undefined && (
-            <span className="jp-agent-execution-confidence">
-              {status.confidenceScore}%
-            </span>
-          )}
         </div>
 
         {/* 실행 계획 */}
