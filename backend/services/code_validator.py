@@ -1,13 +1,22 @@
 """
 Code Validator Service
-Pyflakes/AST 기반 코드 품질 검증 서비스
+Ruff/Pyflakes/AST 기반 코드 품질 검증 서비스
 
-실행 전 코드의 문법 오류, 미정의 변수, 미사용 import 등을 사전 감지
+실행 전 코드의 문법 오류, 미정의 변수, 미사용 import,
+코딩 스타일, 보안 취약점 등을 사전 감지
+
+검증 도구:
+- Ruff: 초고속 린터 (Rust 기반, 700+ 규칙)
+- Pyflakes: 미사용 import/변수 감지 (fallback)
+- AST: 구문 분석 및 의존성 추출
 """
 
 import ast
 import re
 import sys
+import subprocess
+import tempfile
+import os
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Optional, Dict, Any
@@ -30,6 +39,10 @@ class IssueCategory(Enum):
     REDEFINED = "redefined"              # 재정의
     IMPORT_ERROR = "import_error"        # import 오류
     TYPE_ERROR = "type_error"            # 타입 관련 이슈
+    STYLE = "style"                      # 코딩 스타일 (Ruff)
+    SECURITY = "security"                # 보안 취약점 (Ruff)
+    COMPLEXITY = "complexity"            # 코드 복잡도 (Ruff)
+    BEST_PRACTICE = "best_practice"      # 권장 사항 (Ruff)
 
 
 @dataclass
@@ -107,6 +120,7 @@ class CodeValidator:
         'callable', 'iter', 'next', 'id', 'hash', 'repr', 'ascii', 'bin', 'hex', 'oct',
         'ord', 'chr', 'format', 'vars', 'dir', 'help', 'locals', 'globals',
         'staticmethod', 'classmethod', 'property',
+        'exec', 'eval', 'compile', 'globals', 'locals', 'breakpoint',
         'Exception', 'BaseException', 'ValueError', 'TypeError', 'KeyError',
         'IndexError', 'AttributeError', 'ImportError', 'RuntimeError',
         'StopIteration', 'GeneratorExit', 'AssertionError', 'NotImplementedError',
@@ -475,6 +489,148 @@ class CodeValidator:
 
         return issues
 
+    def check_with_ruff(self, code: str) -> List[ValidationIssue]:
+        """Ruff 기반 고급 정적 분석 (700+ 규칙)
+
+        Ruff 규칙 카테고리:
+        - F: Pyflakes (미정의/미사용 변수)
+        - E/W: pycodestyle (스타일)
+        - C90: mccabe (복잡도)
+        - I: isort (import 정렬)
+        - N: pep8-naming (명명 규칙)
+        - S: flake8-bandit (보안)
+        - B: flake8-bugbear (버그 패턴)
+        """
+        import shutil
+        issues = []
+
+        # Ruff 실행 파일 찾기
+        ruff_path = shutil.which('ruff')
+        if not ruff_path:
+            # Ruff가 설치되지 않음 - 빈 리스트 반환
+            return issues
+
+        # Jupyter magic command 전처리
+        processed_code = self._preprocess_jupyter_code(code)
+
+        # 임시 파일에 코드 저장 후 ruff 실행
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode='w',
+                suffix='.py',
+                delete=False,
+                encoding='utf-8'
+            ) as f:
+                f.write(processed_code)
+                temp_path = f.name
+
+            # Ruff 실행 (JSON 출력)
+            result = subprocess.run(
+                [
+                    ruff_path, 'check', temp_path,
+                    '--output-format=json',
+                    '--select=F,E,W,C90,S,B',  # 핵심 규칙만 선택
+                    '--ignore=E501,W292',      # 라인 길이, 파일 끝 개행 무시 (노트북 특성)
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+
+            # JSON 결과 파싱
+            import json
+            if result.stdout.strip():
+                ruff_issues = json.loads(result.stdout)
+
+                for item in ruff_issues:
+                    code_rule = item.get('code', '')
+                    message = item.get('message', '')
+                    line = item.get('location', {}).get('row', 1)
+
+                    # 규칙 코드로 카테고리 및 심각도 결정
+                    category, severity = self._categorize_ruff_rule(code_rule)
+
+                    # 노트북 컨텍스트에서 알려진 이름이면 무시 (F821: undefined name)
+                    if code_rule == 'F821':
+                        match = re.search(r"`([^`]+)`", message)
+                        if match:
+                            undef_name = match.group(1)
+                            if undef_name in self.known_names:
+                                continue
+
+                    issues.append(ValidationIssue(
+                        severity=severity,
+                        category=category,
+                        message=f"[{code_rule}] {message}",
+                        line=line
+                    ))
+
+        except subprocess.TimeoutExpired:
+            # Ruff 타임아웃 - 무시하고 계속
+            pass
+        except FileNotFoundError:
+            # Ruff가 설치되지 않음 - Pyflakes fallback 사용
+            pass
+        except json.JSONDecodeError:
+            # JSON 파싱 오류 - 무시
+            pass
+        except Exception:
+            # 기타 오류 - 무시하고 계속
+            pass
+        finally:
+            # 임시 파일 삭제
+            try:
+                if 'temp_path' in locals():
+                    os.unlink(temp_path)
+            except Exception:
+                pass
+
+        return issues
+
+    def _categorize_ruff_rule(self, code: str) -> tuple:
+        """Ruff 규칙 코드를 카테고리와 심각도로 변환"""
+        # F: Pyflakes 규칙
+        if code.startswith('F'):
+            if code in ('F821', 'F822', 'F823'):  # undefined name
+                return IssueCategory.UNDEFINED_NAME, IssueSeverity.ERROR
+            elif code in ('F401',):  # unused import
+                return IssueCategory.UNUSED_IMPORT, IssueSeverity.WARNING
+            elif code in ('F841',):  # unused variable
+                return IssueCategory.UNUSED_VARIABLE, IssueSeverity.INFO
+            else:
+                return IssueCategory.SYNTAX, IssueSeverity.WARNING
+
+        # E: pycodestyle 에러
+        elif code.startswith('E'):
+            if code.startswith('E9'):  # 런타임 에러 (SyntaxError 등)
+                return IssueCategory.SYNTAX, IssueSeverity.ERROR
+            else:
+                return IssueCategory.STYLE, IssueSeverity.INFO
+
+        # W: pycodestyle 경고
+        elif code.startswith('W'):
+            return IssueCategory.STYLE, IssueSeverity.INFO
+
+        # C90: mccabe 복잡도
+        elif code.startswith('C9'):
+            return IssueCategory.COMPLEXITY, IssueSeverity.WARNING
+
+        # S: 보안 (flake8-bandit)
+        elif code.startswith('S'):
+            if code in ('S101',):  # assert 사용 (테스트 코드에서는 OK)
+                return IssueCategory.SECURITY, IssueSeverity.INFO
+            elif code in ('S102', 'S103', 'S104', 'S105', 'S106', 'S107'):  # 하드코딩 비밀번호 등
+                return IssueCategory.SECURITY, IssueSeverity.WARNING
+            else:
+                return IssueCategory.SECURITY, IssueSeverity.WARNING
+
+        # B: flake8-bugbear (버그 패턴)
+        elif code.startswith('B'):
+            return IssueCategory.BEST_PRACTICE, IssueSeverity.WARNING
+
+        # 기본값
+        return IssueCategory.STYLE, IssueSeverity.INFO
+
     def full_validation(self, code: str) -> ValidationResult:
         """전체 검증 수행"""
         all_issues = []
@@ -500,21 +656,46 @@ class CodeValidator:
         undefined_issues = self.check_undefined_names(code)
         all_issues.extend(undefined_issues)
 
-        # 4. Pyflakes 검사 (가능한 경우)
+        # 4. Ruff 검사 (우선) - 더 포괄적이고 빠름
+        ruff_issues = self.check_with_ruff(code)
+
+        # Ruff 이슈 중 중복되지 않는 것만 추가
+        existing_messages = {issue.message for issue in all_issues}
+        for issue in ruff_issues:
+            # 메시지 정규화 (Ruff 규칙 코드 제외)
+            base_msg = re.sub(r'\[F\d+\]\s*', '', issue.message)
+            if base_msg not in existing_messages and issue.message not in existing_messages:
+                all_issues.append(issue)
+                existing_messages.add(issue.message)
+
+        # 5. Pyflakes 검사 (Ruff fallback) - Ruff가 실패했거나 추가 검사
         pyflakes_issues = self.check_with_pyflakes(code)
 
         # Pyflakes 이슈 중 중복되지 않는 것만 추가
-        existing_messages = {issue.message for issue in all_issues}
         for issue in pyflakes_issues:
             if issue.message not in existing_messages:
                 all_issues.append(issue)
+                existing_messages.add(issue.message)
 
-        # 5. 의존성에서 미정의 이름 업데이트
-        undefined_names = [
-            issue.message.split("'")[1]
-            for issue in all_issues
-            if issue.category == IssueCategory.UNDEFINED_NAME
-        ]
+        # 6. 의존성에서 미정의 이름 업데이트
+        undefined_names = []
+        for issue in all_issues:
+            if issue.category == IssueCategory.UNDEFINED_NAME:
+                # 다양한 메시지 포맷 지원
+                # Pyflakes: "undefined name 'xxx'" 또는 "'xxx'이(가) 정의되지 않았습니다"
+                # Ruff: "[F821] Undefined name `xxx`"
+                msg = issue.message
+                name = None
+                if "'" in msg:
+                    parts = msg.split("'")
+                    if len(parts) >= 2:
+                        name = parts[1]
+                elif "`" in msg:
+                    parts = msg.split("`")
+                    if len(parts) >= 2:
+                        name = parts[1]
+                if name:
+                    undefined_names.append(name)
         dependencies.undefined_names = list(set(undefined_names))
 
         # 결과 집계

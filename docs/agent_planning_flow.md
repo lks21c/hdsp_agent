@@ -161,27 +161,47 @@ LLM에 전달되는 프롬프트 구성:
 
 ### 3. Pre-Validation (사전 검증)
 
-실행 전 코드 품질 검사:
+실행 전 코드 품질 검사를 수행합니다. **Ruff**를 기본 린터로 사용하고, **Pyflakes/AST**는 보조 도구로 활용합니다.
 
-| 검사 항목 | 도구 | 설명 |
-|----------|------|------|
-| 구문 오류 | AST Parser | Python 문법 오류 검출 |
-| 미정의 변수 | Pyflakes | 존재하지 않는 변수 참조 검출 |
-| 미사용 import | Pyflakes | 불필요한 import 검출 |
-| 타입 힌트 | AST | 잘못된 타입 어노테이션 검출 |
+#### 검증 도구 비교
 
-**검증 결과:**
+| 도구 | 특징 | 검사 범위 |
+|------|------|----------|
+| **Ruff** | Rust 기반 초고속 린터 (700+ 규칙) | F (Pyflakes), E/W (스타일), S (보안), B (버그 패턴), C90 (복잡도) |
+| **Pyflakes** | 경량 린터 (Ruff fallback) | 미정의/미사용 변수, import 오류 |
+| **AST** | Python 내장 파서 | 구문 분석, 의존성 추출 |
+
+#### Ruff 규칙 카테고리
+
+| 규칙 코드 | 카테고리 | 설명 | 심각도 |
+|----------|---------|------|--------|
+| F821 | undefined_name | 미정의 변수/함수 | ERROR |
+| F401 | unused_import | 미사용 import | WARNING |
+| F841 | unused_variable | 미사용 변수 | INFO |
+| S102 | security | `exec()` 사용 감지 | WARNING |
+| S105-S107 | security | 하드코딩된 비밀번호 | WARNING |
+| B | best_practice | 버그 패턴 (flake8-bugbear) | WARNING |
+| C901 | complexity | 함수 복잡도 초과 | WARNING |
+| E9xx | syntax | 런타임 에러 (SyntaxError 등) | ERROR |
+
+#### 검증 결과 예시:
 ```json
 {
   "is_valid": false,
-  "errors": [
-    {"line": 3, "message": "undefined name 'unknown_var'", "severity": "error"}
+  "issues": [
+    {"line": 3, "message": "[F821] Undefined name `unknown_var`", "severity": "error", "category": "undefined_name"},
+    {"line": 1, "message": "[F401] `pandas` imported but unused", "severity": "warning", "category": "unused_import"},
+    {"line": 5, "message": "[S102] Use of `exec` detected", "severity": "warning", "category": "security"}
   ],
-  "warnings": [
-    {"line": 1, "message": "'pandas' imported but unused", "severity": "warning"}
-  ]
+  "summary": "검증 실패: 1개 오류, 2개 경고"
 }
 ```
+
+#### 노트북 특화 설정
+
+Ruff 실행 시 노트북 환경에 맞게 일부 규칙을 무시합니다:
+- `E501`: 라인 길이 제한 (노트북 셀은 긴 코드가 일반적)
+- `W292`: 파일 끝 개행 없음 (셀 단위 실행이므로 불필요)
 
 **코드 위치:** `backend/services/code_validator.py`
 
