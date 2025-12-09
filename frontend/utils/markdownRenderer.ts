@@ -433,8 +433,8 @@ export function parseMarkdownTable(tableText: string): string {
     }
   });
 
-  // Build HTML table
-  let html = '<table class="markdown-table">';
+  // Build HTML table with wrapper for horizontal scroll
+  let html = '<div class="markdown-table-wrapper"><table class="markdown-table">';
 
   // Header
   html += '<thead>';
@@ -474,7 +474,7 @@ export function parseMarkdownTable(tableText: string): string {
     html += '</tbody>';
   }
 
-  html += '</table>';
+  html += '</table></div>';
   return html;
 }
 
@@ -542,8 +542,12 @@ export function formatMarkdownToHtml(text: string): string {
 
   // Step 3: Parse and protect markdown tables
   const tablePlaceholders: Array<{ placeholder: string; html: string }> = [];
-  // Match tables: lines starting with | or having | separators, with a separator row (---|---)
-  html = html.replace(/(?:^|\n)((?:\|[^\n]+\|?\n)+\|?\s*[-:|\s]+\s*\|?\n(?:\|[^\n]+\|?\n?)*)/gm, (match, tableBlock) => {
+
+  // Improved table detection: look for lines with | separators and a separator row
+  // Match pattern: header row(s), separator row (with ---), body rows
+  // More flexible regex to handle various table formats
+  const tableRegex = /(?:^|\n)((?:\|[^\n]+\|\n?)+\|[-:| ]+\|(?:\n\|[^\n]+\|)*)/gm;
+  html = html.replace(tableRegex, (match, tableBlock) => {
     const placeholder = '__TABLE_' + Math.random().toString(36).substr(2, 9) + '__';
     const tableHtml = parseMarkdownTable(tableBlock.trim());
     tablePlaceholders.push({
@@ -553,9 +557,24 @@ export function formatMarkdownToHtml(text: string): string {
     return '\n' + placeholder + '\n';
   });
 
-  // Also match tables without leading |
-  html = html.replace(/(?:^|\n)((?:[^\n|]+\|[^\n]+\n)+[-:|\s]+\n(?:[^\n|]+\|[^\n]+\n?)*)/gm, (match, tableBlock) => {
+  // Alternative: tables without leading/trailing | (GFM style)
+  // Pattern: "header | header\n---|---\ndata | data"
+  const gfmTableRegex = /(?:^|\n)((?:[^\n|]+\|[^\n]+\n)+[-:|\s]+[-|]+\n(?:[^\n|]+\|[^\n]+\n?)*)/gm;
+  html = html.replace(gfmTableRegex, (match, tableBlock) => {
     // Skip if already processed (contains placeholder)
+    if (tableBlock.includes('__TABLE_')) return match;
+    const placeholder = '__TABLE_' + Math.random().toString(36).substr(2, 9) + '__';
+    const tableHtml = parseMarkdownTable(tableBlock.trim());
+    tablePlaceholders.push({
+      placeholder: placeholder,
+      html: tableHtml
+    });
+    return '\n' + placeholder + '\n';
+  });
+
+  // Third pattern: catch any remaining tables with | characters and --- separator
+  const fallbackTableRegex = /(?:^|\n)(\|[^\n]*\|\n\|[-:| ]*\|(?:\n\|[^\n]*\|)*)/gm;
+  html = html.replace(fallbackTableRegex, (match, tableBlock) => {
     if (tableBlock.includes('__TABLE_')) return match;
     const placeholder = '__TABLE_' + Math.random().toString(36).substr(2, 9) + '__';
     const tableHtml = parseMarkdownTable(tableBlock.trim());

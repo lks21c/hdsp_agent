@@ -55,15 +55,51 @@ import warnings
 warnings.filterwarnings('ignore', category=RuntimeWarning)
 warnings.filterwarnings('ignore', category=FutureWarning)
 
-# matplotlib 한글 폰트 설정 (Mac/Windows/Linux 호환)
+# matplotlib 한글 폰트 설정 (시스템 폰트 자동 탐지)
 import matplotlib.pyplot as plt
-import platform
-if platform.system() == 'Darwin':  # Mac
-    plt.rcParams['font.family'] = 'Apple SD Gothic Neo'
-elif platform.system() == 'Windows':
-    plt.rcParams['font.family'] = 'Malgun Gothic'
-else:  # Linux
-    plt.rcParams['font.family'] = 'NanumGothic'
+import matplotlib.font_manager as fm
+
+def find_korean_font():
+    """시스템에서 사용 가능한 한글 폰트를 탐색하여 반환"""
+    # 한글 폰트 우선순위 목록 (일반적인 한글 폰트들)
+    korean_fonts = [
+        # macOS
+        'Apple SD Gothic Neo', 'AppleGothic', 'Apple Color Emoji',
+        'Noto Sans CJK KR', 'Noto Sans KR',
+        # Windows
+        'Malgun Gothic', '맑은 고딕', 'NanumGothic', '나눔고딕',
+        'NanumBarunGothic', 'Gulim', '굴림', 'Dotum', '돋움',
+        # Linux / Cross-platform
+        'NanumGothic', 'NanumBarunGothic', 'UnDotum', 'UnBatang',
+        'Noto Sans CJK KR', 'Noto Sans KR', 'Source Han Sans KR',
+        'D2Coding', 'D2 Coding',
+        # 추가 한글 폰트
+        'KoPubDotum', 'KoPub돋움', 'Spoqa Han Sans', 'IBM Plex Sans KR',
+    ]
+
+    # 시스템에 설치된 폰트 목록 가져오기
+    system_fonts = set([f.name for f in fm.fontManager.ttflist])
+
+    # 우선순위에 따라 사용 가능한 폰트 찾기
+    for font in korean_fonts:
+        if font in system_fonts:
+            return font
+
+    # 한글이 포함된 폰트 이름으로 추가 탐색
+    for font_name in system_fonts:
+        lower_name = font_name.lower()
+        if any(keyword in lower_name for keyword in ['gothic', 'nanum', 'malgun', 'gulim', 'dotum', 'batang', 'korean', 'cjk']):
+            return font_name
+
+    return None  # 한글 폰트를 찾지 못함
+
+# 한글 폰트 설정
+korean_font = find_korean_font()
+if korean_font:
+    plt.rcParams['font.family'] = korean_font
+    print(f"한글 폰트 설정: {{korean_font}}")
+else:
+    print("경고: 한글 폰트를 찾을 수 없습니다. 한글이 깨질 수 있습니다.")
 plt.rcParams['axes.unicode_minus'] = False
 ```
 
@@ -509,15 +545,30 @@ import warnings
 warnings.filterwarnings('ignore', category=RuntimeWarning)
 warnings.filterwarnings('ignore', category=FutureWarning)
 
-# matplotlib 한글 폰트 설정 (Mac/Windows/Linux 호환)
+# matplotlib 한글 폰트 설정 (시스템 폰트 자동 탐색)
+import matplotlib.font_manager as fm
 import matplotlib.pyplot as plt
-import platform
-if platform.system() == 'Darwin':  # Mac
-    plt.rcParams['font.family'] = 'Apple SD Gothic Neo'
-elif platform.system() == 'Windows':
-    plt.rcParams['font.family'] = 'Malgun Gothic'
-else:  # Linux
-    plt.rcParams['font.family'] = 'NanumGothic'
+
+def find_korean_font():
+    korean_fonts = [
+        'Apple SD Gothic Neo', 'AppleGothic', 'Malgun Gothic', '맑은 고딕',
+        'NanumGothic', '나눔고딕', 'NanumBarunGothic', 'Noto Sans CJK KR',
+        'Noto Sans KR', 'Gulim', '굴림', 'Dotum', '돋움', 'UnDotum', 'UnBatang',
+        'Source Han Sans KR', 'D2Coding', 'KoPubDotum', 'Spoqa Han Sans',
+    ]
+    system_fonts = set([f.name for f in fm.fontManager.ttflist])
+    for font in korean_fonts:
+        if font in system_fonts:
+            return font
+    for font_name in system_fonts:
+        lower = font_name.lower()
+        if any(k in lower for k in ['gothic', 'nanum', 'malgun', 'gulim', 'dotum', 'korean', 'cjk']):
+            return font_name
+    return None
+
+korean_font = find_korean_font()
+if korean_font:
+    plt.rcParams['font.family'] = korean_font
 plt.rcParams['axes.unicode_minus'] = False
 ```
 
