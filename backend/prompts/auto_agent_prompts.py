@@ -8,6 +8,34 @@ Tool Calling 구조:
 - final_answer: 작업 완료 신호
 """
 
+import os
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Nexus URL 설정 (보안을 위해 외부 파일에서 읽기)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _get_pip_index_option() -> str:
+    """
+    pip install 시 사용할 index-url 옵션 반환
+    - Sagemaker 환경: nexus-url.txt에서 읽어서 --index-url <url> 반환
+    - 로컬 환경: 빈 문자열 반환 (일반 pip install)
+    """
+    nexus_url_path = "/home/sagemaker-user/nexus-url.txt"
+
+    try:
+        if os.path.exists(nexus_url_path):
+            with open(nexus_url_path, 'r') as f:
+                url = f.read().strip()
+                if url:
+                    return f"--index-url {url}"
+    except Exception as e:
+        print(f"[AutoAgent] Warning: Failed to load nexus URL from {nexus_url_path}: {e}")
+
+    # 파일이 없거나 읽기 실패 시: 일반 pip install (로컬 환경)
+    return ""
+
+PIP_INDEX_OPTION = _get_pip_index_option()
+
 # ═══════════════════════════════════════════════════════════════════════════
 # 실행 계획 생성 프롬프트
 # ═══════════════════════════════════════════════════════════════════════════
@@ -50,6 +78,19 @@ PLAN_GENERATION_PROMPT = '''당신은 Jupyter 노트북을 위한 Python 코드 
 4. 필요한 import 문을 포함하세요
 5. 마지막 단계는 반드시 final_answer를 포함하세요
 6. 한국어로 설명을 작성하세요
+
+## 📦 패키지 설치 규칙
+
+**위의 "설치된 패키지" 목록을 확인하여 필요한 패키지가 없으면 설치 단계를 추가하세요!**
+
+- 패키지가 이미 설치되어 있으면: import만 하세요
+- 패키지가 설치되지 않았으면: 첫 단계로 설치 추가
+  ```python
+  !pip install {PIP_INDEX_OPTION} --timeout 180 패키지명
+  ```
+- 예시: dask가 설치 목록에 없고 사용자가 "dask로 분석해줘"라고 요청
+  → Step 1: dask 설치 (`!pip install {PIP_INDEX_OPTION} --timeout 180 dask`)
+  → Step 2: dask로 데이터 로드 및 분석
 
 ## ⚠️ 초기 설정 (첫 번째 코드 셀에 포함)
 
@@ -354,23 +395,23 @@ ADAPTIVE_REPLAN_PROMPT = '''에러가 발생했습니다. 출력과 에러를 �
 - 실행한 코드와 오류 메시지의 패키지가 **달라도** `insert_steps` 사용!
 - 예시 1: `import dask.dataframe as dd` 실행 → `No module named 'pyarrow'` 오류
   → pyarrow는 dask의 **내부 의존성**
-  → `insert_steps`로 `!pip install --index-url https://nexus-base.hyundaicard.com/repository/pypi/simple --timeout 180 pyarrow` 추가!
+  → `insert_steps`로 `!pip install {PIP_INDEX_OPTION} --timeout 180 pyarrow` 추가!
   → ❌ "dask 대신 pandas 사용" 같은 접근법 변경 금지!
 - 예시 2: `import tensorflow` 실행 → `No module named 'keras'` 오류
-  → `insert_steps`로 `!pip install --index-url https://nexus-base.hyundaicard.com/repository/pypi/simple --timeout 180 keras` 추가!
+  → `insert_steps`로 `!pip install {PIP_INDEX_OPTION} --timeout 180 keras` 추가!
 - 예시 3: `from transformers import AutoModel` 실행 → `No module named 'accelerate'` 오류
-  → `insert_steps`로 `!pip install --index-url https://nexus-base.hyundaicard.com/repository/pypi/simple --timeout 180 accelerate` 추가!
+  → `insert_steps`로 `!pip install {PIP_INDEX_OPTION} --timeout 180 accelerate` 추가!
 
 **📋 판단 기준**: 에러 메시지에 `No module named` 또는 `ImportError`가 있으면:
 1. **⚠️ 에러 메시지에서 패키지명 추출 (코드가 아님!)** ⚠️
 2. 무조건 `insert_steps` 선택
-3. `!pip install --index-url https://nexus-base.hyundaicard.com/repository/pypi/simple --timeout 180 에러메시지의_패키지명` 단계 추가
+3. `!pip install {PIP_INDEX_OPTION} --timeout 180 에러메시지의_패키지명` 단계 추가
 4. **사용자가 요청한 원래 라이브러리(dask 등)는 그대로 유지!**
 
 **🚨 URL 축약 절대 금지!**:
-- pip install 명령어의 `--index-url` 은 **반드시 전체 URL을 그대로 사용**해야 합니다
-- ❌ 금지: `https://nexus-base.hyundai.../simple` (... 로 축약)
-- ✅ 필수: `https://nexus-base.hyundaicard.com/repository/pypi/simple` (전체 URL)
+- pip install 명령어에서 URL이 포함된 경우, **반드시 전체 URL을 그대로 사용**해야 합니다
+- ❌ 금지: `https://repository.example.../simple` (... 로 축약)
+- ✅ 필수: `https://repository.example.com/pypi/simple` (전체 URL)
 - 긴 URL이라도 절대 축약하지 마세요! 실행되지 않습니다!
 
 **🚨 패키지 설치 전 필수 확인!**:
@@ -391,8 +432,8 @@ ADAPTIVE_REPLAN_PROMPT = '''에러가 발생했습니다. 출력과 에러를 �
 
 | 추출 방법 | 결과 | 판정 |
 |----------|------|------|
-| 사용자 코드에서 추출 | `!pip install --index-url https://nexus-base.hyundaicard.com/repository/pypi/simple --timeout 180 dask` | ❌ **완전히 틀림!** |
-| 에러 메시지에서 추출 | `!pip install --index-url https://nexus-base.hyundaicard.com/repository/pypi/simple --timeout 180 pyarrow` | ✅ **정답!** |
+| 사용자 코드에서 추출 | `!pip install {PIP_INDEX_OPTION} --timeout 180 dask` | ❌ **완전히 틀림!** |
+| 에러 메시지에서 추출 | `!pip install {PIP_INDEX_OPTION} --timeout 180 pyarrow` | ✅ **정답!** |
 
 **왜 중요한가?**:
 - dask는 이미 설치되어 있음 (그래서 import dask가 시작됨)
@@ -400,23 +441,27 @@ ADAPTIVE_REPLAN_PROMPT = '''에러가 발생했습니다. 출력과 에러를 �
 - 따라서 설치해야 할 패키지는 pyarrow!
 
 ### 패키지명 추출 규칙
-- "No module named 'xxx'" → `!pip install --index-url https://nexus-base.hyundaicard.com/repository/pypi/simple --timeout 180 xxx` (에러 메시지의 xxx!)
-- "No module named 'xxx.yyy'" → `!pip install --index-url https://nexus-base.hyundaicard.com/repository/pypi/simple --timeout 180 xxx` (최상위 패키지만)
-- 예외: `sklearn` → `!pip install --index-url https://nexus-base.hyundaicard.com/repository/pypi/simple --timeout 180 scikit-learn`
-- 예외: `cv2` → `!pip install --index-url https://nexus-base.hyundaicard.com/repository/pypi/simple --timeout 180 opencv-python`
-- 예외: `PIL` → `!pip install --index-url https://nexus-base.hyundaicard.com/repository/pypi/simple --timeout 180 pillow`
+- "No module named 'xxx'" → `!pip install {PIP_INDEX_OPTION} --timeout 180 xxx` (에러 메시지의 xxx!)
+- "No module named 'xxx.yyy'" → `!pip install {PIP_INDEX_OPTION} --timeout 180 xxx` (최상위 패키지만)
+- 예외: `sklearn` → `!pip install {PIP_INDEX_OPTION} --timeout 180 scikit-learn`
+- 예외: `cv2` → `!pip install {PIP_INDEX_OPTION} --timeout 180 opencv-python`
+- 예외: `PIL` → `!pip install {PIP_INDEX_OPTION} --timeout 180 pillow`
 
 ## 분석 지침
 
 1. **근본 원인 분석**: 단순 코드 버그인가, 접근법 자체의 문제인가?
 2. **필요한 선행 작업**: 누락된 import, 데이터 변환, 환경 설정이 있는가?
 3. **대안적 접근법**: 다른 라이브러리나 방법을 사용해야 하는가?
+4. **⚠️ 이전 실행된 코드 참고**: 위의 "현재까지 실행된 단계"에 표시된 코드를 반드시 확인하세요!
+   - 예: 이전 단계에서 데이터프레임 컬럼명을 소문자로 변환했다면, 현재 단계에서도 소문자로 접근해야 합니다
+   - 예: 이전 단계에서 특정 변수를 정의했다면, 그 변수명을 그대로 사용해야 합니다
+   - 데이터 전처리, 변수 변환 등 이전 컨텍스트를 유지하세요
 
 ## 에러 유형별 해결 전략
 
 ### 🚨 ModuleNotFoundError / ImportError → ⚡ `insert_steps` 필수! (예외 없음)
 - **decision**: 반드시 `"insert_steps"` 선택 (다른 옵션 절대 불가!)
-- **changes.new_steps**: `!pip install --index-url https://nexus-base.hyundaicard.com/repository/pypi/simple --timeout 180 에러메시지의_패키지명` 단계 추가
+- **changes.new_steps**: `!pip install {PIP_INDEX_OPTION} --timeout 180 에러메시지의_패키지명` 단계 추가
   - ⚠️ **패키지명은 반드시 에러 메시지에서 추출!**
   - ⚠️ **사용자 코드의 패키지가 아님!** (예: dask가 아니라 pyarrow)
 - ❌ `refine` 금지 - 코드 수정으로 해결 불가!
@@ -444,7 +489,7 @@ ADAPTIVE_REPLAN_PROMPT = '''에러가 발생했습니다. 출력과 에러를 �
 
 2. **insert_steps**: 현재 단계 전에 필요한 단계 추가 (선행 작업 필요)
    - ✅ **ModuleNotFoundError, ImportError 발생 시 유일하게 허용되는 옵션!**
-   - 패키지 설치: `!pip install --index-url https://nexus-base.hyundaicard.com/repository/pypi/simple --timeout 180 패키지명` 단계 추가
+   - 패키지 설치: `!pip install {PIP_INDEX_OPTION} --timeout 180 패키지명` 단계 추가
    - 에러 메시지의 패키지명을 정확히 추출하여 설치
 
 3. **replace_step**: 현재 단계를 완전히 다른 접근법으로 교체
@@ -479,7 +524,7 @@ ADAPTIVE_REPLAN_PROMPT = '''에러가 발생했습니다. 출력과 에러를 �
     "new_steps": [
       {{
         "description": "에러메시지에서 확인된 패키지(예: pyarrow) 설치",
-        "toolCalls": [{{"tool": "jupyter_cell", "parameters": {{"code": "!pip install 에러메시지의_패키지명"}}}}]
+        "toolCalls": [{{"tool": "jupyter_cell", "parameters": {{"code": "!pip install {PIP_INDEX_OPTION} --timeout 180 에러메시지의_패키지명"}}}}]
       }}
     ],
 
@@ -891,11 +936,29 @@ def format_replan_prompt(
     available_libraries: list = None
 ) -> str:
     """Adaptive Replanning 프롬프트 포맷팅"""
-    # 실행된 단계 텍스트
-    executed_text = "\n".join([
-        f"- Step {s.get('stepNumber', i+1)}: {s.get('description', '완료')} ✅"
-        for i, s in enumerate(executed_steps)
-    ]) if executed_steps else "없음"
+    # 실행된 단계 텍스트 (코드 포함)
+    executed_text_parts = []
+    if executed_steps:
+        for i, s in enumerate(executed_steps):
+            step_num = s.get('stepNumber', i+1)
+            step_desc = s.get('description', '완료')
+            executed_text_parts.append(f"- Step {step_num}: {step_desc} ✅")
+
+            # 이 스텝에서 실행한 코드 추가
+            tool_calls = s.get('toolCalls', [])
+            for tc in tool_calls:
+                if tc.get('tool') == 'jupyter_cell':
+                    code = tc.get('parameters', {}).get('code', '')
+                    if code:
+                        # 코드를 간략하게 표시 (처음 3줄 또는 전체)
+                        code_lines = code.split('\n')
+                        if len(code_lines) > 5:
+                            code_preview = '\n'.join(code_lines[:5]) + '\n  ...(생략)'
+                        else:
+                            code_preview = code
+                        executed_text_parts.append(f"  코드:\n    {code_preview.replace(chr(10), chr(10) + '    ')}")
+
+    executed_text = "\n".join(executed_text_parts) if executed_text_parts else "없음"
 
     # 실패한 코드 추출
     failed_code = ""
@@ -981,3 +1044,14 @@ def format_reflection_prompt(
         validation_criteria=criteria_text,
         remaining_steps=remaining_text
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 프롬프트 치환: {PIP_INDEX_OPTION} placeholder를 실제 값으로 교체
+# ═══════════════════════════════════════════════════════════════════════════
+
+# 모든 프롬프트에서 {PIP_INDEX_OPTION}을 실제 값으로 치환
+# - 로컬 환경: 빈 문자열 → `!pip install --timeout 180 패키지명`
+# - 내부망: "--index-url <url>" → `!pip install --index-url <url> --timeout 180 패키지명`
+PLAN_GENERATION_PROMPT = PLAN_GENERATION_PROMPT.replace("{PIP_INDEX_OPTION}", PIP_INDEX_OPTION)
+ADAPTIVE_REPLAN_PROMPT = ADAPTIVE_REPLAN_PROMPT.replace("{PIP_INDEX_OPTION}", PIP_INDEX_OPTION)

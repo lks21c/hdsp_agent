@@ -45,9 +45,10 @@ echo "✅ JupyterLab extension build complete"
 echo ""
 
 # Step 3: Build wheel package
-echo "3️⃣  Building wheel package..."
+echo "3️⃣  Building wheel package and make hdsp-agent-assets.zip for statics..."
 poetry build
-echo "✅ Wheel package build complete"
+zip -r hdsp-agent-assets.zip backend/labextension
+echo "✅ Wheel package build & zipping complete"
 echo ""
 
 # Step 4: Show results

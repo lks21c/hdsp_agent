@@ -34,7 +34,7 @@ def load_jupyter_server_extension(server_app):
 
     # [디버깅 1] 함수 진입 여부 확인
     try:
-        with open("/home/sagemaker-user/hdsp_entry.txt", "w") as f:
+        with open("./hdsp_entry.txt", "w") as f:
             f.write("1. load_jupyter_server_extension Entered\n")
             f.write(f"Base URL: {server_app.web_app.settings.get('base_url', 'Not Found')}\n")
 
@@ -46,12 +46,12 @@ def load_jupyter_server_extension(server_app):
         server_app.log.info('HDSP Agent extension loaded')
 
         # [디버깅 2] 성공 여부 확인
-        with open("/home/sagemaker-user/hdsp_success.txt", "w") as f:
+        with open("./hdsp_success.txt", "w") as f:
             f.write("2. Setup Handlers Completed Successfully\n")
 
     except Exception as e:
         # [디버깅 3] 에러 발생 시 로그 파일로 남기기 (가장 중요)
-        with open("/home/sagemaker-user/hdsp_error.txt", "w") as f:
+        with open("./hdsp_error.txt", "w") as f:
             f.write(f"Error Occurred:\n{str(e)}\n\nTraceback:\n{traceback.format_exc()}")
         server_app.log.error(f"Failed to load HDSP extension: {e}")
         raise e

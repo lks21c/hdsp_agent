@@ -317,6 +317,10 @@ export class ToolExecutor {
     // NotebookActions.run()을 사용하여 정식 실행 (execution_count 업데이트됨)
     const success = await NotebookActions.run(notebookContent, this.sessionContext);
 
+    // 실행 완료 후 outputs 업데이트 대기 (최대 100ms)
+    // NotebookActions.run()이 완료되어도 outputs가 바로 업데이트되지 않을 수 있음
+    await new Promise(resolve => setTimeout(resolve, 100));
+
     // 실행 완료 후 결과 캡처
     const executionTime = Date.now() - startTime;
 

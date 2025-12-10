@@ -9,6 +9,7 @@ import type { ISessionContext } from '@jupyterlab/apputils';
 
 import { ApiService } from '../services/ApiService';
 import { AgentOrchestrator } from '../services/AgentOrchestrator';
+import { formatMarkdownToHtml } from '../utils/markdownRenderer';
 import {
   AgentStatus,
   AutoAgentResult,
@@ -477,7 +478,10 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
             )}
           </div>
           {result.finalAnswer && (
-            <p className="aa-result-message">{result.finalAnswer}</p>
+            <div
+              className="aa-result-message"
+              dangerouslySetInnerHTML={{ __html: formatMarkdownToHtml(result.finalAnswer) }}
+            />
           )}
           {result.error && (
             <p className="aa-result-error">{result.error}</p>
