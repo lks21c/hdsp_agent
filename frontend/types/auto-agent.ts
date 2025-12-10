@@ -76,6 +76,7 @@ export interface PlanStep {
   description: string;
   toolCalls: ToolCall[];
   dependencies: number[];  // 의존하는 이전 단계 번호들
+  isNew?: boolean;  // Replan으로 새로 추가된 스텝인지 여부
 }
 
 export interface StepResult {

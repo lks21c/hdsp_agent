@@ -943,6 +943,7 @@ export class AgentOrchestrator {
           const newSteps = changes.new_steps.map((newStep, idx) => ({
             ...newStep,
             stepNumber: currentStep.stepNumber + idx * 0.1, // 임시 번호
+            isNew: true, // Replan으로 새로 추가된 스텝 표시
           }));
 
           steps.splice(currentStepIndex, 0, ...newSteps);
@@ -978,6 +979,7 @@ export class AgentOrchestrator {
           const newPlanSteps = changes.new_plan.map((newStep, idx) => ({
             ...newStep,
             stepNumber: currentStepIndex + idx + 1,
+            isNew: true, // Replan으로 새로 추가된 스텝 표시
           }));
 
           // 새 계획에 final_answer가 없으면 경고 로그
