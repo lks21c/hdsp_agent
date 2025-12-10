@@ -9,6 +9,9 @@ import re
 class BaseAgentHandler(APIHandler):
     """Base handler with common functionality"""
 
+    # Class-level cache for installed packages (shared across all handlers)
+    _installed_packages_cache = None
+
     def check_xsrf_cookie(self):
         """
         XSRF 토큰 검사를 강제로 생략합니다.
@@ -50,6 +53,21 @@ class BaseAgentHandler(APIHandler):
             'error': message,
             'status': status_code
         })
+
+    def _get_installed_packages(self) -> list:
+        """현재 환경의 설치된 패키지 목록 반환 (캐싱)"""
+        if BaseAgentHandler._installed_packages_cache is not None:
+            return BaseAgentHandler._installed_packages_cache
+
+        try:
+            from importlib.metadata import distributions
+            packages = [dist.name for dist in distributions()]
+            BaseAgentHandler._installed_packages_cache = packages
+            self.log.info(f"Loaded {len(packages)} installed packages")
+            return packages
+        except Exception as e:
+            self.log.warning(f"Failed to get installed packages: {e}")
+            return []
 
     def parse_llm_json_response(self, response: str) -> dict:
         """LLM 응답에서 JSON 추출 - 잘린 응답도 복구 시도"""

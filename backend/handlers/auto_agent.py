@@ -43,7 +43,8 @@ class AutoAgentPlanHandler(BaseAgentHandler):
                 cell_count=notebook_context.get('cellCount', 0),
                 imported_libraries=notebook_context.get('importedLibraries', []),
                 defined_variables=notebook_context.get('definedVariables', []),
-                recent_cells=notebook_context.get('recentCells', [])
+                recent_cells=notebook_context.get('recentCells', []),
+                available_libraries=self._get_installed_packages()
             )
 
             # LLM 호출
@@ -154,7 +155,7 @@ class AutoAgentRefineHandler(BaseAgentHandler):
                 traceback=traceback_str,
                 attempt=attempt,
                 max_attempts=3,
-                available_libraries=[],
+                available_libraries=self._get_installed_packages(),
                 defined_variables=[]
             )
 
@@ -245,7 +246,8 @@ class AutoAgentPlanStreamHandler(BaseAgentHandler):
                 cell_count=notebook_context.get('cellCount', 0),
                 imported_libraries=notebook_context.get('importedLibraries', []),
                 defined_variables=notebook_context.get('definedVariables', []),
-                recent_cells=notebook_context.get('recentCells', [])
+                recent_cells=notebook_context.get('recentCells', []),
+                available_libraries=self._get_installed_packages()
             )
 
             # 진행 상태 전송
@@ -328,7 +330,8 @@ class AutoAgentReplanHandler(BaseAgentHandler):
                 executed_steps=executed_steps,
                 failed_step=failed_step,
                 error_info=error_info,
-                execution_output=execution_output
+                execution_output=execution_output,
+                available_libraries=self._get_installed_packages()
             )
 
             # LLM 호출

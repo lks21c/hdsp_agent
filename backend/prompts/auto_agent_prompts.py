@@ -34,6 +34,10 @@ PLAN_GENERATION_PROMPT = '''당신은 Jupyter 노트북을 위한 Python 코드 
 - 최근 셀 내용:
 {recent_cells}
 
+## 현재 환경 정보
+
+- **설치된 패키지**: {available_libraries}
+
 ## 사용자 요청
 
 {request}
@@ -331,6 +335,10 @@ ADAPTIVE_REPLAN_PROMPT = '''에러가 발생했습니다. 출력과 에러를 �
 {execution_output}
 ```
 
+## 현재 환경 정보
+
+- **설치된 패키지**: {available_libraries}
+
 ## ⚠️ 필수 규칙 (MANDATORY RULES - 반드시 따를 것!)
 
 ### 🚨🚨🚨 ModuleNotFoundError / ImportError → 무조건 `insert_steps` 사용! 🚨🚨🚨
@@ -346,18 +354,32 @@ ADAPTIVE_REPLAN_PROMPT = '''에러가 발생했습니다. 출력과 에러를 �
 - 실행한 코드와 오류 메시지의 패키지가 **달라도** `insert_steps` 사용!
 - 예시 1: `import dask.dataframe as dd` 실행 → `No module named 'pyarrow'` 오류
   → pyarrow는 dask의 **내부 의존성**
-  → `insert_steps`로 `!pip install pyarrow` 추가!
+  → `insert_steps`로 `!pip install --index-url https://nexus-base.hyundaicard.com/repository/pypi/simple --timeout 180 pyarrow` 추가!
   → ❌ "dask 대신 pandas 사용" 같은 접근법 변경 금지!
 - 예시 2: `import tensorflow` 실행 → `No module named 'keras'` 오류
-  → `insert_steps`로 `!pip install keras` 추가!
+  → `insert_steps`로 `!pip install --index-url https://nexus-base.hyundaicard.com/repository/pypi/simple --timeout 180 keras` 추가!
 - 예시 3: `from transformers import AutoModel` 실행 → `No module named 'accelerate'` 오류
-  → `insert_steps`로 `!pip install accelerate` 추가!
+  → `insert_steps`로 `!pip install --index-url https://nexus-base.hyundaicard.com/repository/pypi/simple --timeout 180 accelerate` 추가!
 
 **📋 판단 기준**: 에러 메시지에 `No module named` 또는 `ImportError`가 있으면:
 1. **⚠️ 에러 메시지에서 패키지명 추출 (코드가 아님!)** ⚠️
 2. 무조건 `insert_steps` 선택
-3. `!pip install 에러메시지의_패키지명` 단계 추가
+3. `!pip install --index-url https://nexus-base.hyundaicard.com/repository/pypi/simple --timeout 180 에러메시지의_패키지명` 단계 추가
 4. **사용자가 요청한 원래 라이브러리(dask 등)는 그대로 유지!**
+
+**🚨 URL 축약 절대 금지!**:
+- pip install 명령어의 `--index-url` 은 **반드시 전체 URL을 그대로 사용**해야 합니다
+- ❌ 금지: `https://nexus-base.hyundai.../simple` (... 로 축약)
+- ✅ 필수: `https://nexus-base.hyundaicard.com/repository/pypi/simple` (전체 URL)
+- 긴 URL이라도 절대 축약하지 마세요! 실행되지 않습니다!
+
+**🚨 패키지 설치 전 필수 확인!**:
+- **설치된 패키지** 목록을 반드시 확인하세요
+- 에러 메시지의 패키지가 **이미 설치되어 있다면** 설치 단계를 추가하지 마세요!
+- 예: 에러가 `No module named 'pyarrow'`인데 설치된 패키지에 `pyarrow`가 있으면 → 설치 불필요
+- 예: 에러가 `No module named 'dask'`인데 설치된 패키지에 `dask`가 있으면 → 설치 불필요
+- ⚠️ **주의**: 패키지가 이미 있는데도 설치를 반복하면 무한 루프에 빠집니다!
+- ✅ 패키지가 없을 때만 `insert_steps`로 설치 추가하세요
 
 ### 🚨🚨🚨 패키지명 추출 - 매우 중요!!! 🚨🚨🚨
 
@@ -369,8 +391,8 @@ ADAPTIVE_REPLAN_PROMPT = '''에러가 발생했습니다. 출력과 에러를 �
 
 | 추출 방법 | 결과 | 판정 |
 |----------|------|------|
-| 사용자 코드에서 추출 | `!pip install dask` | ❌ **완전히 틀림!** |
-| 에러 메시지에서 추출 | `!pip install pyarrow` | ✅ **정답!** |
+| 사용자 코드에서 추출 | `!pip install --index-url https://nexus-base.hyundaicard.com/repository/pypi/simple --timeout 180 dask` | ❌ **완전히 틀림!** |
+| 에러 메시지에서 추출 | `!pip install --index-url https://nexus-base.hyundaicard.com/repository/pypi/simple --timeout 180 pyarrow` | ✅ **정답!** |
 
 **왜 중요한가?**:
 - dask는 이미 설치되어 있음 (그래서 import dask가 시작됨)
@@ -378,11 +400,11 @@ ADAPTIVE_REPLAN_PROMPT = '''에러가 발생했습니다. 출력과 에러를 �
 - 따라서 설치해야 할 패키지는 pyarrow!
 
 ### 패키지명 추출 규칙
-- "No module named 'xxx'" → `!pip install xxx` (에러 메시지의 xxx!)
-- "No module named 'xxx.yyy'" → `!pip install xxx` (최상위 패키지만)
-- 예외: `sklearn` → `!pip install scikit-learn`
-- 예외: `cv2` → `!pip install opencv-python`
-- 예외: `PIL` → `!pip install pillow`
+- "No module named 'xxx'" → `!pip install --index-url https://nexus-base.hyundaicard.com/repository/pypi/simple --timeout 180 xxx` (에러 메시지의 xxx!)
+- "No module named 'xxx.yyy'" → `!pip install --index-url https://nexus-base.hyundaicard.com/repository/pypi/simple --timeout 180 xxx` (최상위 패키지만)
+- 예외: `sklearn` → `!pip install --index-url https://nexus-base.hyundaicard.com/repository/pypi/simple --timeout 180 scikit-learn`
+- 예외: `cv2` → `!pip install --index-url https://nexus-base.hyundaicard.com/repository/pypi/simple --timeout 180 opencv-python`
+- 예외: `PIL` → `!pip install --index-url https://nexus-base.hyundaicard.com/repository/pypi/simple --timeout 180 pillow`
 
 ## 분석 지침
 
@@ -394,7 +416,7 @@ ADAPTIVE_REPLAN_PROMPT = '''에러가 발생했습니다. 출력과 에러를 �
 
 ### 🚨 ModuleNotFoundError / ImportError → ⚡ `insert_steps` 필수! (예외 없음)
 - **decision**: 반드시 `"insert_steps"` 선택 (다른 옵션 절대 불가!)
-- **changes.new_steps**: `!pip install 에러메시지의_패키지명` 단계 추가
+- **changes.new_steps**: `!pip install --index-url https://nexus-base.hyundaicard.com/repository/pypi/simple --timeout 180 에러메시지의_패키지명` 단계 추가
   - ⚠️ **패키지명은 반드시 에러 메시지에서 추출!**
   - ⚠️ **사용자 코드의 패키지가 아님!** (예: dask가 아니라 pyarrow)
 - ❌ `refine` 금지 - 코드 수정으로 해결 불가!
@@ -422,7 +444,7 @@ ADAPTIVE_REPLAN_PROMPT = '''에러가 발생했습니다. 출력과 에러를 �
 
 2. **insert_steps**: 현재 단계 전에 필요한 단계 추가 (선행 작업 필요)
    - ✅ **ModuleNotFoundError, ImportError 발생 시 유일하게 허용되는 옵션!**
-   - 패키지 설치: `!pip install 패키지명` 단계 추가
+   - 패키지 설치: `!pip install --index-url https://nexus-base.hyundaicard.com/repository/pypi/simple --timeout 180 패키지명` 단계 추가
    - 에러 메시지의 패키지명을 정확히 추출하여 설치
 
 3. **replace_step**: 현재 단계를 완전히 다른 접근법으로 교체
@@ -776,7 +798,8 @@ def format_plan_prompt(
     cell_count: int,
     imported_libraries: list,
     defined_variables: list,
-    recent_cells: list
+    recent_cells: list,
+    available_libraries: list = None
 ) -> str:
     """실행 계획 생성 프롬프트 포맷팅 (Mini RAG 지식 자동 로드)"""
     from ..knowledge.loader import get_knowledge_loader
@@ -798,7 +821,8 @@ def format_plan_prompt(
         cell_count=cell_count,
         imported_libraries=", ".join(imported_libraries) if imported_libraries else "없음",
         defined_variables=", ".join(defined_variables) if defined_variables else "없음",
-        recent_cells=recent_cells_text if recent_cells_text else "없음"
+        recent_cells=recent_cells_text if recent_cells_text else "없음",
+        available_libraries=", ".join(available_libraries) if available_libraries else "정보 없음"
     )
 
     # 라이브러리 지식이 있으면 프롬프트에 추가
@@ -863,7 +887,8 @@ def format_replan_prompt(
     executed_steps: list,
     failed_step: dict,
     error_info: dict,
-    execution_output: str = ""
+    execution_output: str = "",
+    available_libraries: list = None
 ) -> str:
     """Adaptive Replanning 프롬프트 포맷팅"""
     # 실행된 단계 텍스트
@@ -896,7 +921,8 @@ def format_replan_prompt(
         error_type=error_info.get('type', 'runtime'),
         error_message=error_info.get('message', 'Unknown error'),
         traceback=traceback_str,
-        execution_output=execution_output if execution_output else "없음"
+        execution_output=execution_output if execution_output else "없음",
+        available_libraries=", ".join(available_libraries) if available_libraries else "정보 없음"
     )
 
 
