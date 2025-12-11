@@ -714,12 +714,13 @@
             },
             "@emotion/react": {},
             "@emotion/styled": {},
-            "@mui/icons-material": {},
-            "@mui/material": {},
             "@jupyter-widgets/base": {
               "singleton": true,
               "import": false
             },
+            "@mui/icons-material": {},
+            "@mui/material": {},
+            "react-markdown": {},
             "@hdsp-agent/extension": {
               "version": "0.1.1",
               "singleton": true,

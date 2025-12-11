@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef, useCallback } from 'react';
-import { ReactWidget } from '@jupyterlab/ui-components';
+import { ReactWidget, LabIcon } from '@jupyterlab/ui-components';
 import { ApiService } from '../services/ApiService';
 import { IChatMessage } from '../types';
 import { SettingsPanel, LLMConfig } from './SettingsPanel';
@@ -18,6 +18,14 @@ import {
 } from '../types/auto-agent';
 import { formatMarkdownToHtml, escapeHtml } from '../utils/markdownRenderer';
 
+// 로고 이미지 (SVG) - TypeScript 모듈에서 인라인 문자열로 import
+import { headerLogoSvg, tabbarLogoSvg } from '../logoSvg';
+
+// 탭바 아이콘 생성
+const hdspTabIcon = new LabIcon({
+  name: 'hdsp-agent:tab-icon',
+  svgstr: tabbarLogoSvg
+});
 
 // Agent 실행 메시지 타입 (채팅에 inline으로 표시)
 interface AgentExecutionMessage {
@@ -40,16 +48,12 @@ interface AgentPanelProps {
   notebookTracker?: any;
 }
 
-// 입력 모드 타입
-type InputMode = 'chat' | 'agent';
-
 export interface ChatPanelHandle {
   handleSendMessage: () => Promise<void>;
   setInput: (value: string) => void;
   setLlmPrompt: (prompt: string) => void;
   setCurrentCellId: (cellId: string) => void;
   setCurrentCellIndex: (cellIndex: number) => void;
-  setInputMode: (mode: InputMode) => void;
 }
 
 // Agent 명령어 감지 함수
@@ -82,6 +86,9 @@ const extractAgentRequest = (input: string): string => {
 /**
  * Chat Panel Component - Cursor AI Style Unified Interface
  */
+// 입력 모드 타입
+type InputMode = 'chat' | 'agent';
+
 const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, notebookTracker }, ref) => {
   // 통합 메시지 목록 (Chat + Agent 실행)
   const [messages, setMessages] = useState<UnifiedMessage[]>([]);
@@ -146,10 +153,6 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
     setCurrentCellIndex: (cellIndex: number) => {
       console.log('[AgentPanel] setCurrentCellIndex called with:', cellIndex);
       currentCellIndexRef.current = cellIndex;
-    },
-    setInputMode: (mode: InputMode) => {
-      console.log('[AgentPanel] setInputMode called with:', mode);
-      setInputMode(mode);
     }
   }));
 
@@ -240,7 +243,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
                 ...msg,
                 status: {
                   phase: result.success ? 'completed' : 'failed',
-                  message: result.success ? '작업 완료' : '작업 실패',
+                  message: result.finalAnswer || (result.success ? '작업 완료' : '작업 실패'),
                 },
                 result,
                 completedSteps: result.plan?.steps.map(s => s.stepNumber) || [],
@@ -1244,11 +1247,9 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
                         {step.description}
                       </span>
                       <div className="jp-agent-execution-step-tools">
-                        {step.toolCalls
-                          .filter(tc => tc.tool !== 'jupyter_cell' && tc.tool !== 'final_answer' && tc.tool !== 'markdown')
-                          .map((tc, i) => (
-                            <span key={i} className="jp-agent-execution-tool-tag">{tc.tool}</span>
-                          ))}
+                        {step.toolCalls.map((tc, i) => (
+                          <span key={i} className="jp-agent-execution-tool-tag">{tc.tool}</span>
+                        ))}
                       </div>
                     </div>
                   </div>
@@ -1263,7 +1264,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
           <div className={`jp-agent-execution-result jp-agent-execution-result--${result.success ? 'success' : 'error'}`}>
             {result.finalAnswer && (
               <div
-                className="jp-agent-execution-result-message"
+                className="jp-agent-execution-result-message jp-RenderedHTMLCommon"
                 dangerouslySetInnerHTML={{ __html: formatMarkdownToHtml(result.finalAnswer) }}
               />
             )}
@@ -1301,12 +1302,10 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
 
       {/* Header */}
       <div className="jp-agent-header">
-        <svg className="jp-agent-logo" viewBox="0 0 58 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <text x="2" y="24" fontFamily="system-ui, -apple-system, sans-serif" fontSize="24" fontWeight="700">
-            <tspan fill="#333">Hal</tspan>
-            <tspan fill="#E67E22">o</tspan>
-          </text>
-        </svg>
+        <div
+          className="jp-agent-header-logo"
+          dangerouslySetInnerHTML={{ __html: headerLogoSvg }}
+        />
         <div className="jp-agent-header-buttons">
           <button
             className="jp-agent-clear-button"
@@ -1344,7 +1343,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
       <div className="jp-agent-messages">
         {messages.length === 0 ? (
           <div className="jp-agent-empty-state">
-            <p>안녕하세요! HALO입니다.</p>
+            <p>안녕하세요! HDSP Agent입니다.</p>
             <p className="jp-agent-empty-hint">
               {inputMode === 'agent'
                 ? '노트북 작업을 자연어로 요청하세요. 예: "데이터 시각화 해줘"'
@@ -1366,14 +1365,21 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
                       {new Date(msg.timestamp).toLocaleTimeString()}
                     </span>
                   </div>
-                  <div
-                    className={`jp-agent-message-content${streamingMessageId === msg.id ? ' streaming' : ''}`}
-                    dangerouslySetInnerHTML={{
-                      __html: msg.role === 'assistant'
-                        ? formatMarkdownToHtml(msg.content)
-                        : escapeHtml(msg.content).replace(/\n/g, '<br>')
-                    }}
-                  />
+                  <div className={`jp-agent-message-content${streamingMessageId === msg.id ? ' streaming' : ''}`}>
+                    {msg.role === 'assistant' ? (
+                      // Assistant(AI) 메시지: 마크다운 HTML 렌더링 + Jupyter 스타일 적용
+                      <div
+                        className="jp-RenderedHTMLCommon"
+                        style={{ padding: '0 5px' }}
+                        dangerouslySetInnerHTML={{ __html: formatMarkdownToHtml(msg.content) }}
+                      />
+                    ) : (
+                      // User(사용자) 메시지: 텍스트 그대로 줄바꿈만 처리
+                      <div style={{ whiteSpace: 'pre-wrap' }}>
+                        {msg.content}
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             } else {
@@ -1504,9 +1510,8 @@ export class AgentPanelWidget extends ReactWidget {
     this.apiService = apiService;
     this.notebookTracker = notebookTracker;
     this.id = 'hdsp-agent-panel';
-    this.title.label = 'HALO';
-    this.title.caption = 'HALO Agent Assistant';
-    // Using JupyterLab's built-in robot icon
+    this.title.caption = 'HDSP Agent Assistant';
+    this.title.icon = hdspTabIcon;
     this.addClass('jp-agent-widget');
   }
 
@@ -1548,11 +1553,6 @@ export class AgentPanelWidget extends ReactWidget {
       return;
     }
 
-    // E, F, ? 버튼 클릭 시 항상 일반 대화(chat) 모드로 전환
-    if (this.chatPanelRef.current.setInputMode) {
-      this.chatPanelRef.current.setInputMode('chat');
-    }
-
     // Store cell index for code application (preferred method)
     if (cellIndex !== undefined && this.chatPanelRef.current.setCurrentCellIndex) {
       this.chatPanelRef.current.setCurrentCellIndex(cellIndex);
@@ -1591,11 +1591,6 @@ export class AgentPanelWidget extends ReactWidget {
       console.error('[AgentPanel] ChatPanel ref not available');
       onComplete();
       return;
-    }
-
-    // 저장 시 검수도 항상 일반 대화(chat) 모드로 전환
-    if (this.chatPanelRef.current.setInputMode) {
-      this.chatPanelRef.current.setInputMode('chat');
     }
 
     // Create summary of notebook
