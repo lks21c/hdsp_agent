@@ -60,19 +60,21 @@ export class ToolExecutor {
 
   /**
    * Tool 실행 라우터
+   * @param call - 도구 호출 정보
+   * @param stepNumber - 실행 계획의 단계 번호 (셀에 표시용)
    */
-  async executeTool(call: ToolCall): Promise<ToolResult> {
-    console.log('[ToolExecutor] executeTool called:', JSON.stringify(call, null, 2));
+  async executeTool(call: ToolCall, stepNumber?: number): Promise<ToolResult> {
+    console.log('[ToolExecutor] executeTool called:', JSON.stringify(call, null, 2), 'stepNumber:', stepNumber);
 
     let result: ToolResult;
     switch (call.tool) {
       case 'jupyter_cell':
         console.log('[ToolExecutor] Executing jupyter_cell tool');
-        result = await this.executeJupyterCell(call.parameters as JupyterCellParams);
+        result = await this.executeJupyterCell(call.parameters as JupyterCellParams, stepNumber);
         break;
       case 'markdown':
         console.log('[ToolExecutor] Executing markdown tool');
-        result = await this.executeMarkdown(call.parameters as MarkdownParams);
+        result = await this.executeMarkdown(call.parameters as MarkdownParams, stepNumber);
         break;
       case 'final_answer':
         console.log('[ToolExecutor] Executing final_answer tool');
@@ -91,8 +93,9 @@ export class ToolExecutor {
 
   /**
    * jupyter_cell 도구: 셀 생성/수정/실행
+   * @param stepNumber - 실행 계획의 단계 번호 (셀에 주석으로 표시)
    */
-  async executeJupyterCell(params: JupyterCellParams): Promise<ToolResult> {
+  async executeJupyterCell(params: JupyterCellParams, stepNumber?: number): Promise<ToolResult> {
     console.log('[ToolExecutor] executeJupyterCell params:', params);
     const notebookContent = this.notebook.content;
     console.log('[ToolExecutor] notebook content available:', !!notebookContent);
@@ -100,17 +103,23 @@ export class ToolExecutor {
     let cellIndex: number;
     let wasModified = false;
 
+    // stepNumber가 있으면 코드 맨 앞에 주석 추가
+    let codeWithStep = params.code;
+    if (stepNumber !== undefined) {
+      codeWithStep = `# [Step ${stepNumber}]\n${params.code}`;
+    }
+
     try {
       if (params.cellIndex !== undefined) {
         // 기존 셀 수정
         console.log('[ToolExecutor] Modifying existing cell at index:', params.cellIndex);
         cellIndex = params.cellIndex;
-        this.updateCellContent(cellIndex, params.code);
+        this.updateCellContent(cellIndex, codeWithStep);
         wasModified = true;
       } else {
         // 새 셀 생성
         console.log('[ToolExecutor] Creating new code cell');
-        cellIndex = await this.createCodeCell(params.code, params.insertAfter);
+        cellIndex = await this.createCodeCell(codeWithStep, params.insertAfter);
         console.log('[ToolExecutor] Created cell at index:', cellIndex);
       }
 
@@ -144,17 +153,23 @@ export class ToolExecutor {
   /**
    * markdown 도구: 마크다운 셀 생성/수정
    */
-  async executeMarkdown(params: MarkdownParams): Promise<ToolResult> {
+  async executeMarkdown(params: MarkdownParams, stepNumber?: number): Promise<ToolResult> {
     try {
       let cellIndex: number;
       let wasModified = false;
 
+      // stepNumber가 있으면 마크다운 맨 앞에 표시 추가
+      let contentWithStep = params.content;
+      if (stepNumber !== undefined) {
+        contentWithStep = `**[Step ${stepNumber}]**\n\n${params.content}`;
+      }
+
       if (params.cellIndex !== undefined) {
         cellIndex = params.cellIndex;
-        this.updateCellContent(cellIndex, params.content);
+        this.updateCellContent(cellIndex, contentWithStep);
         wasModified = true;
       } else {
-        cellIndex = await this.createMarkdownCell(params.content);
+        cellIndex = await this.createMarkdownCell(contentWithStep);
       }
 
       // 마크다운 셀도 생성 후 스크롤
@@ -437,11 +452,13 @@ print(json.dumps(result))
     notebookContent.activeCellIndex = cellIndex;
 
     // NotebookActions.run()을 사용하여 정식 실행 (execution_count 업데이트됨)
-    const success = await NotebookActions.run(notebookContent, this.sessionContext);
+    const runSuccess = await NotebookActions.run(notebookContent, this.sessionContext);
+    console.log('[ToolExecutor] NotebookActions.run() success:', runSuccess);
 
-    // 실행 완료 후 outputs 업데이트 대기 (최대 100ms)
+    // 실행 완료 후 outputs 업데이트 대기 (최대 300ms로 증가)
     // NotebookActions.run()이 완료되어도 outputs가 바로 업데이트되지 않을 수 있음
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // 특히 에러 출력은 시간이 더 걸릴 수 있음
+    await new Promise(resolve => setTimeout(resolve, 300));
 
     // 실행 완료 후 결과 캡처
     const executionTime = Date.now() - startTime;
@@ -454,7 +471,7 @@ print(json.dumps(result))
 
     // cell.model과 outputs가 존재하는지 안전하게 체크
     const outputs = cell.model?.outputs;
-    console.log('[ToolExecutor] Cell outputs count:', outputs?.length ?? 0);
+    console.log('[ToolExecutor] Cell outputs count:', outputs?.length ?? 0, '| runSuccess:', runSuccess);
     if (outputs && outputs.length > 0) {
       for (let i = 0; i < outputs.length; i++) {
         const output = outputs.get(i);
@@ -487,8 +504,28 @@ print(json.dumps(result))
       }
     }
 
-    const status = error ? 'error' : 'ok';
-    console.log('[ToolExecutor] Final status:', status, 'error:', error);
+    // NotebookActions.run()이 false를 반환했거나 error output이 있으면 실패
+    // runSuccess가 false면 에러 output이 없어도 실패로 처리
+    const status = (error || !runSuccess) ? 'error' : 'ok';
+
+    // 디버깅: 실패 감지 상세 로그
+    console.log('[ToolExecutor] Final status:', status);
+    console.log('[ToolExecutor] - runSuccess:', runSuccess);
+    console.log('[ToolExecutor] - error detected:', !!error);
+    if (error) {
+      console.log('[ToolExecutor] - error.ename:', error.ename);
+      console.log('[ToolExecutor] - error.evalue:', error.evalue);
+    }
+
+    // runSuccess가 false인데 error가 없으면 기본 에러 메시지 설정
+    if (!runSuccess && !error) {
+      console.warn('[ToolExecutor] NotebookActions.run() failed but no error output captured!');
+      error = {
+        ename: 'ExecutionError',
+        evalue: 'Cell execution failed (NotebookActions.run returned false)',
+        traceback: [],
+      };
+    }
 
     return {
       status,

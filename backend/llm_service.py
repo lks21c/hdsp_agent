@@ -197,7 +197,7 @@ class LLMService:
         model: str,
         messages: list,
         max_tokens: int = 4096,
-        temperature: float = 0.7,
+        temperature: float = 0.0,  # 0.0 = 결정적 출력 (일관성 최대화)
         stream: bool = False
     ) -> Dict[str, Any]:
         """Build OpenAI-compatible request payload"""
@@ -209,13 +209,28 @@ class LLMService:
             "stream": stream
         }
 
-    def _build_gemini_payload(self, prompt: str, max_output_tokens: int = 8192) -> Dict[str, Any]:
-        """Build Gemini API request payload"""
+    def _build_gemini_payload(
+        self,
+        prompt: str,
+        max_output_tokens: int = 8192,
+        temperature: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """Build Gemini API request payload
+
+        Args:
+            prompt: The prompt text
+            max_output_tokens: Maximum tokens in response
+            temperature: 0.0 for deterministic, higher for creativity (default from config)
+        """
+        # temperature 기본값: config에서 가져오거나 0.0 (일관성 우선)
+        cfg = self.config.get('gemini', {})
+        temp = temperature if temperature is not None else cfg.get('temperature', 0.0)
+
         return {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {
-                "temperature": 0.7,
-                "topK": 40,
+                "temperature": temp,  # 0.0 = 결정적 출력 (일관성 최대화)
+                "topK": 1,  # 가장 확률 높은 토큰만 선택 (일관성)
                 "topP": 0.95,
                 "maxOutputTokens": max_output_tokens
             },

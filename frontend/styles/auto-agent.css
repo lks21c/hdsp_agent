@@ -346,26 +346,38 @@
 }
 
 .aa-step-indicator {
-  width: 20px;
+  min-width: 42px;
   height: 20px;
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 4px;
   flex-shrink: 0;
   margin-top: 1px;
 }
 
-.aa-step-indicator svg {
+/* 상태 아이콘 */
+.aa-step-status-icon {
   width: 14px;
   height: 14px;
+  flex-shrink: 0;
 }
 
-.aa-step--completed .aa-step-indicator {
+.aa-step-status-icon--completed {
   color: var(--jp-success-color1);
 }
 
-.aa-step--failed .aa-step-indicator {
+.aa-step-status-icon--failed {
   color: var(--jp-error-color1);
+}
+
+/* 대기 중 점 */
+.aa-step-pending-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--jp-ui-font-color3);
+  flex-shrink: 0;
+  margin: 0 3px;
 }
 
 .aa-step-spinner {
@@ -375,12 +387,40 @@
   border-top-color: var(--jp-brand-color1);
   border-radius: 50%;
   animation: aa-spin 0.8s linear infinite;
+  flex-shrink: 0;
 }
 
+/* Step 번호 - 항상 표시 */
 .aa-step-number {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--jp-ui-font-color3);
+  color: var(--jp-ui-font-color2);
+  min-width: 18px;
+}
+
+/* 완료된 스텝: 번호를 초록색으로 */
+.aa-step--completed .aa-step-number {
+  color: var(--jp-success-color1);
+}
+
+/* 실패한 스텝: 번호를 빨간색으로 */
+.aa-step--failed .aa-step-number {
+  color: var(--jp-error-color1);
+}
+
+/* 현재 실행 중인 스텝: 번호를 강조 */
+.aa-step--current .aa-step-number {
+  color: var(--jp-brand-color1);
+  font-weight: 700;
+}
+
+/* 오버레이 스피너 */
+.aa-step-overlay-spinner {
+  position: absolute;
+  right: -2px;
+  bottom: 0;
+  width: 10px;
+  height: 10px;
 }
 
 .aa-step-content {
@@ -397,10 +437,29 @@
   transition: all 0.2s ease;
 }
 
+/* Step label (Step 1:, Step 2:, etc.) */
+.aa-step-label {
+  font-weight: 600;
+  color: var(--jp-brand-color1);
+  margin-right: 4px;
+}
+
+.aa-step--completed .aa-step-label {
+  color: var(--jp-success-color1);
+}
+
+.aa-step--failed .aa-step-label {
+  color: var(--jp-error-color1);
+}
+
 /* Completed step: strikethrough effect */
 .aa-step-desc--done {
   text-decoration: line-through;
   color: var(--jp-ui-font-color3);
+}
+
+.aa-step-desc--done .aa-step-label {
+  text-decoration: line-through;
 }
 
 /* Currently executing step indicator */
@@ -492,6 +551,57 @@
   color: var(--jp-ui-font-color1);
   line-height: 1.5;
   margin: 0 0 8px 0;
+  overflow: hidden;
+}
+
+/* Result message 내 리스트 스타일 - 번호 표시 */
+.aa-result-message ul,
+.aa-result-message ol {
+  padding-left: 0;
+  margin: 0.5em 0;
+  list-style: none;
+  overflow: hidden;
+  counter-reset: result-item;
+}
+
+.aa-result-message li {
+  margin: 0.25em 0;
+  padding-left: 1.8em;
+  position: relative;
+  counter-increment: result-item;
+}
+
+.aa-result-message li::before {
+  content: counter(result-item) ".";
+  position: absolute;
+  left: 0;
+  min-width: 1.5em;
+  color: var(--jp-ui-font-color2);
+  font-weight: 500;
+  font-size: 0.9em;
+}
+
+/* 중첩 리스트 */
+.aa-result-message ul ul,
+.aa-result-message ol ol,
+.aa-result-message ul ol,
+.aa-result-message ol ul {
+  margin: 0.25em 0;
+  counter-reset: result-subitem;
+}
+
+.aa-result-message ul ul li,
+.aa-result-message ol ol li,
+.aa-result-message ul ol li,
+.aa-result-message ol ul li {
+  counter-increment: result-subitem;
+}
+
+.aa-result-message ul ul li::before,
+.aa-result-message ol ol li::before,
+.aa-result-message ul ol li::before,
+.aa-result-message ol ul li::before {
+  content: counter(result-subitem) ".";
 }
 
 .aa-result-error {

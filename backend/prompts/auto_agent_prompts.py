@@ -103,57 +103,32 @@ PLAN_GENERATION_PROMPT = '''당신은 Jupyter 노트북을 위한 Python 코드 
 
 첫 번째 코드 셀에 항상 다음 코드를 포함하세요:
 ```python
+# === 필수 라이브러리 import (절대 주석 처리하지 마세요!) ===
 import warnings
+import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
+import pandas as pd
+import numpy as np
+import seaborn as sns
+
+# === 경고 필터링 ===
 warnings.filterwarnings('ignore', category=RuntimeWarning)
 warnings.filterwarnings('ignore', category=FutureWarning)
 
-# matplotlib 한글 폰트 설정 (시스템 폰트 자동 탐지)
-import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
-
-def find_korean_font():
-    """시스템에서 사용 가능한 한글 폰트를 탐색하여 반환"""
-    # 한글 폰트 우선순위 목록 (일반적인 한글 폰트들)
-    korean_fonts = [
-        # macOS
-        'Apple SD Gothic Neo', 'AppleGothic', 'Apple Color Emoji',
-        'Noto Sans CJK KR', 'Noto Sans KR',
-        # Windows
-        'Malgun Gothic', '맑은 고딕', 'NanumGothic', '나눔고딕',
-        'NanumBarunGothic', 'Gulim', '굴림', 'Dotum', '돋움',
-        # Linux / Cross-platform
-        'NanumGothic', 'NanumBarunGothic', 'UnDotum', 'UnBatang',
-        'Noto Sans CJK KR', 'Noto Sans KR', 'Source Han Sans KR',
-        'D2Coding', 'D2 Coding',
-        # 추가 한글 폰트
-        'KoPubDotum', 'KoPub돋움', 'Spoqa Han Sans', 'IBM Plex Sans KR',
-    ]
-
-    # 시스템에 설치된 폰트 목록 가져오기
-    system_fonts = set([f.name for f in fm.fontManager.ttflist])
-
-    # 우선순위에 따라 사용 가능한 폰트 찾기
+# === 한글 폰트 설정 (선택적 - 문제 시 이 블록만 주석 처리) ===
+try:
+    korean_fonts = ['Apple SD Gothic Neo', 'Malgun Gothic', 'NanumGothic', 'Noto Sans CJK KR']
+    available = set(f.name for f in fm.fontManager.ttflist)
     for font in korean_fonts:
-        if font in system_fonts:
-            return font
-
-    # 한글이 포함된 폰트 이름으로 추가 탐색
-    for font_name in system_fonts:
-        lower_name = font_name.lower()
-        if any(keyword in lower_name for keyword in ['gothic', 'nanum', 'malgun', 'gulim', 'dotum', 'batang', 'korean', 'cjk']):
-            return font_name
-
-    return None  # 한글 폰트를 찾지 못함
-
-# 한글 폰트 설정
-korean_font = find_korean_font()
-if korean_font:
-    plt.rcParams['font.family'] = korean_font
-    print(f"한글 폰트 설정: {{korean_font}}")
-else:
-    print("경고: 한글 폰트를 찾을 수 없습니다. 한글이 깨질 수 있습니다.")
+        if font in available:
+            plt.rcParams['font.family'] = font
+            break
+except Exception:
+    pass  # 폰트 설정 실패해도 계속 진행
 plt.rcParams['axes.unicode_minus'] = False
 ```
+
+**🔴 중요**: import 문은 **절대로** 주석 처리하지 마세요! 문제가 생기면 한글 폰트 설정 블록(try 블록)만 수정하세요.
 
 ## 🔴 라이브러리 일관성 규칙 (CRITICAL!)
 
@@ -532,6 +507,84 @@ ADAPTIVE_REPLAN_PROMPT = '''에러가 발생했습니다. 출력과 에러를 �
   - 예: dask → pandas로 변경 시, final_answer는 "pandas를 사용하여..."로 작성
 - **final_answer는 실제 실행된 코드를 정확히 반영**해야 합니다.
 
+## 🚨 import 문 보존 규칙 (CRITICAL!)
+
+**코드를 수정할 때 import 문은 절대로 주석 처리하지 마세요!**
+
+```python
+# ❌ 잘못된 예시 - import까지 주석 처리 → 후속 Step에서 NameError 발생
+# import matplotlib.pyplot as plt  ← 이렇게 하면 안 됨!
+# import matplotlib.font_manager as fm
+
+# ✅ 올바른 예시 - import는 유지하고 문제 코드만 수정
+import matplotlib.pyplot as plt  # 반드시 유지!
+import matplotlib.font_manager as fm  # 반드시 유지!
+
+# 문제가 있는 부분만 try-except로 감싸거나 제거
+try:
+    # 한글 폰트 설정 등 문제 코드
+    pass
+except Exception:
+    pass
+```
+
+**규칙**: matplotlib, pandas, numpy, seaborn 등의 import 문은 항상 유지하세요. 문제가 생기면 import 이후의 코드만 수정하세요.
+
+## 🚨 Matplotlib API 금지 규칙 (CRITICAL!)
+
+**⛔ tick_params()에서 절대 사용 금지:**
+- ❌ `ax.tick_params(ha='right')` - ValueError 발생!
+- ❌ `ax.tick_params(horizontalalignment='right')` - ValueError 발생!
+- ❌ `ax.tick_params(va='center')` - ValueError 발생!
+
+**✅ 레이블 정렬이 필요하면 반드시 이 방법 사용:**
+```python
+# 올바른 방법: plt.setp() 사용
+plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
+
+# 또는 plt.xticks() 사용
+plt.xticks(rotation=45, ha='right')
+```
+
+## 🚨 Dask DataFrame 금지 규칙 (CRITICAL!)
+
+**⛔ .head() 결과에 .compute() 절대 사용 금지:**
+- ❌ `df.head().compute()` - AttributeError 발생! head()는 이미 pandas!
+- ❌ `df.head(1000).compute()` - AttributeError 발생!
+- ❌ `df[['col1', 'col2']].head(5000).compute()` - 컬럼 선택 후에도 금지!
+- ❌ `sample_df = df.head(100); sample_df.compute()` - head() 결과는 이미 pandas!
+
+**✅ head()는 직접 사용 (compute 불필요):**
+```python
+# 올바른 방법: head()는 이미 pandas DataFrame 반환
+sample_df = df.head(1000)                    # 이미 pandas!
+sample_df = df[['col1', 'col2']].head(5000)  # 이미 pandas!
+# 바로 시각화나 분석에 사용하면 됨
+```
+
+**⛔ corr() 사용 시 문자열 컬럼 포함 금지:**
+- ❌ `df.corr().compute()` - 문자열 컬럼이 있으면 ValueError 발생!
+
+**✅ 반드시 숫자형 컬럼만 선택 후 사용:**
+```python
+# 올바른 방법: 숫자형 컬럼만 선택
+numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+correlation_matrix = df[numeric_cols].corr().compute()
+```
+
+**⛔ value_counts().unstack() 사용 금지:**
+- ❌ `df.groupby('Sex')['Survived'].value_counts().unstack().compute()` - Dask Series에는 unstack() 메서드 없음! AttributeError 발생!
+
+**✅ 대체 방법: compute 후 unstack 또는 crosstab 사용:**
+```python
+# 방법 1: groupby + size + compute 후 unstack
+cross_tab = df.groupby(['Sex', 'Survived']).size().compute().unstack(fill_value=0)
+
+# 방법 2: pandas crosstab (compute 후 적용)
+sample = df[['Sex', 'Survived']].compute()
+cross_tab = pd.crosstab(sample['Sex'], sample['Survived'])
+```
+
 ## 출력 형식 (JSON)
 
 ```json
@@ -636,36 +689,32 @@ STRUCTURED_PLAN_PROMPT = '''당신은 Jupyter 노트북을 위한 Python 코드 
 
 첫 번째 코드 셀에 항상 다음 코드를 포함하세요:
 ```python
+# === 필수 라이브러리 import (절대 주석 처리하지 마세요!) ===
 import warnings
+import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
+import pandas as pd
+import numpy as np
+import seaborn as sns
+
+# === 경고 필터링 ===
 warnings.filterwarnings('ignore', category=RuntimeWarning)
 warnings.filterwarnings('ignore', category=FutureWarning)
 
-# matplotlib 한글 폰트 설정 (시스템 폰트 자동 탐색)
-import matplotlib.font_manager as fm
-import matplotlib.pyplot as plt
-
-def find_korean_font():
-    korean_fonts = [
-        'Apple SD Gothic Neo', 'AppleGothic', 'Malgun Gothic', '맑은 고딕',
-        'NanumGothic', '나눔고딕', 'NanumBarunGothic', 'Noto Sans CJK KR',
-        'Noto Sans KR', 'Gulim', '굴림', 'Dotum', '돋움', 'UnDotum', 'UnBatang',
-        'Source Han Sans KR', 'D2Coding', 'KoPubDotum', 'Spoqa Han Sans',
-    ]
-    system_fonts = set([f.name for f in fm.fontManager.ttflist])
+# === 한글 폰트 설정 (선택적 - 문제 시 이 블록만 주석 처리) ===
+try:
+    korean_fonts = ['Apple SD Gothic Neo', 'Malgun Gothic', 'NanumGothic', 'Noto Sans CJK KR']
+    available = set(f.name for f in fm.fontManager.ttflist)
     for font in korean_fonts:
-        if font in system_fonts:
-            return font
-    for font_name in system_fonts:
-        lower = font_name.lower()
-        if any(k in lower for k in ['gothic', 'nanum', 'malgun', 'gulim', 'dotum', 'korean', 'cjk']):
-            return font_name
-    return None
-
-korean_font = find_korean_font()
-if korean_font:
-    plt.rcParams['font.family'] = korean_font
+        if font in available:
+            plt.rcParams['font.family'] = font
+            break
+except Exception:
+    pass  # 폰트 설정 실패해도 계속 진행
 plt.rcParams['axes.unicode_minus'] = False
 ```
+
+**🔴 중요**: import 문은 **절대로** 주석 처리하지 마세요! 문제가 생기면 한글 폰트 설정 블록(try 블록)만 수정하세요.
 
 ## 🔍 파일 탐색 규칙 (중요!)
 
@@ -873,9 +922,10 @@ def format_plan_prompt(
     imported_libraries: list,
     defined_variables: list,
     recent_cells: list,
-    available_libraries: list = None
+    available_libraries: list = None,
+    detected_libraries: list = None  # LLM이 판단한 라이브러리 목록
 ) -> str:
-    """실행 계획 생성 프롬프트 포맷팅 (Mini RAG 지식 자동 로드)"""
+    """실행 계획 생성 프롬프트 포맷팅 (LLM 기반 라이브러리 감지)"""
     from ..knowledge.loader import get_knowledge_loader
 
     recent_cells_text = ""
@@ -884,10 +934,16 @@ def format_plan_prompt(
         source = cell.get('source', '')[:300]  # 최대 300자
         recent_cells_text += f"\n[셀 {cell.get('index', i)}] ({cell_type}):\n```\n{source}\n```\n"
 
-    # Mini RAG: 사용자 요청에서 라이브러리 감지 및 지식 로드
+    # LLM이 판단한 라이브러리의 knowledge 로드
     knowledge_loader = get_knowledge_loader()
-    context = ", ".join(imported_libraries) if imported_libraries else ""
-    library_knowledge = knowledge_loader.format_knowledge_section(request, context)
+    library_knowledge = ""
+    if detected_libraries:
+        library_knowledge = knowledge_loader.format_knowledge_section(detected_libraries)
+        if library_knowledge:
+            print(f"[KnowledgeBase] 라이브러리 지식 주입됨: {detected_libraries} ({len(library_knowledge)} chars)")
+
+    if not library_knowledge:
+        print(f"[KnowledgeBase] 주입할 라이브러리 지식 없음. detected={detected_libraries}")
 
     # 기본 프롬프트 생성
     base_prompt = PLAN_GENERATION_PROMPT.format(

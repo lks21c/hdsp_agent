@@ -108,33 +108,34 @@ const ExecutionPlanView: React.FC<ExecutionPlanViewProps> = ({
               className={`aa-step aa-step--${status} ${isNew ? 'aa-step--new' : ''}`}
             >
               <div className="aa-step-indicator">
+                {/* 상태 아이콘 */}
                 {status === 'completed' && (
-                  <svg viewBox="0 0 16 16" fill="currentColor">
+                  <svg className="aa-step-status-icon aa-step-status-icon--completed" viewBox="0 0 16 16" fill="currentColor">
                     <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
                   </svg>
                 )}
                 {status === 'failed' && (
-                  <svg viewBox="0 0 16 16" fill="currentColor">
+                  <svg className="aa-step-status-icon aa-step-status-icon--failed" viewBox="0 0 16 16" fill="currentColor">
                     <path d="M3.72 3.72a.75.75 0 011.06 0L8 6.94l3.22-3.22a.75.75 0 111.06 1.06L9.06 8l3.22 3.22a.75.75 0 11-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 01-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 010-1.06z"/>
                   </svg>
                 )}
                 {status === 'replanning' && (
-                  <svg viewBox="0 0 16 16" fill="currentColor" className="aa-icon-spin">
+                  <svg className="aa-step-status-icon aa-icon-spin" viewBox="0 0 16 16" fill="currentColor">
                     <path d="M8 3a5 5 0 104.546 2.914.5.5 0 01.908-.418A6 6 0 118 2v1z"/>
                     <path d="M8 4.466V.534a.25.25 0 01.41-.192l2.36 1.966a.25.25 0 010 .384L8.41 4.658A.25.25 0 018 4.466z"/>
                   </svg>
                 )}
                 {status === 'current' && <div className="aa-step-spinner" />}
-                {status === 'pending' && (
-                  <span className="aa-step-number">
-                    {isNew ? '+' : ''}{step.stepNumber}
-                  </span>
-                )}
+                {status === 'pending' && <span className="aa-step-pending-dot" />}
+                {/* Step 번호를 항상 표시 */}
+                <span className="aa-step-number">
+                  {isNew && status === 'pending' ? '+' : ''}{step.stepNumber}
+                </span>
               </div>
               <div className="aa-step-content">
                 <span className={`aa-step-desc ${status === 'completed' ? 'aa-step-desc--done' : ''} ${isNew ? 'aa-step-desc--new' : ''}`}>
                   {isNew && <span className="aa-new-badge">NEW</span>}
-                  {step.description}
+                  <span className="aa-step-label">Step {step.stepNumber}:</span> {step.description}
                 </span>
                 {status === 'current' && (
                   <span className="aa-step-executing">실행 중...</span>
@@ -143,11 +144,13 @@ const ExecutionPlanView: React.FC<ExecutionPlanViewProps> = ({
                   <span className="aa-step-replanning">계획 수정 중...</span>
                 )}
                 <div className="aa-step-tools">
-                  {step.toolCalls.map((tc, i) => (
-                    <span key={i} className={`aa-tool-tag ${status === 'completed' ? 'aa-tool-tag--done' : ''}`}>
-                      {tc.tool}
-                    </span>
-                  ))}
+                  {step.toolCalls
+                    .filter(tc => tc.tool !== 'jupyter_cell')
+                    .map((tc, i) => (
+                      <span key={i} className={`aa-tool-tag ${status === 'completed' ? 'aa-tool-tag--done' : ''}`}>
+                        {tc.tool}
+                      </span>
+                    ))}
                 </div>
               </div>
             </div>
