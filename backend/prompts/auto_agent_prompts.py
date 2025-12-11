@@ -1394,13 +1394,17 @@ def format_replan_prompt(
     else:
         traceback_str = str(traceback_data) if traceback_data else ''
 
+    # errorName (Python 예외 이름)이 있으면 우선 사용, 없으면 type 필드 사용
+    # 예: "ModuleNotFoundError", "ImportError", "TypeError" 등
+    error_type = error_info.get('errorName') or error_info.get('type', 'runtime')
+
     return ADAPTIVE_REPLAN_PROMPT.format(
         original_request=original_request,
         executed_steps=executed_text,
         failed_step_number=failed_step.get('stepNumber', '?'),
         failed_step_description=failed_step.get('description', ''),
         failed_code=failed_code,
-        error_type=error_info.get('type', 'runtime'),
+        error_type=error_type,  # Python 예외 이름 (ModuleNotFoundError 등)
         error_message=error_info.get('message', 'Unknown error'),
         traceback=traceback_str,
         execution_output=execution_output if execution_output else "없음",

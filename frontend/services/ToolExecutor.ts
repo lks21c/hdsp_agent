@@ -177,6 +177,7 @@ export class ToolExecutor {
         success: result.status === 'ok',
         output: result.result || result.stdout,
         error: result.error?.evalue,
+        errorName: result.error?.ename,  // 에러 타입명 추가 (e.g., "ModuleNotFoundError")
         traceback: result.error?.traceback,
         cellIndex,
         wasModified,
@@ -551,10 +552,36 @@ print(json.dumps(result))
     const runSuccess = await NotebookActions.run(notebookContent, this.sessionContext);
     console.log('[ToolExecutor] NotebookActions.run() success:', runSuccess);
 
-    // 실행 완료 후 outputs 업데이트 대기 (최대 300ms로 증가)
+    // 실행 완료 후 outputs 업데이트 대기
     // NotebookActions.run()이 완료되어도 outputs가 바로 업데이트되지 않을 수 있음
     // 특히 에러 출력은 시간이 더 걸릴 수 있음
-    await new Promise(resolve => setTimeout(resolve, 300));
+    if (!runSuccess) {
+      // 에러 발생 시 에러 output이 나타날 때까지 최대 2초 대기 (100ms x 20회)
+      let errorFound = false;
+      for (let i = 0; i < 20 && !errorFound; i++) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        const outputs = cell.model?.outputs;
+        if (outputs) {
+          for (let j = 0; j < outputs.length; j++) {
+            const output = outputs.get(j);
+            if (output.type === 'error') {
+              const errorOutput = output as any;
+              if (errorOutput.ename || errorOutput.evalue) {
+                console.log('[ToolExecutor] Error output found after', (i + 1) * 100, 'ms');
+                errorFound = true;
+                break;
+              }
+            }
+          }
+        }
+      }
+      if (!errorFound) {
+        console.warn('[ToolExecutor] Error output not found after 2 seconds of polling');
+      }
+    } else {
+      // 성공 시에는 짧게 대기
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
 
     // 실행 완료 후 결과 캡처
     const executionTime = Date.now() - startTime;

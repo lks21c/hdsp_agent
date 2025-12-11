@@ -55,7 +55,8 @@ export interface FinalAnswerParams {
 export interface ToolResult {
   success: boolean;
   output?: any;
-  error?: string;
+  error?: string;              // 에러 메시지 (evalue)
+  errorName?: string;          // 에러 타입명 (ename, e.g., "ModuleNotFoundError")
   traceback?: string[];
   cellIndex?: number;
   wasModified?: boolean;      // 기존 셀 수정 vs 새 셀 생성 구분
@@ -144,7 +145,8 @@ export interface AgentStatus {
 
 export interface ExecutionError {
   type: 'runtime' | 'timeout' | 'safety' | 'validation' | 'environment';
-  message: string;
+  message: string;               // 에러 메시지 (evalue)
+  errorName?: string;            // 에러 타입명 (ename, e.g., "ModuleNotFoundError")
   traceback?: string[];
   recoverable: boolean;
 }

@@ -113,6 +113,25 @@ class BaseAgentHandler(APIHandler):
             if recovered:
                 return recovered
 
+        # 5. LLM이 { 없이 "key": 로 시작한 경우 보완 시도
+        # 예: '\n  "analysis": {...}' → '{"analysis": {...}}'
+        stripped = response.strip()
+        if stripped.startswith('"') and ':' in stripped:
+            # 중괄호가 있는지 확인
+            if '{' in stripped:
+                # "analysis": {...} 형태를 {analysis": {...}} 로 감싸기 시도
+                wrapped = '{' + stripped
+                # 마지막에 } 가 없으면 추가
+                if not wrapped.rstrip().endswith('}'):
+                    wrapped = wrapped.rstrip() + '}'
+                try:
+                    return json.loads(wrapped)
+                except json.JSONDecodeError:
+                    # 복구 시도
+                    recovered = self._recover_incomplete_json(wrapped)
+                    if recovered:
+                        return recovered
+
         return None
 
     def _recover_incomplete_json(self, json_str: str) -> dict:

@@ -217,10 +217,11 @@ export class AgentOrchestrator {
             currentStep: step.stepNumber,
           });
 
-          // 실패 정보 구성
+          // 실패 정보 구성 (errorName 포함 - ModuleNotFoundError 등 식별용)
           const executionError: ExecutionError = {
             type: 'runtime',
             message: stepResult.error || '알 수 없는 오류',
+            errorName: stepResult.toolResults.find(r => r.errorName)?.errorName,
             traceback: stepResult.toolResults.find(r => r.traceback)?.traceback || [],
             recoverable: true,
           };
