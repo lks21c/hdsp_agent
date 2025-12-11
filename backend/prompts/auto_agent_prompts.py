@@ -101,6 +101,52 @@ PLAN_GENERATION_PROMPT = '''당신은 Jupyter 노트북을 위한 Python 코드 
 - 셀 4: `df.describe().compute()` → `df.describe()` (Step 2: 그 다음 수정)
 - 셀 6: `df.groupby().mean().compute()` → `df.groupby().mean()` (Step 3: 마지막 수정)
 
+### 🚨🚨🚨 MODIFY 시 원본 코드 전체 보존 (SUPER CRITICAL!) 🚨🚨🚨
+
+**MODIFY 작업 시 원본 셀의 전체 코드를 기반으로 필요한 부분만 변경하세요!**
+**관련 없는 코드를 삭제하면 안 됩니다!**
+
+**원칙:**
+1. 원본 셀의 모든 코드 라인을 유지하세요
+2. 변경이 필요한 라인만 수정하세요
+3. 다른 라인은 그대로 복사하세요
+4. 변수 정의, import문, 기타 로직을 삭제하지 마세요!
+
+**❌ 잘못된 예시 (원본 코드 손실!):**
+```
+원본 셀 0:
+    import dask.dataframe as dd
+    file_path = './data/train.csv'
+    found_files = glob.glob('**/*.csv', recursive=True)
+
+사용자 요청: "dask를 pandas로 바꿔줘"
+
+MODIFY 결과 (❌ 틀림!):
+    import pandas as pd
+    # file_path, found_files 코드가 사라짐! → 후속 셀에서 NameError!
+```
+
+**✅ 올바른 예시 (원본 코드 보존!):**
+```
+원본 셀 0:
+    import dask.dataframe as dd
+    file_path = './data/train.csv'
+    found_files = glob.glob('**/*.csv', recursive=True)
+
+사용자 요청: "dask를 pandas로 바꿔줘"
+
+MODIFY 결과 (✅ 정답!):
+    import pandas as pd  # dask → pandas 변경
+    file_path = './data/train.csv'  # 그대로 유지!
+    found_files = glob.glob('**/*.csv', recursive=True)  # 그대로 유지!
+```
+
+**MODIFY 체크리스트:**
+- [ ] 원본 셀의 모든 import문 유지 (변경 대상 제외)
+- [ ] 원본 셀의 모든 변수 정의 유지
+- [ ] 원본 셀의 모든 함수 호출 유지 (변경 대상 제외)
+- [ ] 변경된 부분만 정확히 수정
+
 **잘못된 예시** ❌:
 - 사용자: "dask를 pandas로 바꿔줘"
 - 셀 2에 `dd.read_csv()`가 있는데 → CREATE로 새 셀에 `pd.read_csv()` 작성
@@ -534,8 +580,16 @@ ADAPTIVE_REPLAN_PROMPT = '''에러가 발생했습니다. 출력과 에러를 �
 - 가능하면 `os.path.exists()` 검증 후 적절한 에러 메시지
 
 ### NameError (변수 미정의)
-- 이전 단계에서 정의해야 할 변수가 누락된 경우 → 해당 정의 단계 추가
-- 단순 오타면 `refine`으로 수정
+**원인을 먼저 파악하세요:**
+1. **이전 MODIFY 단계에서 원본 코드가 손실된 경우**
+   - 이전 단계에서 셀을 MODIFY할 때 관련 없는 코드를 삭제했을 가능성
+   - **해결책**: `refine`으로 해당 코드에 누락된 변수 정의를 복원
+
+2. **단순 오타인 경우**
+   - `refine`으로 수정
+
+3. **원래 계획에서 변수 정의가 누락된 경우**
+   - 필요한 변수 정의를 추가하는 것이 적절
 
 ### TypeError / ValueError
 - 대부분 `refine`으로 코드 수정
@@ -544,7 +598,7 @@ ADAPTIVE_REPLAN_PROMPT = '''에러가 발생했습니다. 출력과 에러를 �
 ## 결정 옵션
 
 1. **refine**: 같은 접근법으로 코드만 수정
-   - ✅ 사용 가능: SyntaxError, TypeError, ValueError, KeyError, IndexError, AttributeError
+   - ✅ 사용 가능: SyntaxError, TypeError, ValueError, KeyError, IndexError, AttributeError, NameError
    - ❌ 사용 금지: ModuleNotFoundError, ImportError
 
 2. **insert_steps**: 현재 단계 전에 필요한 단계 추가 (선행 작업 필요)
@@ -797,6 +851,52 @@ STRUCTURED_PLAN_PROMPT = '''당신은 Jupyter 노트북을 위한 Python 코드 
 - 셀 2: `dd.read_csv()` → `pd.read_csv()` (Step 1: 먼저 수정!)
 - 셀 4: `df.describe().compute()` → `df.describe()` (Step 2: 그 다음 수정)
 - 셀 6: `df.groupby().mean().compute()` → `df.groupby().mean()` (Step 3: 마지막 수정)
+
+### 🚨🚨🚨 MODIFY 시 원본 코드 전체 보존 (SUPER CRITICAL!) 🚨🚨🚨
+
+**MODIFY 작업 시 원본 셀의 전체 코드를 기반으로 필요한 부분만 변경하세요!**
+**관련 없는 코드를 삭제하면 안 됩니다!**
+
+**원칙:**
+1. 원본 셀의 모든 코드 라인을 유지하세요
+2. 변경이 필요한 라인만 수정하세요
+3. 다른 라인은 그대로 복사하세요
+4. 변수 정의, import문, 기타 로직을 삭제하지 마세요!
+
+**❌ 잘못된 예시 (원본 코드 손실!):**
+```
+원본 셀 0:
+    import dask.dataframe as dd
+    file_path = './data/train.csv'
+    found_files = glob.glob('**/*.csv', recursive=True)
+
+사용자 요청: "dask를 pandas로 바꿔줘"
+
+MODIFY 결과 (❌ 틀림!):
+    import pandas as pd
+    # file_path, found_files 코드가 사라짐! → 후속 셀에서 NameError!
+```
+
+**✅ 올바른 예시 (원본 코드 보존!):**
+```
+원본 셀 0:
+    import dask.dataframe as dd
+    file_path = './data/train.csv'
+    found_files = glob.glob('**/*.csv', recursive=True)
+
+사용자 요청: "dask를 pandas로 바꿔줘"
+
+MODIFY 결과 (✅ 정답!):
+    import pandas as pd  # dask → pandas 변경
+    file_path = './data/train.csv'  # 그대로 유지!
+    found_files = glob.glob('**/*.csv', recursive=True)  # 그대로 유지!
+```
+
+**MODIFY 체크리스트:**
+- [ ] 원본 셀의 모든 import문 유지 (변경 대상 제외)
+- [ ] 원본 셀의 모든 변수 정의 유지
+- [ ] 원본 셀의 모든 함수 호출 유지 (변경 대상 제외)
+- [ ] 변경된 부분만 정확히 수정
 
 **잘못된 예시** ❌:
 - 사용자: "dask를 pandas로 바꿔줘"
