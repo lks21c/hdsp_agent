@@ -28,11 +28,17 @@
   background: var(--jp-layout-color2);
 }
 
-.jp-agent-header h2 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--jp-ui-font-color1);
+.jp-agent-header-logo {
+  height: 28px;
+  width: auto;
+  display: flex;
+  align-items: center;
+}
+
+.jp-agent-header-logo svg {
+  height: 28px;
+  width: auto;
+  max-width: 200px;
 }
 
 .jp-agent-header-buttons {

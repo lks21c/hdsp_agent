@@ -487,6 +487,17 @@ export function formatMarkdownToHtml(text: string): string {
   textarea.innerHTML = text;
   let html = textarea.value;
 
+  // Step 0.5: Protect DataFrame HTML tables (must be before code blocks)
+  const dataframeHtmlPlaceholders: Array<{ placeholder: string; html: string }> = [];
+  html = html.replace(/<!--DFHTML-->([\s\S]*?)<!--\/DFHTML-->/g, (match, tableHtml) => {
+    const placeholder = '__DATAFRAME_HTML_' + Math.random().toString(36).substr(2, 9) + '__';
+    dataframeHtmlPlaceholders.push({
+      placeholder: placeholder,
+      html: tableHtml
+    });
+    return placeholder;
+  });
+
   // Step 1: Protect code blocks by replacing with placeholders
   const codeBlocks: Array<{ id: string; code: string; language: string }> = [];
   const codeBlockPlaceholders: Array<{ placeholder: string; html: string }> = [];
@@ -586,7 +597,7 @@ export function formatMarkdownToHtml(text: string): string {
   });
 
   // Step 4: Escape HTML for non-placeholder text
-  html = html.split(/(__(?:CODE_BLOCK|INLINE_CODE|TABLE)_[a-z0-9-]+__)/gi)
+  html = html.split(/(__(?:DATAFRAME_HTML|CODE_BLOCK|INLINE_CODE|TABLE)_[a-z0-9-]+__)/gi)
     .map((part, index) => {
       // Odd indices are placeholders - keep as is
       if (index % 2 === 1) return part;
@@ -628,6 +639,11 @@ export function formatMarkdownToHtml(text: string): string {
 
   // Step 6: Restore table placeholders
   tablePlaceholders.forEach(item => {
+    html = html.replace(item.placeholder, item.html);
+  });
+
+  // Step 6.5: Restore DataFrame HTML tables
+  dataframeHtmlPlaceholders.forEach(item => {
     html = html.replace(item.placeholder, item.html);
   });
 

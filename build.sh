@@ -36,6 +36,8 @@ fi
 echo "📂 Copying static assets..."
 # frontend/styles 폴더를 lib/styles로 통째로 복사합니다.
 cp -R frontend/styles lib/
+# SVG 로고 파일들도 lib로 복사합니다.
+cp frontend/*.svg lib/
 echo "✅ Assets copied"
 
 # Step 2: JupyterLab extension build (production mode)
@@ -47,7 +49,14 @@ echo ""
 # Step 3: Build wheel package
 echo "3️⃣  Building wheel package and make hdsp-agent-assets.zip for statics..."
 poetry build
-zip -r hdsp-agent-assets.zip backend/labextension
+
+# 기존 zip 파일 삭제 (오래된 파일 제거)
+rm -f hdsp-agent-assets.zip
+
+# 새로운 zip 파일 생성
+cd backend/labextension
+zip -r ../../hdsp-agent-assets.zip .
+cd ../..
 echo "✅ Wheel package build & zipping complete"
 echo ""
 

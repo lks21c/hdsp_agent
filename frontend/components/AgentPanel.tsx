@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef, useCallback } from 'react';
-import { ReactWidget } from '@jupyterlab/ui-components';
+import { ReactWidget, LabIcon } from '@jupyterlab/ui-components';
 import { ApiService } from '../services/ApiService';
 import { IChatMessage } from '../types';
 import { SettingsPanel, LLMConfig } from './SettingsPanel';
@@ -17,6 +17,16 @@ import {
   ExecutionSpeed,
 } from '../types/auto-agent';
 import { formatMarkdownToHtml, escapeHtml } from '../utils/markdownRenderer';
+
+// 로고 이미지 (SVG)
+import headerLogoSvg from '../hdsp_logo_header.svg';
+import tabbarLogoSvg from '../hdsp_logo_tabbar.svg';
+
+// 탭바 아이콘 생성
+const hdspTabIcon = new LabIcon({
+  name: 'hdsp-agent:tab-icon',
+  svgstr: tabbarLogoSvg
+});
 
 // Agent 실행 메시지 타입 (채팅에 inline으로 표시)
 interface AgentExecutionMessage {
@@ -1254,7 +1264,10 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
         {result && (
           <div className={`jp-agent-execution-result jp-agent-execution-result--${result.success ? 'success' : 'error'}`}>
             {result.finalAnswer && (
-              <p className="jp-agent-execution-result-message">{result.finalAnswer}</p>
+              <div
+                className="jp-agent-execution-result-message jp-RenderedHTMLCommon"
+                dangerouslySetInnerHTML={{ __html: formatMarkdownToHtml(result.finalAnswer) }}
+              />
             )}
             {result.error && (
               <p className="jp-agent-execution-result-error">{result.error}</p>
@@ -1290,7 +1303,10 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
 
       {/* Header */}
       <div className="jp-agent-header">
-        <h2>HDSP Agent</h2>
+        <div
+          className="jp-agent-header-logo"
+          dangerouslySetInnerHTML={{ __html: headerLogoSvg }}
+        />
         <div className="jp-agent-header-buttons">
           <button
             className="jp-agent-clear-button"
@@ -1350,14 +1366,21 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
                       {new Date(msg.timestamp).toLocaleTimeString()}
                     </span>
                   </div>
-                  <div
-                    className={`jp-agent-message-content${streamingMessageId === msg.id ? ' streaming' : ''}`}
-                    dangerouslySetInnerHTML={{
-                      __html: msg.role === 'assistant'
-                        ? formatMarkdownToHtml(msg.content)
-                        : escapeHtml(msg.content).replace(/\n/g, '<br>')
-                    }}
-                  />
+                  <div className={`jp-agent-message-content${streamingMessageId === msg.id ? ' streaming' : ''}`}>
+                    {msg.role === 'assistant' ? (
+                      // Assistant(AI) 메시지: 마크다운 HTML 렌더링 + Jupyter 스타일 적용
+                      <div
+                        className="jp-RenderedHTMLCommon"
+                        style={{ padding: '0 5px' }}
+                        dangerouslySetInnerHTML={{ __html: formatMarkdownToHtml(msg.content) }}
+                      />
+                    ) : (
+                      // User(사용자) 메시지: 텍스트 그대로 줄바꿈만 처리
+                      <div style={{ whiteSpace: 'pre-wrap' }}>
+                        {msg.content}
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             } else {
@@ -1488,9 +1511,8 @@ export class AgentPanelWidget extends ReactWidget {
     this.apiService = apiService;
     this.notebookTracker = notebookTracker;
     this.id = 'hdsp-agent-panel';
-    this.title.label = 'HDSP';
     this.title.caption = 'HDSP Agent Assistant';
-    // Using JupyterLab's built-in robot icon
+    this.title.icon = hdspTabIcon;
     this.addClass('jp-agent-widget');
   }
 

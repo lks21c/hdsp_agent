@@ -58,6 +58,9 @@ export class AgentOrchestrator {
   // ★ 현재 Plan 실행 중 정의된 변수 추적 (cross-step validation용)
   private executedStepVariables: Set<string> = new Set();
 
+  // ★ 실행된 변수의 실제 값 추적 (finalAnswer 변수 치환용)
+  private executedStepVariableValues: Record<string, string> = {};
+
   constructor(
     notebook: NotebookPanel,
     sessionContext: ISessionContext,
@@ -105,6 +108,7 @@ export class AgentOrchestrator {
     this.abortController = new AbortController();
     // ★ 새 실행 시작 시 이전 실행에서 추적된 변수 초기화
     this.executedStepVariables.clear();
+    this.executedStepVariableValues = {};
 
     const createdCells: number[] = [];
     const modifiedCells: number[] = [];
@@ -596,13 +600,39 @@ export class AgentOrchestrator {
 
         // final_answer 도구 감지
         if (toolCall.tool === 'final_answer') {
+          let finalAnswerText = result.output as string;
+
+          // ★ 변수 값 추출 및 치환
+          try {
+            // finalAnswer에서 {변수명} 패턴 찾기
+            const varPattern = /\{(\w+)\}/g;
+            const matches = [...finalAnswerText.matchAll(varPattern)];
+            const varNames = [...new Set(matches.map(m => m[1]))];
+
+            if (varNames.length > 0) {
+              console.log('[Orchestrator] Extracting variable values for finalAnswer:', varNames);
+              // Jupyter kernel에서 변수 값 추출
+              const variableValues = await this.toolExecutor.getVariableValues(varNames);
+              console.log('[Orchestrator] Extracted variable values:', variableValues);
+
+              // 변수 치환
+              finalAnswerText = finalAnswerText.replace(varPattern, (match, varName) => {
+                return variableValues[varName] ?? match;
+              });
+              console.log('[Orchestrator] Final answer after substitution:', finalAnswerText);
+            }
+          } catch (error) {
+            console.error('[Orchestrator] Failed to substitute variables in finalAnswer:', error);
+            // 실패해도 원본 텍스트 사용
+          }
+
           return {
             success: true,
             stepNumber: step.stepNumber,
             toolResults,
             attempts: 1,
             isFinalAnswer: true,
-            finalAnswer: result.output as string,
+            finalAnswer: finalAnswerText,
           };
         }
       }

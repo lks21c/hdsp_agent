@@ -184,6 +184,128 @@ export class ToolExecutor {
   }
 
   /**
+   * Jupyter kernel에서 변수 값들을 추출
+   * @param varNames 추출할 변수명 배열
+   * @returns 변수명 -> 값 매핑 객체
+   */
+  async getVariableValues(varNames: string[]): Promise<Record<string, string>> {
+    if (varNames.length === 0) {
+      return {};
+    }
+
+    try {
+      // JSON으로 변수 값들을 추출하는 Python 코드 생성
+      // DataFrame 등 복잡한 타입을 HTML table로 변환하는 헬퍼 함수 포함
+      const code = `
+import json
+
+def _format_value(v):
+    """변수 값을 적절한 형태로 포맷팅"""
+    try:
+        # 1. DataFrame → HTML table (pandas, modin 등)
+        if hasattr(v, 'to_html'):
+            try:
+                html = v.to_html(index=False, max_rows=100)
+                return f"<!--DFHTML-->{html}<!--/DFHTML-->"
+            except:
+                pass
+
+        # 2. Lazy DataFrame (dask) - 샘플만 변환
+        if hasattr(v, 'compute'):
+            try:
+                sample = v.head(100).compute()
+                if hasattr(sample, 'to_html'):
+                    html = sample.to_html(index=False)
+                    return f"<!--DFHTML-->{html}<!--/DFHTML-->"
+            except:
+                pass
+
+        # 3. Spark DataFrame
+        if hasattr(v, 'toPandas'):
+            try:
+                sample = v.limit(100).toPandas()
+                if hasattr(sample, 'to_html'):
+                    html = sample.to_html(index=False)
+                    return f"<!--DFHTML-->{html}<!--/DFHTML-->"
+            except:
+                pass
+
+        # 4. DataFrame with to_pandas conversion (polars, cudf, vaex 등)
+        for method in ['to_pandas', 'to_pandas_df']:
+            if hasattr(v, method):
+                try:
+                    converted = getattr(v, method)()
+                    if hasattr(converted, 'to_html'):
+                        html = converted.to_html(index=False, max_rows=100)
+                        return f"<!--DFHTML-->{html}<!--/DFHTML-->"
+                except:
+                    continue
+
+        # 5. Series - to_string()
+        if hasattr(v, 'to_string'):
+            try:
+                return v.to_string(max_rows=100)
+            except:
+                pass
+
+        # 6. 기본 str()
+        return str(v)
+    except:
+        return str(v)
+
+# 변수 값 추출
+result = {}
+${varNames.map(v => `
+if '${v}' in locals() or '${v}' in globals():
+    val = locals().get('${v}', globals().get('${v}'))
+    result['${v}'] = _format_value(val)
+else:
+    result['${v}'] = None`).join('')}
+
+print(json.dumps(result))
+`.trim();
+
+      // 임시 셀 생성하여 실행
+      const model = this.notebook.content.model;
+      if (!model) {
+        throw new Error('Notebook model is not available');
+      }
+
+      const tempCellIndex = model.cells.length;
+
+      // 코드 셀 삽입
+      model.sharedModel.insertCell(tempCellIndex, {
+        cell_type: 'code',
+        source: code,
+      });
+
+      // 실행 및 결과 캡처
+      const result = await this.executeCellAndCapture(tempCellIndex);
+
+      // 임시 셀 삭제
+      model.sharedModel.deleteCell(tempCellIndex);
+
+      // stdout에서 JSON 파싱
+      if (result.stdout) {
+        const variables = JSON.parse(result.stdout.trim());
+        // null 값 제거
+        const filtered: Record<string, string> = {};
+        for (const [key, value] of Object.entries(variables)) {
+          if (value !== null) {
+            filtered[key] = value as string;
+          }
+        }
+        return filtered;
+      }
+
+      return {};
+    } catch (error) {
+      console.error('[ToolExecutor] Failed to extract variable values:', error);
+      return {};
+    }
+  }
+
+  /**
    * 마지막으로 생성된 셀 인덱스 추적 (순차 삽입용)
    */
   private lastCreatedCellIndex: number = -1;

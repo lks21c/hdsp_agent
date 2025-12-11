@@ -59,6 +59,7 @@
   "dependencies": {
     "@emotion/react": "^11.11.0",
     "@emotion/styled": "^11.11.0",
+    "@jupyter-widgets/base": "^6.0.0",
     "@jupyterlab/application": "^4.0.0",
     "@jupyterlab/cells": "^4.0.0",
     "@jupyterlab/launcher": "^4.4.10",
@@ -69,7 +70,7 @@
     "@mui/material": "^5.14.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "@jupyter-widgets/base": "^6.0.0"
+    "react-markdown": "^10.1.0"
   },
   "devDependencies": {
     "@jupyterlab/builder": "^4.0.0",
