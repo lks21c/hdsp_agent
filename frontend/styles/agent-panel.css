@@ -43,6 +43,19 @@
   width: auto;
 }
 
+/* Header Logo (SVG inline) */
+.jp-agent-header-logo {
+  height: 40px;
+  width: auto;
+  display: flex;
+  align-items: center;
+}
+
+.jp-agent-header-logo svg {
+  height: 40px;
+  width: auto;
+}
+
 .jp-agent-header-buttons {
   display: flex;
   gap: 8px;
