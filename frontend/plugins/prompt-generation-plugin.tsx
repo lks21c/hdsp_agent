@@ -29,10 +29,10 @@ import { ITaskStatus } from '../types';
  */
 const PLUGIN_ID = '@hdsp-agent/prompt-generation';
 const COMMAND_ID = 'hdsp-agent:generate-from-prompt';
-const CATEGORY = 'HDSP Agent';
+const CATEGORY = 'HALO Agent';
 
 /**
- * HDSP Icon
+ * HALO Icon
  */
 const hdspIcon = new LabIcon({
   name: 'hdsp-agent:hdsp-icon',

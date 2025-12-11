@@ -76,7 +76,7 @@ export const PromptGenerationDialog: React.FC<PromptGenerationDialogProps> = ({
       <DialogTitle>
         <Box display="flex" alignItems="center" gap={1}>
           <AutoFixHighIcon color="primary" />
-          <Typography variant="h6">HDSP 프롬프트로 노트북 생성</Typography>
+          <Typography variant="h6">HALO 프롬프트로 노트북 생성</Typography>
         </Box>
       </DialogTitle>
 

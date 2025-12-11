@@ -574,10 +574,10 @@ export class AgentOrchestrator {
           }
         }
 
-        // 타임아웃과 함께 실행
-        console.log('[Orchestrator] Calling toolExecutor.executeTool for:', toolCall.tool);
+        // 타임아웃과 함께 실행 (stepNumber 전달)
+        console.log('[Orchestrator] Calling toolExecutor.executeTool for:', toolCall.tool, 'step:', step.stepNumber);
         const result = await this.executeWithTimeout(
-          () => this.toolExecutor.executeTool(toolCall),
+          () => this.toolExecutor.executeTool(toolCall, step.stepNumber),
           this.config.executionTimeout
         );
         console.log('[Orchestrator] Tool execution result:', JSON.stringify(result));

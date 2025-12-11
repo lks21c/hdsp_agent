@@ -28,17 +28,19 @@
   background: var(--jp-layout-color2);
 }
 
-.jp-agent-header-logo {
-  height: 28px;
-  width: auto;
+.jp-agent-header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--jp-ui-font-color1);
   display: flex;
   align-items: center;
+  gap: 6px;
 }
 
-.jp-agent-header-logo svg {
-  height: 28px;
+.jp-agent-logo {
+  height: 24px;
   width: auto;
-  max-width: 200px;
 }
 
 .jp-agent-header-buttons {
@@ -1079,6 +1081,16 @@ body[data-jp-theme-light="false"] .jp-agent-mode-select {
   color: var(--jp-ui-font-color1);
   margin: 0 0 8px 0;
   line-height: 1.5;
+}
+
+.jp-agent-execution-result-message ul,
+.jp-agent-execution-result-message ol {
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+}
+
+.jp-agent-execution-result-message li {
+  margin: 0.25em 0;
 }
 
 .jp-agent-execution-result-error {

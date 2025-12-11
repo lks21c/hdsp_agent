@@ -65,8 +65,8 @@ export const sidebarPlugin: JupyterFrontEndPlugin<void> = {
 
     // Add command to toggle sidebar
     app.commands.addCommand(COMMAND_ID, {
-      label: 'HDSP Agent 사이드바 토글',
-      caption: 'HDSP Agent 패널 표시/숨기기',
+      label: 'HALO Agent 사이드바 토글',
+      caption: 'HALO Agent 패널 표시/숨기기',
       execute: () => {
         if (agentPanel.isVisible) {
           agentPanel.close();
@@ -80,7 +80,7 @@ export const sidebarPlugin: JupyterFrontEndPlugin<void> = {
     if (palette) {
       palette.addItem({
         command: COMMAND_ID,
-        category: 'HDSP Agent',
+        category: 'HALO Agent',
         args: {}
       });
     }
@@ -88,7 +88,7 @@ export const sidebarPlugin: JupyterFrontEndPlugin<void> = {
       // Store reference globally for cell buttons to access
       (window as any)._hdspAgentPanel = agentPanel;
 
-      console.log('[SidebarPlugin] HDSP Agent Sidebar activated successfully');
+      console.log('[SidebarPlugin] HALO Agent Sidebar activated successfully');
     } catch (error) {
       console.error('[SidebarPlugin] Failed to activate:', error);
     }

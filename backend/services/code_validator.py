@@ -115,10 +115,13 @@ class CodeValidator:
         'True', 'False', 'None', 'print', 'len', 'range', 'str', 'int', 'float',
         'list', 'dict', 'set', 'tuple', 'bool', 'type', 'object', 'super',
         'open', 'input', 'sorted', 'reversed', 'enumerate', 'zip', 'map', 'filter',
+        'all', 'any',  # ★ 중요: iterable 검사 내장 함수
         'sum', 'min', 'max', 'abs', 'round', 'pow', 'divmod',
         'isinstance', 'issubclass', 'hasattr', 'getattr', 'setattr', 'delattr',
         'callable', 'iter', 'next', 'id', 'hash', 'repr', 'ascii', 'bin', 'hex', 'oct',
         'ord', 'chr', 'format', 'vars', 'dir', 'help', 'locals', 'globals',
+        'slice', 'frozenset', 'bytes', 'bytearray', 'memoryview',  # ★ 추가 내장 타입
+        'complex', 'setattr', 'delattr',  # ★ 추가 내장 함수
         'staticmethod', 'classmethod', 'property',
         'exec', 'eval', 'compile', 'globals', 'locals', 'breakpoint',
         'Exception', 'BaseException', 'ValueError', 'TypeError', 'KeyError',

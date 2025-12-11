@@ -17,6 +17,7 @@ from ..prompts.auto_agent_prompts import (
 )
 from ..services.code_validator import CodeValidator
 from ..services.reflection_engine import ReflectionEngine
+from ..knowledge.loader import get_knowledge_base
 
 logger = logging.getLogger(__name__)
 
@@ -37,18 +38,27 @@ class AutoAgentPlanHandler(BaseAgentHandler):
             if not request:
                 return self.write_error_json(400, 'request is required')
 
-            # 프롬프트 생성
+            imported_libraries = notebook_context.get('importedLibraries', [])
+
+            # Step 1: LLM이 필요한 라이브러리 판단
+            detected_libraries = await self._detect_required_libraries(
+                request, imported_libraries
+            )
+            print(f"[AutoAgent] Detected libraries: {detected_libraries}", flush=True)
+
+            # 프롬프트 생성 (감지된 라이브러리 knowledge 포함)
             prompt = format_plan_prompt(
                 request=request,
                 cell_count=notebook_context.get('cellCount', 0),
-                imported_libraries=notebook_context.get('importedLibraries', []),
+                imported_libraries=imported_libraries,
                 defined_variables=notebook_context.get('definedVariables', []),
                 recent_cells=notebook_context.get('recentCells', []),
-                available_libraries=self._get_installed_packages()
+                available_libraries=self._get_installed_packages(),
+                detected_libraries=detected_libraries  # 새 파라미터
             )
 
-            # LLM 호출
-            print("[AutoAgent] Calling LLM...", flush=True)
+            # Step 2: Plan 생성 LLM 호출
+            print("[AutoAgent] Calling LLM for plan generation...", flush=True)
             try:
                 response = await self._call_llm(prompt)
                 print(f"[AutoAgent] LLM response length: {len(response)}", flush=True)
@@ -100,6 +110,58 @@ class AutoAgentPlanHandler(BaseAgentHandler):
         from ..llm_service import call_llm
         config = self.config_manager.get_config()
         return await call_llm(prompt, config)
+
+    async def _detect_required_libraries(
+        self, request: str, imported_libraries: list
+    ) -> list:
+        """LLM이 사용자 요청을 분석하여 필요한 라이브러리 판단"""
+        knowledge_base = get_knowledge_base()
+
+        # 사용 가능한 라이브러리 가이드가 없으면 빈 리스트 반환
+        available = knowledge_base.list_available_libraries()
+        if not available:
+            print("[AutoAgent] No library guides available", flush=True)
+            return []
+
+        # LLM 판단 프롬프트 생성
+        detection_prompt = knowledge_base.get_detection_prompt(
+            request, imported_libraries
+        )
+
+        print("[AutoAgent] Calling LLM for library detection...", flush=True)
+        try:
+            response = await self._call_llm(detection_prompt)
+            print(f"[AutoAgent] Library detection response: {response[:200]}", flush=True)
+
+            # JSON 파싱
+            result = self._parse_json_response(response)
+            if result and 'libraries' in result:
+                # 실제 존재하는 가이드만 필터링
+                detected = [lib for lib in result['libraries'] if lib in available]
+                if detected:
+                    return detected
+        except Exception as e:
+            print(f"[AutoAgent] Library detection LLM failed: {e}", flush=True)
+
+        # Fallback: 요청 텍스트에서 직접 라이브러리 이름 검색
+        print("[AutoAgent] Using fallback keyword detection...", flush=True)
+        fallback_detected = self._fallback_library_detection(request, available)
+        if fallback_detected:
+            print(f"[AutoAgent] Fallback detected: {fallback_detected}", flush=True)
+        return fallback_detected
+
+    def _fallback_library_detection(self, request: str, available: list) -> list:
+        """
+        Fallback: 요청 텍스트에서 라이브러리 이름 직접 검색
+        LLM 호출이 실패하거나 결과가 없을 때 사용
+        """
+        request_lower = request.lower()
+        detected = []
+        for lib in available:
+            # 라이브러리 이름이 요청에 포함되어 있으면 감지
+            if lib.lower() in request_lower:
+                detected.append(lib)
+        return detected
 
     def _parse_json_response(self, response: str) -> dict:
         """LLM 응답에서 JSON 추출 - 부모 클래스의 공통 메서드 사용"""
