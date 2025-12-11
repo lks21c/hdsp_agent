@@ -1247,9 +1247,11 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
                         {step.description}
                       </span>
                       <div className="jp-agent-execution-step-tools">
-                        {step.toolCalls.map((tc, i) => (
-                          <span key={i} className="jp-agent-execution-tool-tag">{tc.tool}</span>
-                        ))}
+                        {step.toolCalls
+                          .filter(tc => !['jupyter_cell', 'final_answer', 'markdown'].includes(tc.tool))
+                          .map((tc, i) => (
+                            <span key={i} className="jp-agent-execution-tool-tag">{tc.tool}</span>
+                          ))}
                       </div>
                     </div>
                   </div>
