@@ -21,6 +21,7 @@ import {
   MarkdownParams,
   FinalAnswerParams,
   ExecutionResult,
+  CellOperation,
 } from '../types/auto-agent';
 
 export class ToolExecutor {
@@ -92,6 +93,24 @@ export class ToolExecutor {
   }
 
   /**
+   * Step 번호 포맷팅 (스태킹 방지)
+   * 기존 Step 주석이 있으면 교체, 없으면 추가
+   */
+  private formatCodeWithStep(code: string, stepNumber?: number): string {
+    if (stepNumber === undefined) {
+      return code;
+    }
+
+    // 기존 Step 주석 제거 (스태킹 방지)
+    // # [Step N] 또는 # [Step N.M] 패턴 매칭
+    const stepPattern = /^# \[Step \d+(?:\.\d+)?\]\n/;
+    const cleanCode = code.replace(stepPattern, '');
+
+    // 새 Step 주석 추가
+    return `# [Step ${stepNumber}]\n${cleanCode}`;
+  }
+
+  /**
    * jupyter_cell 도구: 셀 생성/수정/실행
    * @param stepNumber - 실행 계획의 단계 번호 (셀에 주석으로 표시)
    */
@@ -102,26 +121,49 @@ export class ToolExecutor {
     console.log('[ToolExecutor] notebook model available:', !!notebookContent?.model);
     let cellIndex: number;
     let wasModified = false;
+    let operation: CellOperation = params.operation || 'CREATE';
+    let previousContent: string | undefined;
 
-    // stepNumber가 있으면 코드 맨 앞에 주석 추가
-    let codeWithStep = params.code;
-    if (stepNumber !== undefined) {
-      codeWithStep = `# [Step ${stepNumber}]\n${params.code}`;
-    }
+    // Step 번호 포맷팅 (스태킹 방지)
+    const codeWithStep = this.formatCodeWithStep(params.code, stepNumber);
 
     try {
-      if (params.cellIndex !== undefined) {
-        // 기존 셀 수정
-        console.log('[ToolExecutor] Modifying existing cell at index:', params.cellIndex);
+      // 작업 유형에 따른 셀 처리
+      if (params.cellIndex !== undefined && params.operation !== 'CREATE') {
+        // MODIFY: 기존 셀 수정
+        operation = 'MODIFY';
         cellIndex = params.cellIndex;
+
+        // 수정 전 원본 내용 저장 (UI/실행취소용)
+        const existingCell = notebookContent.widgets[cellIndex];
+        if (existingCell?.model?.sharedModel) {
+          previousContent = existingCell.model.sharedModel.getSource();
+        }
+
+        console.log('[ToolExecutor] MODIFY: Updating cell at index:', cellIndex);
         this.updateCellContent(cellIndex, codeWithStep);
         wasModified = true;
+
+      } else if (params.insertAfter !== undefined) {
+        // INSERT_AFTER: 특정 셀 뒤에 삽입
+        operation = 'INSERT_AFTER';
+        console.log('[ToolExecutor] INSERT_AFTER: Inserting after cell:', params.insertAfter);
+        cellIndex = await this.insertCellAfter(codeWithStep, params.insertAfter);
+
+      } else if (params.insertBefore !== undefined) {
+        // INSERT_BEFORE: 특정 셀 앞에 삽입
+        operation = 'INSERT_BEFORE';
+        console.log('[ToolExecutor] INSERT_BEFORE: Inserting before cell:', params.insertBefore);
+        cellIndex = await this.insertCellBefore(codeWithStep, params.insertBefore);
+
       } else {
-        // 새 셀 생성
-        console.log('[ToolExecutor] Creating new code cell');
-        cellIndex = await this.createCodeCell(codeWithStep, params.insertAfter);
-        console.log('[ToolExecutor] Created cell at index:', cellIndex);
+        // CREATE: 기본 동작 - 노트북 끝에 생성
+        operation = 'CREATE';
+        console.log('[ToolExecutor] CREATE: Creating new cell at end');
+        cellIndex = await this.createCodeCell(codeWithStep);
       }
+
+      console.log('[ToolExecutor] Cell operation completed:', operation, 'at index:', cellIndex);
 
       // 셀 생성/수정 후 해당 셀로 스크롤 (실행 전)
       this.scrollToCell(cellIndex);
@@ -138,6 +180,8 @@ export class ToolExecutor {
         traceback: result.error?.traceback,
         cellIndex,
         wasModified,
+        operation,
+        previousContent,
       };
     } catch (error: any) {
       console.error('[ToolExecutor] executeJupyterCell error:', error);
@@ -146,6 +190,8 @@ export class ToolExecutor {
         error: error.message || 'Failed to execute jupyter_cell',
         cellIndex: cellIndex!,
         wasModified,
+        operation,
+        previousContent,
       };
     }
   }
@@ -380,6 +426,56 @@ print(json.dumps(result))
     notebookContent.activeCellIndex = insertIndex;
 
     console.log('[ToolExecutor] Created cell at index:', insertIndex, '(always at end)');
+    return insertIndex;
+  }
+
+  /**
+   * 특정 셀 뒤에 새 코드 셀 삽입 (INSERT_AFTER)
+   * @param code - 삽입할 코드
+   * @param afterIndex - 이 셀 뒤에 삽입
+   */
+  private async insertCellAfter(code: string, afterIndex: number): Promise<number> {
+    const model = this.notebook.content.model;
+    if (!model) throw new Error('Notebook model not available');
+
+    // 삽입 위치: afterIndex + 1 (afterIndex 바로 뒤)
+    const insertIndex = Math.min(afterIndex + 1, model.cells.length);
+
+    model.sharedModel.insertCell(insertIndex, {
+      cell_type: 'code',
+      source: code,
+      metadata: { hdsp_inserted: true },  // Agent에 의해 삽입됨 표시
+    });
+
+    this.lastCreatedCellIndex = insertIndex;
+    this.notebook.content.activeCellIndex = insertIndex;
+
+    console.log('[ToolExecutor] INSERT_AFTER: Inserted cell after index:', afterIndex, 'at:', insertIndex);
+    return insertIndex;
+  }
+
+  /**
+   * 특정 셀 앞에 새 코드 셀 삽입 (INSERT_BEFORE)
+   * @param code - 삽입할 코드
+   * @param beforeIndex - 이 셀 앞에 삽입
+   */
+  private async insertCellBefore(code: string, beforeIndex: number): Promise<number> {
+    const model = this.notebook.content.model;
+    if (!model) throw new Error('Notebook model not available');
+
+    // 삽입 위치: beforeIndex (beforeIndex 바로 앞)
+    const insertIndex = Math.max(0, beforeIndex);
+
+    model.sharedModel.insertCell(insertIndex, {
+      cell_type: 'code',
+      source: code,
+      metadata: { hdsp_inserted: true },  // Agent에 의해 삽입됨 표시
+    });
+
+    this.lastCreatedCellIndex = insertIndex;
+    this.notebook.content.activeCellIndex = insertIndex;
+
+    console.log('[ToolExecutor] INSERT_BEFORE: Inserted cell before index:', beforeIndex, 'at:', insertIndex);
     return insertIndex;
   }
 

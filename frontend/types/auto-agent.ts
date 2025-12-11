@@ -9,6 +9,19 @@
 
 export type ToolName = 'jupyter_cell' | 'markdown' | 'final_answer';
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Cell Operation Types (Notebook Refactoring Support)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * 셀 작업 유형
+ * - CREATE: 노트북 끝에 새 셀 생성 (기본)
+ * - MODIFY: 기존 셀 내용 수정
+ * - INSERT_AFTER: 특정 셀 뒤에 새 셀 삽입
+ * - INSERT_BEFORE: 특정 셀 앞에 새 셀 삽입
+ */
+export type CellOperation = 'CREATE' | 'MODIFY' | 'INSERT_AFTER' | 'INSERT_BEFORE';
+
 export interface ToolCall {
   tool: ToolName;
   parameters: JupyterCellParams | MarkdownParams | FinalAnswerParams;
@@ -17,8 +30,10 @@ export interface ToolCall {
 // jupyter_cell 도구 파라미터
 export interface JupyterCellParams {
   code: string;
-  cellIndex?: number;    // 기존 셀 수정 시 인덱스 지정
-  insertAfter?: number;  // 특정 셀 뒤에 삽입
+  cellIndex?: number;       // 기존 셀 수정 시 인덱스 지정 (MODIFY)
+  insertAfter?: number;     // 특정 셀 뒤에 삽입 (INSERT_AFTER)
+  insertBefore?: number;    // 특정 셀 앞에 삽입 (INSERT_BEFORE)
+  operation?: CellOperation; // 명시적 셀 작업 유형
 }
 
 // markdown 도구 파라미터
@@ -43,7 +58,9 @@ export interface ToolResult {
   error?: string;
   traceback?: string[];
   cellIndex?: number;
-  wasModified?: boolean;  // 기존 셀 수정 vs 새 셀 생성 구분
+  wasModified?: boolean;      // 기존 셀 수정 vs 새 셀 생성 구분
+  operation?: CellOperation;  // 수행된 셀 작업 유형
+  previousContent?: string;   // 수정 전 원본 내용 (MODIFY 시)
 }
 
 // 커널 실행 결과
@@ -75,8 +92,12 @@ export interface PlanStep {
   stepNumber: number;
   description: string;
   toolCalls: ToolCall[];
-  dependencies: number[];  // 의존하는 이전 단계 번호들
-  isNew?: boolean;  // Replan으로 새로 추가된 스텝인지 여부
+  dependencies: number[];     // 의존하는 이전 단계 번호들
+  isNew?: boolean;            // Replan으로 새로 추가된 스텝인지 여부
+  wasReplanned?: boolean;     // Replan으로 수정된 스텝인지 여부
+  isReplaced?: boolean;       // 완전히 교체된 스텝인지 여부
+  cellOperation?: CellOperation;  // 이 스텝의 셀 작업 유형 (UI 표시용)
+  targetCellIndex?: number;   // 대상 셀 인덱스 (UI 표시용)
 }
 
 export interface StepResult {

@@ -30,6 +30,7 @@ import {
   AutoAgentReplanResponse,
   ReplanDecision,
   EXECUTION_SPEED_DELAYS,
+  CellOperation,
   // Validation & Reflection Types
   AutoAgentValidateResponse,
   ReflectionResult,
@@ -938,30 +939,30 @@ export class AgentOrchestrator {
 
     switch (decision) {
       case 'refine':
-        // 현재 단계의 코드만 수정 - 새 셀 생성 (맨 끝에 추가됨)
+        // 현재 단계의 코드만 수정 - 기존 셀 수정 (MODIFY 작업)
         if (changes.refined_code) {
           const newToolCalls = currentStep.toolCalls.map(tc => {
             if (tc.tool === 'jupyter_cell') {
+              const params = tc.parameters as JupyterCellParams;
               return {
                 ...tc,
                 parameters: {
-                  ...(tc.parameters as JupyterCellParams),
+                  ...params,
                   code: changes.refined_code!,
-                  // cellIndex 제거 → 항상 새 셀 생성
+                  // ★ cellIndex 보존: 기존 셀 또는 실패한 셀을 수정
+                  cellIndex: params.cellIndex ?? failedCellIndex,
+                  operation: 'MODIFY' as CellOperation,
                 },
               };
             }
             return tc;
           });
-          // cellIndex 속성 명시적 제거
-          newToolCalls.forEach(tc => {
-            if (tc.tool === 'jupyter_cell' && tc.parameters) {
-              delete (tc.parameters as any).cellIndex;
-            }
-          });
           steps[currentStepIndex] = {
             ...currentStep,
             toolCalls: newToolCalls,
+            wasReplanned: true,  // Replan으로 수정됨 표시
+            cellOperation: 'MODIFY',
+            targetCellIndex: failedCellIndex,
           };
         }
         break;
@@ -974,6 +975,7 @@ export class AgentOrchestrator {
             ...newStep,
             stepNumber: currentStep.stepNumber + idx * 0.1, // 임시 번호
             isNew: true, // Replan으로 새로 추가된 스텝 표시
+            cellOperation: 'CREATE' as CellOperation,  // 새 셀 생성
           }));
 
           steps.splice(currentStepIndex, 0, ...newSteps);
@@ -987,15 +989,18 @@ export class AgentOrchestrator {
       case 'replace_step':
         // 현재 단계를 완전히 교체 - 새 셀 생성
         if (changes.replacement) {
-          const replacementStep = {
+          const replacementStep: PlanStep = {
             ...changes.replacement,
             stepNumber: currentStep.stepNumber,
             toolCalls: changes.replacement.toolCalls || [],
+            isReplaced: true,  // 교체된 스텝 표시
+            cellOperation: 'CREATE' as CellOperation,  // 새 셀 생성
           };
-          // cellIndex 속성 명시적 제거
+          // cellIndex 속성 명시적 제거 (새 셀 생성)
           replacementStep.toolCalls.forEach(tc => {
             if (tc.tool === 'jupyter_cell' && tc.parameters) {
               delete (tc.parameters as any).cellIndex;
+              (tc.parameters as JupyterCellParams).operation = 'CREATE';
             }
           });
           steps[currentStepIndex] = replacementStep;
@@ -1010,6 +1015,7 @@ export class AgentOrchestrator {
             ...newStep,
             stepNumber: currentStepIndex + idx + 1,
             isNew: true, // Replan으로 새로 추가된 스텝 표시
+            cellOperation: 'CREATE' as CellOperation,  // 새 셀 생성
           }));
 
           // 새 계획에 final_answer가 없으면 경고 로그

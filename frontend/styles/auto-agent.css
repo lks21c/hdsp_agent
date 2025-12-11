@@ -221,6 +221,93 @@
   letter-spacing: 0.5px;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   Cell Operation Badges (MODIFIED, INSERTED, REPLACED)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Base badge style */
+.aa-operation-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  color: white;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-right: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* MODIFIED badge - amber/yellow */
+.aa-operation-badge--modify {
+  background: var(--jp-warn-color1, #f59e0b);
+}
+
+/* INSERTED badge - blue */
+.aa-operation-badge--insert {
+  background: var(--jp-info-color1, #2196f3);
+}
+
+/* REPLACED badge - purple */
+.aa-operation-badge--replace {
+  background: var(--jp-accent-color1, #8b5cf6);
+}
+
+/* CREATE badge - green (same as NEW) */
+.aa-operation-badge--create {
+  background: var(--jp-success-color1, #22c55e);
+}
+
+/* Step with MODIFY operation */
+.aa-step--modified {
+  background: rgba(245, 158, 11, 0.06);
+  border-left: 2px solid var(--jp-warn-color1, #f59e0b);
+}
+
+.aa-step--modified .aa-step-indicator {
+  color: var(--jp-warn-color1, #f59e0b);
+}
+
+/* Step with INSERT operation */
+.aa-step--inserted {
+  background: rgba(33, 150, 243, 0.06);
+  border-left: 2px solid var(--jp-info-color1, #2196f3);
+}
+
+.aa-step--inserted .aa-step-indicator {
+  color: var(--jp-info-color1, #2196f3);
+}
+
+/* Step with REPLACE operation */
+.aa-step--replaced {
+  background: rgba(139, 92, 246, 0.06);
+  border-left: 2px solid var(--jp-accent-color1, #8b5cf6);
+}
+
+.aa-step--replaced .aa-step-indicator {
+  color: var(--jp-accent-color1, #8b5cf6);
+}
+
+/* Cell index indicator */
+.aa-cell-index {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--jp-ui-font-color2);
+  background: var(--jp-layout-color2);
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-left: 4px;
+  font-family: var(--jp-code-font-family);
+}
+
+/* Highlight for cell index when targeting specific cell */
+.aa-cell-index--target {
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--jp-brand-color1);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
 @keyframes aa-slide-in {
   from {
     opacity: 0;

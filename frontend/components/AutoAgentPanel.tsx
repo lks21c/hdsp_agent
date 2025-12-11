@@ -19,6 +19,7 @@ import {
   DEFAULT_AUTO_AGENT_CONFIG,
   ExecutionSpeed,
   EXECUTION_SPEED_DELAYS,
+  CellOperation,
 } from '../types/auto-agent';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -74,6 +75,50 @@ const ExecutionPlanView: React.FC<ExecutionPlanViewProps> = ({
     return originalStepCount !== undefined && step.stepNumber > originalStepCount;
   };
 
+  // 셀 작업 유형에 따른 배지 텍스트 및 CSS 클래스 반환
+  const getOperationBadge = (step: PlanStep): { text: string; className: string } | null => {
+    const operation = step.cellOperation;
+    if (!operation) return null;
+
+    switch (operation) {
+      case 'MODIFY':
+        return { text: 'MODIFIED', className: 'aa-operation-badge aa-operation-badge--modify' };
+      case 'INSERT_AFTER':
+      case 'INSERT_BEFORE':
+        return { text: 'INSERTED', className: 'aa-operation-badge aa-operation-badge--insert' };
+      case 'CREATE':
+        // CREATE는 기본 동작이므로 NEW가 아닌 경우에만 표시하지 않음
+        return null;
+      default:
+        return null;
+    }
+  };
+
+  // 스텝의 셀 작업 유형에 따른 CSS 클래스
+  const getStepOperationClass = (step: PlanStep): string => {
+    const operation = step.cellOperation;
+    if (!operation) return '';
+
+    switch (operation) {
+      case 'MODIFY':
+        return 'aa-step--modified';
+      case 'INSERT_AFTER':
+      case 'INSERT_BEFORE':
+        return 'aa-step--inserted';
+      default:
+        return '';
+    }
+  };
+
+  // 대상 셀 인덱스 표시
+  const getCellIndexDisplay = (step: PlanStep): number | null => {
+    // wasReplanned나 isReplaced면서 targetCellIndex가 있는 경우
+    if (step.targetCellIndex !== undefined) {
+      return step.targetCellIndex;
+    }
+    return null;
+  };
+
   const progressPercent = (completedSteps.length / plan.totalSteps) * 100;
 
   return (
@@ -102,10 +147,16 @@ const ExecutionPlanView: React.FC<ExecutionPlanViewProps> = ({
         {plan.steps.map((step) => {
           const status = getStepStatus(step.stepNumber);
           const isNew = isNewStep(step);
+          const operationBadge = getOperationBadge(step);
+          const operationClass = getStepOperationClass(step);
+          const cellIndex = getCellIndexDisplay(step);
+          const isReplaced = step.isReplaced;
+          const wasReplanned = step.wasReplanned;
+
           return (
             <div
               key={step.stepNumber}
-              className={`aa-step aa-step--${status} ${isNew ? 'aa-step--new' : ''}`}
+              className={`aa-step aa-step--${status} ${isNew ? 'aa-step--new' : ''} ${operationClass} ${isReplaced ? 'aa-step--replaced' : ''}`}
             >
               <div className="aa-step-indicator">
                 {/* 상태 아이콘 */}
@@ -134,8 +185,22 @@ const ExecutionPlanView: React.FC<ExecutionPlanViewProps> = ({
               </div>
               <div className="aa-step-content">
                 <span className={`aa-step-desc ${status === 'completed' ? 'aa-step-desc--done' : ''} ${isNew ? 'aa-step-desc--new' : ''}`}>
+                  {/* 셀 작업 배지 표시: NEW, MODIFIED, INSERTED, REPLACED */}
                   {isNew && <span className="aa-new-badge">NEW</span>}
+                  {!isNew && isReplaced && <span className="aa-operation-badge aa-operation-badge--replace">REPLACED</span>}
+                  {!isNew && !isReplaced && operationBadge && (
+                    <span className={operationBadge.className}>{operationBadge.text}</span>
+                  )}
+                  {!isNew && !isReplaced && !operationBadge && wasReplanned && (
+                    <span className="aa-operation-badge aa-operation-badge--modify">REFINED</span>
+                  )}
                   <span className="aa-step-label">Step {step.stepNumber}:</span> {step.description}
+                  {/* 대상 셀 인덱스 표시 */}
+                  {cellIndex !== null && (
+                    <span className={`aa-cell-index ${step.cellOperation === 'MODIFY' ? 'aa-cell-index--target' : ''}`}>
+                      Cell #{cellIndex}
+                    </span>
+                  )}
                 </span>
                 {status === 'current' && (
                   <span className="aa-step-executing">실행 중...</span>
@@ -145,7 +210,7 @@ const ExecutionPlanView: React.FC<ExecutionPlanViewProps> = ({
                 )}
                 <div className="aa-step-tools">
                   {step.toolCalls
-                    .filter(tc => tc.tool !== 'jupyter_cell')
+                    .filter(tc => !['jupyter_cell', 'final_answer', 'markdown'].includes(tc.tool))
                     .map((tc, i) => (
                       <span key={i} className={`aa-tool-tag ${status === 'completed' ? 'aa-tool-tag--done' : ''}`}>
                         {tc.tool}
