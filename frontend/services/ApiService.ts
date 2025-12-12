@@ -9,7 +9,9 @@ import {
   IChatRequest,
   IChatResponse,
   IHealthStatus,
-  IModelInfo
+  IModelInfo,
+  IFileFixRequest,
+  IFileFixResponse
 } from '../types';
 
 import {
@@ -531,5 +533,47 @@ export class ApiService {
     }
 
     return finalPlan;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // File Action API Methods (Python 파일 에러 수정)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Python 파일 에러 수정/분석/설명 요청
+   */
+  async fileAction(request: IFileFixRequest): Promise<IFileFixResponse> {
+    console.log('[ApiService] fileAction request:', request);
+
+    const response = await fetch(`${this.baseUrl}/file/action`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      credentials: 'include',
+      body: JSON.stringify(request)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[ApiService] File Action API Error:', {
+        status: response.status,
+        statusText: response.statusText,
+        body: errorText,
+        url: `${this.baseUrl}/file/action`
+      });
+
+      let errorMessage = '파일 액션 실패';
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error || errorJson.message || errorMessage;
+      } catch (e) {
+        errorMessage = errorText || errorMessage;
+      }
+
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    console.log('[ApiService] File Action API Success:', result);
+    return result;
   }
 }

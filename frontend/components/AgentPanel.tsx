@@ -6,7 +6,7 @@
 import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef, useCallback } from 'react';
 import { ReactWidget, LabIcon } from '@jupyterlab/ui-components';
 import { ApiService } from '../services/ApiService';
-import { IChatMessage } from '../types';
+import { IChatMessage, IFileFixRequest, IFixedFile } from '../types';
 import { SettingsPanel, LLMConfig } from './SettingsPanel';
 import { AgentOrchestrator } from '../services/AgentOrchestrator';
 import {
@@ -46,6 +46,7 @@ type UnifiedMessage = IChatMessage | AgentExecutionMessage;
 interface AgentPanelProps {
   apiService: ApiService;
   notebookTracker?: any;
+  consoleTracker?: any;  // IConsoleTracker from @jupyterlab/console
 }
 
 export interface ChatPanelHandle {
@@ -83,13 +84,122 @@ const extractAgentRequest = (input: string): string => {
   return trimmed;
 };
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Python 파일 에러 감지 및 처리 유틸리티
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Python 에러 패턴 감지
+const detectPythonError = (text: string): boolean => {
+  const errorPatterns = [
+    /Traceback \(most recent call last\)/i,
+    /SyntaxError:/i,
+    /NameError:/i,
+    /TypeError:/i,
+    /ImportError:/i,
+    /ModuleNotFoundError:/i,
+    /AttributeError:/i,
+    /ValueError:/i,
+    /KeyError:/i,
+    /IndexError:/i,
+    /FileNotFoundError:/i,
+    /File\s+"[^"]+\.py"/i,
+  ];
+  return errorPatterns.some(pattern => pattern.test(text));
+};
+
+// 에러 메시지에서 Python 파일 경로 추출
+const extractFilePathsFromError = (text: string): string[] => {
+  const paths: string[] = [];
+
+  // 패턴 1: python xxx.py 명령어
+  const cmdMatch = text.match(/python\s+(\S+\.py)/gi);
+  if (cmdMatch) {
+    cmdMatch.forEach(match => {
+      const pathMatch = match.match(/python\s+(\S+\.py)/i);
+      if (pathMatch) paths.push(pathMatch[1]);
+    });
+  }
+
+  // 패턴 2: File "xxx.py" 형식 (트레이스백)
+  const fileMatches = text.matchAll(/File\s+"([^"]+\.py)"/gi);
+  for (const match of fileMatches) {
+    if (!paths.includes(match[1])) {
+      paths.push(match[1]);
+    }
+  }
+
+  return paths;
+};
+
+// 메인 파일 경로 추출 (명령어에서 실행한 파일)
+const extractMainFilePath = (text: string): string | null => {
+  // python xxx.py 명령어에서 추출
+  const cmdMatch = text.match(/python\s+(\S+\.py)/i);
+  if (cmdMatch) {
+    return cmdMatch[1];
+  }
+  return null;
+};
+
+// 에러가 발생한 실제 파일 추출 (트레이스백의 마지막 파일)
+const extractErrorFilePath = (text: string): string | null => {
+  // File "xxx.py" 패턴들 중 마지막 것 (실제 에러 발생 위치)
+  const fileMatches = [...text.matchAll(/File\s+"([^"]+\.py)"/gi)];
+  if (fileMatches.length > 0) {
+    return fileMatches[fileMatches.length - 1][1];
+  }
+  return null;
+};
+
+// Python 파일에서 로컬 import 추출
+const extractLocalImports = (content: string): string[] => {
+  const imports: string[] = [];
+
+  // from xxx import yyy (로컬 모듈)
+  const fromImports = content.matchAll(/^from\s+(\w+)\s+import/gm);
+  for (const match of fromImports) {
+    const moduleName = match[1];
+    // 표준 라이브러리가 아닌 것만 (간단한 휴리스틱)
+    if (!isStdLibModule(moduleName)) {
+      imports.push(moduleName);
+    }
+  }
+
+  // import xxx (로컬 모듈)
+  const directImports = content.matchAll(/^import\s+(\w+)/gm);
+  for (const match of directImports) {
+    const moduleName = match[1];
+    if (!isStdLibModule(moduleName)) {
+      imports.push(moduleName);
+    }
+  }
+
+  return [...new Set(imports)];
+};
+
+// 표준 라이브러리 모듈 체크 (간단한 목록)
+const isStdLibModule = (name: string): boolean => {
+  const stdLibModules = [
+    'os', 'sys', 'json', 're', 'math', 'datetime', 'time', 'random',
+    'collections', 'itertools', 'functools', 'typing', 'pathlib',
+    'subprocess', 'threading', 'multiprocessing', 'asyncio', 'socket',
+    'http', 'urllib', 'email', 'html', 'xml', 'logging', 'unittest',
+    'io', 'pickle', 'copy', 'pprint', 'traceback', 'warnings',
+    'contextlib', 'abc', 'dataclasses', 'enum', 'types',
+    // 외부 라이브러리 (일반적으로 설치됨)
+    'numpy', 'pandas', 'matplotlib', 'seaborn', 'sklearn', 'scipy',
+    'torch', 'tensorflow', 'keras', 'requests', 'flask', 'django',
+  ];
+  return stdLibModules.includes(name.toLowerCase());
+};
+
 /**
  * Chat Panel Component - Cursor AI Style Unified Interface
  */
 // 입력 모드 타입
 type InputMode = 'chat' | 'agent';
 
-const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, notebookTracker }, ref) => {
+const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, notebookTracker, consoleTracker }, ref) => {
   // 통합 메시지 목록 (Chat + Agent 실행)
   const [messages, setMessages] = useState<UnifiedMessage[]>([]);
   const [input, setInput] = useState('');
@@ -113,6 +223,11 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
     }
   });
   const [showModeDropdown, setShowModeDropdown] = useState(false);
+  // 파일 수정 관련 상태
+  const [pendingFileFixes, setPendingFileFixes] = useState<IFixedFile[]>([]);
+  // Console 에러 자동 감지 상태
+  const [lastConsoleError, setLastConsoleError] = useState<string | null>(null);
+  const [showConsoleErrorNotification, setShowConsoleErrorNotification] = useState(false);
 
   // 모드 변경 시 로컬 스토리지에 저장
   useEffect(() => {
@@ -160,6 +275,116 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
   useEffect(() => {
     loadConfig();
   }, []);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Console 출력 모니터링 - Python 에러 자동 감지
+  // ═══════════════════════════════════════════════════════════════════════════
+  useEffect(() => {
+    if (!consoleTracker) {
+      console.log('[AgentPanel] ConsoleTracker not available');
+      return;
+    }
+
+    console.log('[AgentPanel] Setting up console output monitoring');
+
+    // Console 출력에서 에러 감지하는 함수
+    const checkConsoleForErrors = () => {
+      const currentConsole = consoleTracker.currentWidget;
+      if (!currentConsole) {
+        return;
+      }
+
+      try {
+        // Console의 출력 영역에서 텍스트 추출
+        const consoleNode = currentConsole.node;
+        if (!consoleNode) return;
+
+        // JupyterLab Console의 출력은 .jp-OutputArea-output 클래스에 있음
+        const outputAreas = consoleNode.querySelectorAll('.jp-OutputArea-output');
+        if (outputAreas.length === 0) return;
+
+        // 최근 출력만 확인 (마지막 몇 개)
+        const recentOutputs = Array.from(outputAreas).slice(-5);
+        let combinedOutput = '';
+
+        recentOutputs.forEach((output: Element) => {
+          const text = output.textContent || '';
+          combinedOutput += text + '\n';
+        });
+
+        // Python 에러 감지
+        if (detectPythonError(combinedOutput)) {
+          console.log('[AgentPanel] Python error detected in console output');
+
+          // 중복 알림 방지
+          if (lastConsoleError !== combinedOutput) {
+            setLastConsoleError(combinedOutput);
+            setShowConsoleErrorNotification(true);
+
+            // 5초 후 자동으로 알림 숨기기
+            setTimeout(() => {
+              setShowConsoleErrorNotification(false);
+            }, 10000);
+          }
+        }
+      } catch (e) {
+        console.error('[AgentPanel] Error checking console output:', e);
+      }
+    };
+
+    // MutationObserver로 Console 출력 변경 감지
+    let observer: MutationObserver | null = null;
+
+    const setupObserver = () => {
+      const currentConsole = consoleTracker.currentWidget;
+      if (!currentConsole?.node) return;
+
+      // 기존 observer 정리
+      if (observer) {
+        observer.disconnect();
+      }
+
+      observer = new MutationObserver((mutations) => {
+        // 출력 영역에 변화가 있으면 에러 체크
+        const hasOutputChange = mutations.some(mutation =>
+          mutation.type === 'childList' ||
+          (mutation.type === 'characterData')
+        );
+        if (hasOutputChange) {
+          // 약간의 딜레이 후 체크 (출력이 완전히 렌더링될 때까지)
+          setTimeout(checkConsoleForErrors, 100);
+        }
+      });
+
+      // Console 전체를 관찰
+      observer.observe(currentConsole.node, {
+        childList: true,
+        subtree: true,
+        characterData: true
+      });
+
+      console.log('[AgentPanel] MutationObserver set up for console');
+    };
+
+    // 현재 Console에 observer 설정
+    setupObserver();
+
+    // Console 변경 시 observer 재설정
+    const onConsoleChanged = () => {
+      console.log('[AgentPanel] Console changed, re-setting up observer');
+      setupObserver();
+    };
+
+    consoleTracker.currentChanged?.connect(onConsoleChanged);
+
+    // Cleanup
+    return () => {
+      if (observer) {
+        observer.disconnect();
+      }
+      consoleTracker.currentChanged?.disconnect(onConsoleChanged);
+    };
+  }, [consoleTracker, lastConsoleError]);
 
   // Initialize AgentOrchestrator when notebook is available
   useEffect(() => {
@@ -318,6 +543,216 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
     } catch (error) {
       console.error('Failed to load config:', error);
     }
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Python 파일 에러 수정 관련 함수들
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // JupyterLab Contents API를 통해 파일 내용 로드
+  const loadFileContent = async (filePath: string): Promise<string | null> => {
+    try {
+      // PageConfig에서 base URL 가져오기
+      const { PageConfig, URLExt } = await import('@jupyterlab/coreutils');
+      const baseUrl = PageConfig.getBaseUrl();
+      const apiUrl = URLExt.join(baseUrl, 'api/contents', filePath);
+
+      console.log('[AgentPanel] Loading file:', filePath, 'from:', apiUrl);
+
+      const response = await fetch(apiUrl, {
+        method: 'GET',
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        console.warn('[AgentPanel] Failed to load file:', filePath, response.status);
+        return null;
+      }
+
+      const data = await response.json();
+      return data.content as string;
+    } catch (error) {
+      console.error('[AgentPanel] Error loading file:', filePath, error);
+      return null;
+    }
+  };
+
+  // 파일에 수정된 코드 저장
+  const saveFileContent = async (filePath: string, content: string): Promise<boolean> => {
+    try {
+      const { PageConfig, URLExt } = await import('@jupyterlab/coreutils');
+      const baseUrl = PageConfig.getBaseUrl();
+      const apiUrl = URLExt.join(baseUrl, 'api/contents', filePath);
+
+      console.log('[AgentPanel] Saving file:', filePath);
+
+      const response = await fetch(apiUrl, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type: 'file',
+          format: 'text',
+          content: content,
+        }),
+      });
+
+      if (!response.ok) {
+        console.error('[AgentPanel] Failed to save file:', filePath, response.status);
+        return false;
+      }
+
+      console.log('[AgentPanel] File saved successfully:', filePath);
+      return true;
+    } catch (error) {
+      console.error('[AgentPanel] Error saving file:', filePath, error);
+      return false;
+    }
+  };
+
+  // Python 에러 메시지 처리 및 파일 수정 요청
+  const handlePythonErrorFix = async (errorMessage: string): Promise<void> => {
+    console.log('[AgentPanel] Handling Python error fix request');
+
+    // 1. 에러가 발생한 파일 경로 추출
+    const errorFilePath = extractErrorFilePath(errorMessage);
+    const mainFilePath = extractMainFilePath(errorMessage);
+    const allFilePaths = extractFilePathsFromError(errorMessage);
+
+    console.log('[AgentPanel] Error file:', errorFilePath);
+    console.log('[AgentPanel] Main file:', mainFilePath);
+    console.log('[AgentPanel] All files:', allFilePaths);
+
+    if (!errorFilePath && !mainFilePath) {
+      // 파일 경로를 찾을 수 없으면 일반 채팅으로 처리
+      console.log('[AgentPanel] No file path found, using regular chat');
+      return;
+    }
+
+    // 2. 주요 파일 내용 로드
+    const targetFile = errorFilePath || mainFilePath;
+    const mainContent = await loadFileContent(targetFile!);
+
+    if (!mainContent) {
+      console.warn('[AgentPanel] Could not load file content for:', targetFile);
+      // 파일을 읽을 수 없으면 에러 메시지만으로 처리 시도
+      const errorOnlyRequest: IFileFixRequest = {
+        action: 'fix',
+        mainFile: { path: targetFile!, content: '(파일 읽기 실패)' },
+        errorOutput: errorMessage,
+      };
+
+      try {
+        const result = await apiService.fileAction(errorOnlyRequest);
+        handleFileFixResponse(result.response, result.fixedFiles);
+      } catch (error) {
+        console.error('[AgentPanel] File fix API error:', error);
+        addErrorMessage('파일 수정 요청 실패: ' + (error as Error).message);
+      }
+      return;
+    }
+
+    // 3. 관련 파일들 (imports) 로드
+    const localImports = extractLocalImports(mainContent);
+    const relatedFiles: { path: string; content: string }[] = [];
+
+    // 에러 메시지에 언급된 다른 파일들도 로드
+    for (const path of allFilePaths) {
+      if (path !== targetFile) {
+        const content = await loadFileContent(path);
+        if (content) {
+          relatedFiles.push({ path, content });
+        }
+      }
+    }
+
+    // 로컬 import 파일들도 로드
+    const baseDir = targetFile!.includes('/') ? targetFile!.substring(0, targetFile!.lastIndexOf('/')) : '';
+    for (const moduleName of localImports) {
+      const modulePath = baseDir ? `${baseDir}/${moduleName}.py` : `${moduleName}.py`;
+      if (!allFilePaths.includes(modulePath) && !relatedFiles.some(f => f.path === modulePath)) {
+        const content = await loadFileContent(modulePath);
+        if (content) {
+          relatedFiles.push({ path: modulePath, content });
+        }
+      }
+    }
+
+    console.log('[AgentPanel] Related files loaded:', relatedFiles.length);
+
+    // 4. 파일 수정 API 호출
+    const request: IFileFixRequest = {
+      action: 'fix',
+      mainFile: { path: targetFile!, content: mainContent },
+      errorOutput: errorMessage,
+      relatedFiles: relatedFiles.length > 0 ? relatedFiles : undefined,
+    };
+
+    try {
+      setIsLoading(true);
+      const result = await apiService.fileAction(request);
+      handleFileFixResponse(result.response, result.fixedFiles);
+    } catch (error) {
+      console.error('[AgentPanel] File fix API error:', error);
+      addErrorMessage('파일 수정 요청 실패: ' + (error as Error).message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 파일 수정 응답 처리
+  const handleFileFixResponse = (response: string, fixedFiles: IFixedFile[]) => {
+    console.log('[AgentPanel] File fix response received, fixed files:', fixedFiles.length);
+
+    // Assistant 메시지로 응답 표시
+    const assistantMessage: IChatMessage = {
+      id: Date.now().toString() + '-file-fix',
+      role: 'assistant',
+      content: response,
+      timestamp: Date.now(),
+      metadata: { type: 'file_fix', fixedFiles },
+    };
+    setMessages(prev => [...prev, assistantMessage]);
+
+    // 수정된 파일이 있으면 상태에 저장 (적용 버튼용)
+    if (fixedFiles.length > 0) {
+      setPendingFileFixes(fixedFiles);
+    }
+  };
+
+  // 수정된 파일 적용
+  const applyFileFix = async (fix: IFixedFile) => {
+    console.log('[AgentPanel] Applying fix to file:', fix.path);
+
+    const success = await saveFileContent(fix.path, fix.content);
+    if (success) {
+      // 성공 메시지
+      const successMessage: IChatMessage = {
+        id: Date.now().toString() + '-apply-success',
+        role: 'assistant',
+        content: `✅ **${fix.path}** 파일이 수정되었습니다.\n\n파일 에디터에서 변경사항을 확인하세요.`,
+        timestamp: Date.now(),
+      };
+      setMessages(prev => [...prev, successMessage]);
+
+      // 적용된 파일은 pending에서 제거
+      setPendingFileFixes(prev => prev.filter(f => f.path !== fix.path));
+    } else {
+      addErrorMessage(`파일 저장 실패: ${fix.path}`);
+    }
+  };
+
+  // 에러 메시지 추가 헬퍼
+  const addErrorMessage = (message: string) => {
+    const errorMessage: IChatMessage = {
+      id: Date.now().toString() + '-error',
+      role: 'assistant',
+      content: `⚠️ ${message}`,
+      timestamp: Date.now(),
+    };
+    setMessages(prev => [...prev, errorMessage]);
   };
 
   const handleSaveConfig = async (config: LLMConfig) => {
@@ -945,19 +1380,107 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
 
     // Agent 모드이면 Agent 실행
     if (inputMode === 'agent') {
-      // User 메시지 추가
-      const userMessage: IChatMessage = {
-        id: Date.now().toString(),
-        role: 'user',
-        content: `@agent ${currentInput}`,
-        timestamp: Date.now(),
-      };
-      setMessages(prev => [...prev, userMessage]);
-      setInput('');
+      const notebook = notebookTracker?.currentWidget;
 
-      // Agent 실행
-      await handleAgentExecution(currentInput);
-      return;
+      // 노트북이 없는 경우
+      if (!notebook) {
+        // Python 에러가 감지되면 파일 수정 모드로 전환
+        if (detectPythonError(currentInput)) {
+          console.log('[AgentPanel] Agent mode: No notebook, but Python error detected - switching to file fix mode');
+
+          // User 메시지 추가
+          const userMessage: IChatMessage = {
+            id: Date.now().toString(),
+            role: 'user',
+            content: currentInput,
+            timestamp: Date.now(),
+          };
+          setMessages(prev => [...prev, userMessage]);
+          setInput('');
+
+          // Python 에러 수정 처리
+          await handlePythonErrorFix(currentInput);
+          return;
+        }
+
+        // 파일 수정 관련 자연어 요청 감지 (에러, 고쳐, 수정, fix 등)
+        const fileFixRequestPatterns = [
+          /에러.*해결/i,
+          /에러.*고쳐/i,
+          /에러.*수정/i,
+          /오류.*해결/i,
+          /오류.*고쳐/i,
+          /오류.*수정/i,
+          /fix.*error/i,
+          /\.py.*에러/i,
+          /\.py.*오류/i,
+          /콘솔.*에러/i,
+          /console.*error/i,
+          /파일.*에러/i,
+          /파일.*오류/i,
+        ];
+
+        const isFileFixRequest = fileFixRequestPatterns.some(pattern => pattern.test(currentInput));
+
+        if (isFileFixRequest) {
+          console.log('[AgentPanel] Agent mode: No notebook, file fix request detected - prompting for error details');
+
+          // User 메시지 추가
+          const userMessage: IChatMessage = {
+            id: Date.now().toString(),
+            role: 'user',
+            content: currentInput,
+            timestamp: Date.now(),
+          };
+          setMessages(prev => [...prev, userMessage]);
+          setInput('');
+
+          // 에러 메시지 요청 안내
+          const guideMessage: IChatMessage = {
+            id: Date.now().toString() + '-guide',
+            role: 'assistant',
+            content: `파일 에러 수정을 도와드리겠습니다! 🔧
+
+**에러 메시지를 복사해서 붙여넣어 주세요.**
+
+Console에서 발생한 에러 전체를 복사해주시면:
+1. 에러가 발생한 파일을 자동으로 찾아서 읽고
+2. 관련된 import 파일들도 함께 분석하여
+3. 수정된 코드를 제안해 드립니다.
+
+예시:
+\`\`\`
+$ python b.py
+Traceback (most recent call last):
+  File "a.py", line 3
+    def foo(
+          ^
+SyntaxError: '(' was never closed
+\`\`\``,
+            timestamp: Date.now(),
+          };
+          setMessages(prev => [...prev, guideMessage]);
+          return;
+        }
+
+        // 일반적인 요청은 Chat 모드로 fallback
+        console.log('[AgentPanel] Agent mode: No notebook - falling back to chat mode');
+      } else {
+        // 노트북이 있으면 Agent 실행
+        // User 메시지 추가
+        const userMessage: IChatMessage = {
+          id: Date.now().toString(),
+          role: 'user',
+          content: `@agent ${currentInput}`,
+          timestamp: Date.now(),
+        };
+        setMessages(prev => [...prev, userMessage]);
+        setInput('');
+
+        // Agent 실행
+        await handleAgentExecution(currentInput);
+        return;
+      }
     }
 
     // Chat 모드에서도 명령어로 Agent 실행 가능
@@ -978,6 +1501,25 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
         await handleAgentExecution(agentRequest);
         return;
       }
+    }
+
+    // Python 에러 감지 및 파일 수정 모드 (Chat 모드에서만)
+    if (inputMode === 'chat' && detectPythonError(currentInput)) {
+      console.log('[AgentPanel] Python error detected in message');
+
+      // User 메시지 추가
+      const userMessage: IChatMessage = {
+        id: Date.now().toString(),
+        role: 'user',
+        content: currentInput,
+        timestamp: Date.now(),
+      };
+      setMessages(prev => [...prev, userMessage]);
+      setInput('');
+
+      // Python 에러 수정 처리
+      await handlePythonErrorFix(currentInput);
+      return;
     }
 
     // Check if API key is configured before sending
@@ -1406,6 +1948,83 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
             </div>
           </div>
         )}
+
+        {/* Console 에러 감지 알림 */}
+        {showConsoleErrorNotification && lastConsoleError && (
+          <div className="jp-agent-console-error-notification">
+            <div className="jp-agent-console-error-header">
+              <svg viewBox="0 0 16 16" fill="currentColor" width="16" height="16">
+                <path d="M8.982 1.566a1.13 1.13 0 00-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 01-1.1 0L7.1 5.995A.905.905 0 018 5zm.002 6a1 1 0 110 2 1 1 0 010-2z"/>
+              </svg>
+              <span>Console에서 Python 에러가 감지되었습니다</span>
+            </div>
+            <div className="jp-agent-console-error-preview">
+              {lastConsoleError.slice(0, 200)}
+              {lastConsoleError.length > 200 ? '...' : ''}
+            </div>
+            <div className="jp-agent-console-error-actions">
+              <button
+                className="jp-agent-console-error-fix-btn"
+                onClick={() => {
+                  // 에러를 자동으로 입력창에 넣고 파일 수정 요청
+                  setInput(`다음 에러를 분석하고 수정해주세요:\n\n${lastConsoleError}`);
+                  setShowConsoleErrorNotification(false);
+                  // 입력창에 포커스
+                  const textarea = document.querySelector('.jp-agent-input') as HTMLTextAreaElement;
+                  if (textarea) textarea.focus();
+                }}
+              >
+                에러 분석 요청
+              </button>
+              <button
+                className="jp-agent-console-error-dismiss-btn"
+                onClick={() => setShowConsoleErrorNotification(false)}
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 파일 수정 적용 버튼 영역 */}
+        {pendingFileFixes.length > 0 && (
+          <div className="jp-agent-file-fixes">
+            <div className="jp-agent-file-fixes-header">
+              <svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14">
+                <path d="M14 1H2a1 1 0 00-1 1v12a1 1 0 001 1h12a1 1 0 001-1V2a1 1 0 00-1-1zM2 0a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V2a2 2 0 00-2-2H2z"/>
+                <path d="M9.5 5a.5.5 0 00-1 0v3.793L6.854 7.146a.5.5 0 10-.708.708l2.5 2.5a.5.5 0 00.708 0l2.5-2.5a.5.5 0 00-.708-.708L9.5 8.793V5z"/>
+              </svg>
+              <span>수정된 파일 ({pendingFileFixes.length}개)</span>
+            </div>
+            <div className="jp-agent-file-fixes-list">
+              {pendingFileFixes.map((fix, index) => (
+                <div key={index} className="jp-agent-file-fix-item">
+                  <div className="jp-agent-file-fix-info">
+                    <svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12">
+                      <path d="M4 0a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V4.5L9.5 0H4zm5.5 1.5v2a1 1 0 001 1h2l-3-3zM4.5 8a.5.5 0 010 1h7a.5.5 0 010-1h-7zm0 2a.5.5 0 010 1h7a.5.5 0 010-1h-7zm0 2a.5.5 0 010 1h4a.5.5 0 010-1h-4z"/>
+                    </svg>
+                    <span className="jp-agent-file-fix-path">{fix.path}</span>
+                  </div>
+                  <button
+                    className="jp-agent-file-fix-apply"
+                    onClick={() => applyFileFix(fix)}
+                    title={`${fix.path} 파일에 수정 적용`}
+                  >
+                    적용하기
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              className="jp-agent-file-fixes-dismiss"
+              onClick={() => setPendingFileFixes([])}
+              title="수정 제안 닫기"
+            >
+              닫기
+            </button>
+          </div>
+        )}
+
         <div ref={messagesEndRef} />
       </div>
 
@@ -1505,12 +2124,14 @@ ChatPanel.displayName = 'ChatPanel';
 export class AgentPanelWidget extends ReactWidget {
   private apiService: ApiService;
   private notebookTracker: any;
+  private consoleTracker: any;
   private chatPanelRef = React.createRef<ChatPanelHandle>();
 
-  constructor(apiService: ApiService, notebookTracker?: any) {
+  constructor(apiService: ApiService, notebookTracker?: any, consoleTracker?: any) {
     super();
     this.apiService = apiService;
     this.notebookTracker = notebookTracker;
+    this.consoleTracker = consoleTracker;
     this.id = 'hdsp-agent-panel';
     this.title.caption = 'HDSP Agent Assistant';
     this.title.icon = hdspTabIcon;
@@ -1523,6 +2144,7 @@ export class AgentPanelWidget extends ReactWidget {
         ref={this.chatPanelRef}
         apiService={this.apiService}
         notebookTracker={this.notebookTracker}
+        consoleTracker={this.consoleTracker}
       />
     );
   }

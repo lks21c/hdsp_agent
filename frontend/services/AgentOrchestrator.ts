@@ -59,6 +59,9 @@ export class AgentOrchestrator {
   // ★ 현재 Plan 실행 중 정의된 변수 추적 (cross-step validation용)
   private executedStepVariables: Set<string> = new Set();
 
+  // ★ 현재 Plan 실행 중 import된 이름 추적 (cross-step validation용)
+  private executedStepImports: Set<string> = new Set();
+
   // ★ 실행된 변수의 실제 값 추적 (finalAnswer 변수 치환용)
   private executedStepVariableValues: Record<string, string> = {};
 
@@ -107,8 +110,9 @@ export class AgentOrchestrator {
 
     this.isRunning = true;
     this.abortController = new AbortController();
-    // ★ 새 실행 시작 시 이전 실행에서 추적된 변수 초기화
+    // ★ 새 실행 시작 시 이전 실행에서 추적된 변수/import 초기화
     this.executedStepVariables.clear();
+    this.executedStepImports.clear();
     this.executedStepVariableValues = {};
 
     const createdCells: number[] = [];
@@ -913,15 +917,69 @@ export class AgentOrchestrator {
   }
 
   /**
-   * ★ 실행된 Step의 코드에서 변수를 추적
+   * ★ 코드에서 import된 이름들 추출
+   * - import xxx → xxx
+   * - import xxx as yyy → yyy
+   * - from xxx import yyy → yyy
+   * - from xxx import yyy as zzz → zzz
+   * - from xxx import * 는 제외 (추적 불가)
+   */
+  private extractImportsFromCode(code: string): string[] {
+    const imports = new Set<string>();
+
+    // import xxx 또는 import xxx as yyy
+    const importMatches = code.matchAll(/^[ \t]*import\s+([\w.]+)(?:\s+as\s+(\w+))?/gm);
+    for (const match of importMatches) {
+      const asName = match[2]; // as 별칭
+      const name = match[1];   // 원래 이름
+      if (asName) {
+        imports.add(asName);
+      } else {
+        // import pandas.DataFrame 같은 경우 pandas만 추출
+        imports.add(name.split('.')[0]);
+      }
+    }
+
+    // from xxx import yyy, zzz 또는 from xxx import yyy as aaa
+    const fromImportMatches = code.matchAll(/^[ \t]*from\s+[\w.]+\s+import\s+(.+)$/gm);
+    for (const match of fromImportMatches) {
+      const importList = match[1];
+      if (importList.trim() === '*') continue; // from xxx import * 제외
+
+      // 여러 import 처리 (예: from sklearn import train_test_split, cross_val_score)
+      const items = importList.split(',');
+      for (const item of items) {
+        const trimmed = item.trim();
+        // as 별칭이 있는 경우: yyy as zzz
+        const asMatch = trimmed.match(/^(\w+)\s+as\s+(\w+)$/);
+        if (asMatch) {
+          imports.add(asMatch[2]); // 별칭 사용
+        } else if (/^\w+$/.test(trimmed)) {
+          imports.add(trimmed);
+        }
+      }
+    }
+
+    return Array.from(imports);
+  }
+
+  /**
+   * ★ 실행된 Step의 코드에서 변수와 import를 추적
    */
   private trackVariablesFromStep(step: PlanStep): void {
     for (const toolCall of step.toolCalls) {
       if (toolCall.tool === 'jupyter_cell') {
         const params = toolCall.parameters as JupyterCellParams;
+
+        // 변수 추적
         const vars = this.extractVariablesFromCode(params.code);
         vars.forEach(v => this.executedStepVariables.add(v));
-        console.log('[Orchestrator] Tracked variables from step', step.stepNumber, ':', vars);
+
+        // ★ import 추적
+        const imports = this.extractImportsFromCode(params.code);
+        imports.forEach(i => this.executedStepImports.add(i));
+
+        console.log('[Orchestrator] Tracked from step', step.stepNumber, '- vars:', vars, 'imports:', imports);
       }
     }
   }
@@ -1239,7 +1297,15 @@ export class AgentOrchestrator {
       ]);
       notebookContext.definedVariables = Array.from(allDefinedVariables);
 
+      // ★ 이전 Step에서 추적된 import들을 notebookContext에 병합
+      const allImportedLibraries = new Set([
+        ...notebookContext.importedLibraries,
+        ...this.executedStepImports,
+      ]);
+      notebookContext.importedLibraries = Array.from(allImportedLibraries);
+
       console.log('[Orchestrator] Validation context - tracked vars:', Array.from(this.executedStepVariables));
+      console.log('[Orchestrator] Validation context - tracked imports:', Array.from(this.executedStepImports));
 
       const validationResult = await this.apiService.validateCode({
         code,

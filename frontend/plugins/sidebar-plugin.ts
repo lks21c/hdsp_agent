@@ -11,6 +11,7 @@ import {
 
 import { ICommandPalette, WidgetTracker } from '@jupyterlab/apputils';
 import { INotebookTracker } from '@jupyterlab/notebook';
+import { IConsoleTracker } from '@jupyterlab/console';
 
 import { AgentPanelWidget } from '../components/AgentPanel';
 import { ApiService } from '../services/ApiService';
@@ -28,12 +29,13 @@ export const sidebarPlugin: JupyterFrontEndPlugin<void> = {
   id: PLUGIN_ID,
   autoStart: true,
   requires: [],
-  optional: [ILayoutRestorer, ICommandPalette, INotebookTracker],
+  optional: [ILayoutRestorer, ICommandPalette, INotebookTracker, IConsoleTracker],
   activate: (
     app: JupyterFrontEnd,
     restorer: ILayoutRestorer | null,
     palette: ICommandPalette | null,
-    notebookTracker: INotebookTracker | null
+    notebookTracker: INotebookTracker | null,
+    consoleTracker: IConsoleTracker | null
   ) => {
     console.log('[SidebarPlugin] Activating Jupyter Agent Sidebar');
 
@@ -41,8 +43,8 @@ export const sidebarPlugin: JupyterFrontEndPlugin<void> = {
       // Create API service
       const apiService = new ApiService();
 
-      // Create agent panel widget with notebook tracker
-      const agentPanel = new AgentPanelWidget(apiService, notebookTracker);
+      // Create agent panel widget with notebook tracker and console tracker
+      const agentPanel = new AgentPanelWidget(apiService, notebookTracker, consoleTracker);
 
       // Create tracker for panel state restoration if restorer available
       if (restorer) {

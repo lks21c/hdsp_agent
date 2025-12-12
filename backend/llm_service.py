@@ -86,8 +86,30 @@ class LLMService:
                     continue
                 raise Exception(f"Request timeout after {max_retries} retries")
             except Exception as e:
-                if "API error" in str(e) or "timeout" in str(e):
+                error_msg = str(e)
+                # ★ Rate limit (429) 에러는 재시도 가능
+                if "rate limit" in error_msg.lower() or "(429)" in error_msg:
+                    if attempt < max_retries - 1:
+                        # 429 에러는 더 긴 대기 시간 사용 (40-80초)
+                        wait_time = 40 + (attempt * 20)
+                        print(f"[LLMService] Rate limit hit. Waiting {wait_time}s before retry... (attempt {attempt + 1}/{max_retries})")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    raise Exception(f"Rate limit exceeded after {max_retries} retries. Please wait a minute and try again.")
+                # ★ 서버 과부하 (503) 에러도 재시도 가능
+                if "overloaded" in error_msg.lower() or "(503)" in error_msg:
+                    if attempt < max_retries - 1:
+                        wait_time = (2 ** attempt) * 5
+                        print(f"[LLMService] Server overloaded. Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                        await asyncio.sleep(wait_time)
+                        continue
                     raise
+                # 다른 API 에러는 즉시 실패
+                if "API error" in error_msg and "rate limit" not in error_msg.lower():
+                    raise
+                if "timeout" in error_msg.lower():
+                    raise
+                # 네트워크 에러 재시도
                 if attempt < max_retries - 1:
                     wait_time = (2 ** attempt) * 2
                     print(f"[LLMService] Network error: {e}. Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
@@ -212,21 +234,22 @@ class LLMService:
     def _build_gemini_payload(
         self,
         prompt: str,
-        max_output_tokens: int = 8192,
+        max_output_tokens: int = 32768,  # Gemini 2.5 supports up to 65535, increased for thinking overhead
         temperature: Optional[float] = None
     ) -> Dict[str, Any]:
         """Build Gemini API request payload
 
         Args:
             prompt: The prompt text
-            max_output_tokens: Maximum tokens in response
+            max_output_tokens: Maximum tokens in response (default 32768 for Gemini 2.5 with thinking)
             temperature: 0.0 for deterministic, higher for creativity (default from config)
         """
         # temperature 기본값: config에서 가져오거나 0.0 (일관성 우선)
         cfg = self.config.get('gemini', {})
         temp = temperature if temperature is not None else cfg.get('temperature', 0.0)
+        model = cfg.get('model', 'gemini-2.5-flash')
 
-        return {
+        payload = {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {
                 "temperature": temp,  # 0.0 = 결정적 출력 (일관성 최대화)
@@ -241,6 +264,15 @@ class LLMService:
                 {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"}
             ]
         }
+
+        # Gemini 2.5 models have built-in "thinking" that consumes output tokens
+        # Set thinkingConfig to allocate budget appropriately
+        if '2.5' in model or '2-5' in model:
+            payload["generationConfig"]["thinkingConfig"] = {
+                "thinkingBudget": 8192  # Reserve 8K tokens for thinking, rest for output
+            }
+
+        return payload
 
     async def generate_response_stream(self, prompt: str, context: Optional[str] = None):
         """Generate a streaming response from the configured LLM provider (async generator)"""
@@ -295,6 +327,14 @@ class LLMService:
 
                     data = await response.json()
                     print(f"[LLMService] Gemini API Response Status: {response.status}")
+
+                    # Debug: finishReason 확인 (응답이 왜 종료되었는지)
+                    if 'candidates' in data and len(data['candidates']) > 0:
+                        candidate = data['candidates'][0]
+                        finish_reason = candidate.get('finishReason', 'UNKNOWN')
+                        print(f"[LLMService] Gemini finishReason: {finish_reason}")
+                        if finish_reason not in ['STOP', 'UNKNOWN']:
+                            print(f"[LLMService] WARNING: Response may be incomplete! finishReason={finish_reason}")
 
                     response_text = self._parse_gemini_response(data)
                     print(f"[LLMService] Successfully received response from {model} (length: {len(response_text)} chars)")

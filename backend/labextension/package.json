@@ -62,6 +62,7 @@
     "@jupyter-widgets/base": "^6.0.0",
     "@jupyterlab/application": "^4.0.0",
     "@jupyterlab/cells": "^4.0.0",
+    "@jupyterlab/console": "^4.0.0",
     "@jupyterlab/launcher": "^4.4.10",
     "@jupyterlab/notebook": "^4.0.0",
     "@jupyterlab/services": "^7.0.0",
@@ -119,7 +120,7 @@
       }
     },
     "_build": {
-      "load": "static/remoteEntry.a1b1bc792ce0c072a7f9.js",
+      "load": "static/remoteEntry.3d095b289060c77659fe.js",
       "extension": "./extension",
       "style": "./style"
     }

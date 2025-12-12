@@ -69,16 +69,109 @@ class BaseAgentHandler(APIHandler):
             self.log.warning(f"Failed to get installed packages: {e}")
             return []
 
+    def _escape_code_for_json(self, json_str: str) -> str:
+        """JSON 내 code 필드의 Python 코드에서 문제가 되는 패턴을 escape 처리
+
+        문제: LLM이 생성한 코드에 .format()이 있으면 중괄호가 JSON 파싱을 깨뜨림
+        해결: "code" 필드 값 내부의 중괄호를 임시로 escape하고 파싱 후 복원
+        """
+        # "code": "..." 패턴을 찾아서 내부 처리
+        # 복잡한 중첩 구조 때문에 정규식보다 상태 기반 파싱 사용
+
+        result = []
+        i = 0
+        n = len(json_str)
+
+        while i < n:
+            # "code": " 패턴 찾기
+            if json_str[i:i+8] == '"code": ':
+                result.append(json_str[i:i+8])
+                i += 8
+
+                # 공백 스킵
+                while i < n and json_str[i] in ' \t\n':
+                    result.append(json_str[i])
+                    i += 1
+
+                if i < n and json_str[i] == '"':
+                    # 문자열 시작
+                    result.append('"')
+                    i += 1
+
+                    # 문자열 끝까지 읽으면서 중괄호 escape
+                    while i < n:
+                        if json_str[i] == '\\' and i + 1 < n:
+                            # 이미 escape된 문자는 그대로
+                            result.append(json_str[i:i+2])
+                            i += 2
+                        elif json_str[i] == '"':
+                            # 문자열 끝
+                            result.append('"')
+                            i += 1
+                            break
+                        elif json_str[i] == '{':
+                            # 중괄호를 escape (JSON에서 안전하게)
+                            result.append('\\u007b')
+                            i += 1
+                        elif json_str[i] == '}':
+                            result.append('\\u007d')
+                            i += 1
+                        else:
+                            result.append(json_str[i])
+                            i += 1
+                else:
+                    continue
+            else:
+                result.append(json_str[i])
+                i += 1
+
+        return ''.join(result)
+
+    def _unescape_code_braces(self, data: dict) -> dict:
+        """파싱된 JSON에서 code 필드의 escape된 중괄호를 복원"""
+        if isinstance(data, dict):
+            for key, value in data.items():
+                if key == 'code' and isinstance(value, str):
+                    # Unicode escape를 원래 중괄호로 복원
+                    data[key] = value.replace('\\u007b', '{').replace('\\u007d', '}')
+                elif isinstance(value, (dict, list)):
+                    self._unescape_code_braces(value)
+        elif isinstance(data, list):
+            for item in data:
+                if isinstance(item, (dict, list)):
+                    self._unescape_code_braces(item)
+        return data
+
     def parse_llm_json_response(self, response: str) -> dict:
-        """LLM 응답에서 JSON 추출 - 잘린 응답도 복구 시도"""
+        """LLM 응답에서 JSON 추출 - 코드 내 중괄호 escape 처리 포함"""
+        print(f"[AutoAgent] Parsing response, total length: {len(response)}", flush=True)
+
         # 1. 완전한 JSON 코드 블록 시도 (```json ... ```)
-        json_match = re.search(r'```json\s*([\s\S]*?)\s*```', response)
+        json_match = re.search(r'```json\s*([\s\S]+?)\s*```', response)
         if json_match:
             json_str = json_match.group(1).strip()
+            print(f"[AutoAgent] Found JSON block, length: {len(json_str)}", flush=True)
+
+            # 첫 번째 시도: 원본 그대로 파싱
             try:
-                return json.loads(json_str)
-            except json.JSONDecodeError:
-                # 파싱 실패 시 복구 시도
+                result = json.loads(json_str)
+                print("[AutoAgent] JSON parse SUCCESS", flush=True)
+                return result
+            except json.JSONDecodeError as e:
+                print(f"[AutoAgent] JSON parse error: {e}", flush=True)
+
+                # 두 번째 시도: code 필드 내 중괄호 escape 후 파싱
+                try:
+                    escaped_json = self._escape_code_for_json(json_str)
+                    result = json.loads(escaped_json)
+                    # escape된 중괄호 복원
+                    result = self._unescape_code_braces(result)
+                    print("[AutoAgent] JSON parse SUCCESS (with brace escaping)", flush=True)
+                    return result
+                except json.JSONDecodeError as e2:
+                    print(f"[AutoAgent] JSON parse error after escaping: {e2}", flush=True)
+
+                # 세 번째 시도: 불완전 JSON 복구
                 recovered = self._recover_incomplete_json(json_str)
                 if recovered:
                     return recovered

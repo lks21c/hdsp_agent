@@ -308,6 +308,15 @@ class CodeValidator:
                 for item in node.items:
                     if item.optional_vars and isinstance(item.optional_vars, ast.Name):
                         deps.defined_names.append(item.optional_vars.id)
+            # ★ Lambda 매개변수 처리
+            elif isinstance(node, ast.Lambda):
+                for arg in node.args.args:
+                    deps.defined_names.append(arg.arg)
+                # *args, **kwargs도 처리
+                if node.args.vararg:
+                    deps.defined_names.append(node.args.vararg.arg)
+                if node.args.kwarg:
+                    deps.defined_names.append(node.args.kwarg.arg)
 
         # 사용된 이름 분석
         for node in ast.walk(tree):

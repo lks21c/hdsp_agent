@@ -1311,3 +1311,277 @@ body[data-jp-theme-light="false"] .jp-agent-mode-option:hover {
 body[data-jp-theme-light="false"] .jp-agent-mode-option--selected {
   background: var(--jp-layout-color3);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   File Fixes UI - Python 파일 수정 적용 버튼
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.jp-agent-file-fixes {
+  margin: 12px;
+  padding: 12px;
+  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+  border: 1px solid #86efac;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(34, 197, 94, 0.1);
+}
+
+.jp-agent-file-fixes-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: #166534;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.jp-agent-file-fixes-header svg {
+  color: #22c55e;
+}
+
+.jp-agent-file-fixes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.jp-agent-file-fix-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: white;
+  border: 1px solid #bbf7d0;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.jp-agent-file-fix-item:hover {
+  border-color: #22c55e;
+  box-shadow: 0 2px 8px rgba(34, 197, 94, 0.15);
+}
+
+.jp-agent-file-fix-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #374151;
+  font-size: 13px;
+}
+
+.jp-agent-file-fix-info svg {
+  color: #6b7280;
+  flex-shrink: 0;
+}
+
+.jp-agent-file-fix-path {
+  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+  font-size: 12px;
+  color: #1f2937;
+  word-break: break-all;
+}
+
+.jp-agent-file-fix-apply {
+  padding: 6px 14px;
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.jp-agent-file-fix-apply:hover {
+  background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(34, 197, 94, 0.3);
+}
+
+.jp-agent-file-fix-apply:active {
+  transform: translateY(0);
+}
+
+.jp-agent-file-fixes-dismiss {
+  margin-top: 10px;
+  padding: 6px 12px;
+  background: transparent;
+  color: #6b7280;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  width: 100%;
+}
+
+.jp-agent-file-fixes-dismiss:hover {
+  background: #f3f4f6;
+  color: #374151;
+  border-color: #9ca3af;
+}
+
+/* Dark Theme - File Fixes */
+body[data-jp-theme-light="false"] .jp-agent-file-fixes {
+  background: linear-gradient(135deg, #064e3b 0%, #065f46 100%);
+  border-color: #10b981;
+}
+
+body[data-jp-theme-light="false"] .jp-agent-file-fixes-header {
+  color: #a7f3d0;
+}
+
+body[data-jp-theme-light="false"] .jp-agent-file-fix-item {
+  background: var(--jp-layout-color2);
+  border-color: #047857;
+}
+
+body[data-jp-theme-light="false"] .jp-agent-file-fix-item:hover {
+  border-color: #10b981;
+}
+
+body[data-jp-theme-light="false"] .jp-agent-file-fix-info {
+  color: #d1d5db;
+}
+
+body[data-jp-theme-light="false"] .jp-agent-file-fix-path {
+  color: #f3f4f6;
+}
+
+body[data-jp-theme-light="false"] .jp-agent-file-fixes-dismiss {
+  color: #9ca3af;
+  border-color: #4b5563;
+}
+
+body[data-jp-theme-light="false"] .jp-agent-file-fixes-dismiss:hover {
+  background: var(--jp-layout-color3);
+  color: #d1d5db;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Console Error Notification - 콘솔 에러 자동 감지 알림
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.jp-agent-console-error-notification {
+  margin: 12px;
+  padding: 12px;
+  background: linear-gradient(135deg, #fef2f2 0%, #fecaca 100%);
+  border: 1px solid #f87171;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.2);
+  animation: consoleErrorSlideIn 0.3s ease-out;
+}
+
+@keyframes consoleErrorSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.jp-agent-console-error-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  color: #991b1b;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.jp-agent-console-error-header svg {
+  color: #dc2626;
+  flex-shrink: 0;
+}
+
+.jp-agent-console-error-preview {
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid #fca5a5;
+  border-radius: 4px;
+  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+  font-size: 11px;
+  color: #7f1d1d;
+  line-height: 1.4;
+  max-height: 100px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.jp-agent-console-error-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.jp-agent-console-error-fix-btn {
+  flex: 1;
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.jp-agent-console-error-fix-btn:hover {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3);
+}
+
+.jp-agent-console-error-dismiss-btn {
+  padding: 8px 16px;
+  background: transparent;
+  color: #6b7280;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.jp-agent-console-error-dismiss-btn:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+/* Dark theme for Console Error Notification */
+body[data-jp-theme-light="false"] .jp-agent-console-error-notification {
+  background: linear-gradient(135deg, #450a0a 0%, #7f1d1d 100%);
+  border-color: #dc2626;
+}
+
+body[data-jp-theme-light="false"] .jp-agent-console-error-header {
+  color: #fecaca;
+}
+
+body[data-jp-theme-light="false"] .jp-agent-console-error-header svg {
+  color: #f87171;
+}
+
+body[data-jp-theme-light="false"] .jp-agent-console-error-preview {
+  background: rgba(0, 0, 0, 0.3);
+  border-color: #991b1b;
+  color: #fca5a5;
+}
+
+body[data-jp-theme-light="false"] .jp-agent-console-error-dismiss-btn {
+  color: #9ca3af;
+  border-color: #4b5563;
+}
+
+body[data-jp-theme-light="false"] .jp-agent-console-error-dismiss-btn:hover {
+  background: var(--jp-layout-color3);
+  color: #d1d5db;
+}

@@ -409,7 +409,7 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
       setResult(taskResult);
       if (taskResult.success && taskResult.plan) {
         setCompletedSteps(taskResult.plan.steps.map(s => s.stepNumber));
-        setStatus({ phase: 'completed', message: taskResult.finalAnswer || 'Task completed successfully' });
+        setStatus({ phase: 'completed', message: '작업 완료' });
       }
       onComplete?.(taskResult);
     } catch (error: any) {

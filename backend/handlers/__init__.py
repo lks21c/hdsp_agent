@@ -22,6 +22,7 @@ from .auto_agent import (
     AutoAgentValidateHandler,
     AutoAgentReflectHandler
 )
+from .file_action import FileActionHandler
 
 from jupyter_server.utils import url_path_join
 from ..services.config_manager import ConfigManager
@@ -54,6 +55,8 @@ def setup_handlers(web_app):
         (url_path_join(base_url, 'hdsp-agent', 'auto-agent', 'validate'), AutoAgentValidateHandler),
         (url_path_join(base_url, 'hdsp-agent', 'auto-agent', 'reflect'), AutoAgentReflectHandler),
         (url_path_join(base_url, 'hdsp-agent', 'auto-agent', 'plan', 'stream'), AutoAgentPlanStreamHandler),
+        # File action routes
+        (url_path_join(base_url, 'hdsp-agent', 'file', 'action'), FileActionHandler),
     ]
 
     web_app.add_handlers(host_pattern, handlers)

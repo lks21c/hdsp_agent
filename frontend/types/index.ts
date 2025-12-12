@@ -140,3 +140,36 @@ export interface ITaskStatus {
   startedAt?: string;
   completedAt?: string;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// File Action Types (Python 파일 에러 수정용)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export enum FileAction {
+  FIX = 'fix',
+  EXPLAIN = 'explain',
+  CUSTOM = 'custom'
+}
+
+export interface IFileInfo {
+  path: string;
+  content: string;
+}
+
+export interface IFileFixRequest {
+  action: FileAction | 'fix' | 'explain' | 'custom';
+  mainFile: IFileInfo;
+  errorOutput?: string;
+  relatedFiles?: IFileInfo[];
+  customPrompt?: string;
+}
+
+export interface IFixedFile {
+  path: string;
+  content: string;
+}
+
+export interface IFileFixResponse {
+  response: string;
+  fixedFiles: IFixedFile[];
+}
