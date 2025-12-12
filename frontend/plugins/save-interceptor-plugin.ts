@@ -55,7 +55,8 @@ export const saveInterceptorPlugin = {
 
         // Replace the execute function
         originalCommand.execute = async (args?: any) => {
-          const currentWidget = notebookTracker.currentWidget;
+          // Use app.shell.currentWidget to get the actually focused widget
+          const currentWidget = app.shell.currentWidget;
 
           console.log('[SaveInterceptorPlugin] Save command triggered', {
             hasCurrentWidget: !!currentWidget,
@@ -63,9 +64,25 @@ export const saveInterceptorPlugin = {
             widgetType: currentWidget?.constructor?.name
           });
 
-          // Only intercept for notebooks
+          // Only intercept for Python files (.ipynb, .py)
           if (!currentWidget) {
             console.log('[SaveInterceptorPlugin] No current widget, allowing default save');
+            return originalSaveCommand(args);
+          }
+
+          // Check if the current widget has a context (is a document)
+          const context = (currentWidget as any).context;
+          if (!context) {
+            console.log('[SaveInterceptorPlugin] No context, allowing default save');
+            return originalSaveCommand(args);
+          }
+
+          // Check if the current document is a Python file
+          const path = context?.path || '';
+          const isPythonFile = path.endsWith('.ipynb') || path.endsWith('.py');
+
+          if (!isPythonFile) {
+            console.log('[SaveInterceptorPlugin] Not a Python file, allowing default save', { path });
             return originalSaveCommand(args);
           }
 
@@ -74,7 +91,7 @@ export const saveInterceptorPlugin = {
             return originalSaveCommand(args);
           }
 
-          console.log('[SaveInterceptorPlugin] Intercepting save, showing modal');
+          console.log('[SaveInterceptorPlugin] Intercepting Python file save, showing modal', { path });
           await handleSaveIntercept(currentWidget, app, originalSaveCommand, args, () => isSaving = true, () => isSaving = false);
         };
 
@@ -87,12 +104,28 @@ export const saveInterceptorPlugin = {
     // Also intercept keyboard shortcut as backup
     document.addEventListener('keydown', async (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        const currentWidget = notebookTracker.currentWidget;
+        // Use app.shell.currentWidget instead of notebookTracker to get the actually focused widget
+        const currentWidget = app.shell.currentWidget;
         if (!currentWidget) {
-          return; // Not in a notebook, let default save happen
+          return; // Not in a document, let default save happen
         }
 
-        console.log('[SaveInterceptorPlugin] Save shortcut (Ctrl/Cmd+S) detected');
+        // Check if the current widget has a context (is a document)
+        const context = (currentWidget as any).context;
+        if (!context) {
+          return; // Not a document widget, let default save happen
+        }
+
+        // Check if the current document is a Python file
+        const path = context?.path || '';
+        const isPythonFile = path.endsWith('.ipynb') || path.endsWith('.py');
+
+        if (!isPythonFile) {
+          console.log('[SaveInterceptorPlugin] Not a Python file, allowing default save', { path });
+          return; // Not a Python file, let default save happen
+        }
+
+        console.log('[SaveInterceptorPlugin] Save shortcut (Ctrl/Cmd+S) detected for Python file', { path });
         e.preventDefault();
         e.stopPropagation();
 

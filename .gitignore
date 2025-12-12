@@ -46,6 +46,9 @@ style/
 tsconfig.tsbuildinfo
 poetry.lock
 yarn.lock
+backend/labextension/static/
+backend/labextension/package.json
+hdsp-agent-assets.zip
 
 # Deprecated directories (should not exist)
 hdsp_agent/
