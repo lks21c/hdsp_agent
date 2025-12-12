@@ -237,34 +237,42 @@ MODIFY 결과 (✅ 정답!):
 
 ## ⚠️ 초기 설정 (첫 번째 코드 셀에 포함)
 
-첫 번째 코드 셀에 항상 다음 코드를 포함하세요:
-```python
-# === 필수 라이브러리 import (절대 주석 처리하지 마세요!) ===
-import warnings
-import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
-import pandas as pd
-import numpy as np
-import seaborn as sns
+**먼저 "설치된 패키지" 목록을 확인하세요!**
+- 필요한 라이브러리가 없으면 `!pip install {PIP_INDEX_OPTION} --timeout 180 패키지명` 형식으로 설치 단계를 먼저 추가하세요.
 
+첫 번째 코드 셀 예시 (설치된 패키지에 따라 조정):
+```python
 # === 경고 필터링 ===
+import warnings
 warnings.filterwarnings('ignore', category=RuntimeWarning)
 warnings.filterwarnings('ignore', category=FutureWarning)
 
-# === 한글 폰트 설정 (선택적 - 문제 시 이 블록만 주석 처리) ===
+# === 기본 라이브러리 import (pandas, numpy는 대부분 설치되어 있음) ===
+import pandas as pd
+import numpy as np
+
+# === 시각화 라이브러리 (설치 확인 후 import) ===
+# matplotlib, seaborn이 설치된 패키지 목록에 있는 경우에만 import
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# === 한글 폰트 설정 (선택적 - matplotlib 설치된 경우) ===
 try:
+    import matplotlib.font_manager as fm
     korean_fonts = ['Apple SD Gothic Neo', 'Malgun Gothic', 'NanumGothic', 'Noto Sans CJK KR']
     available = set(f.name for f in fm.fontManager.ttflist)
     for font in korean_fonts:
         if font in available:
             plt.rcParams['font.family'] = font
             break
+    plt.rcParams['axes.unicode_minus'] = False
 except Exception:
     pass  # 폰트 설정 실패해도 계속 진행
-plt.rcParams['axes.unicode_minus'] = False
 ```
 
-**🔴 중요**: import 문은 **절대로** 주석 처리하지 마세요! 문제가 생기면 한글 폰트 설정 블록(try 블록)만 수정하세요.
+**🔴 중요**:
+- **설치되지 않은 라이브러리는 import하지 마세요!** 먼저 `!pip install {PIP_INDEX_OPTION} --timeout 180 패키지명` 단계를 추가하세요.
+- import 문은 **절대로** 주석 처리하지 마세요! 문제가 생기면 한글 폰트 설정 블록(try 블록)만 수정하세요.
 
 ## 🔴 라이브러리 일관성 규칙 (CRITICAL!)
 
@@ -598,16 +606,6 @@ ADAPTIVE_REPLAN_PROMPT = '''에러가 발생했습니다. 출력과 에러를 �
 
 ## 에러 유형별 해결 전략
 
-### 🚨 ModuleNotFoundError / ImportError → ⚡ `insert_steps` 필수! (예외 없음)
-- **decision**: 반드시 `"insert_steps"` 선택 (다른 옵션 절대 불가!)
-- **changes.new_steps**: `!pip install {PIP_INDEX_OPTION} --timeout 180 에러메시지의_패키지명` 단계 추가
-  - ⚠️ **패키지명은 반드시 에러 메시지에서 추출!**
-  - ⚠️ **사용자 코드의 패키지가 아님!** (예: dask가 아니라 pyarrow)
-- ❌ `refine` 금지 - 코드 수정으로 해결 불가!
-- ❌ `replace_step` 금지 - 다른 라이브러리로 대체 금지!
-- ❌ `replan_remaining` 금지 - 접근법 변경 금지!
-- ⚠️ **간접 의존성**: 실행 코드와 에러의 패키지가 달라도 에러 메시지의 패키지 설치!
-
 ### FileNotFoundError
 - 파일 경로 확인 또는 파일 존재 여부 체크 단계 추가
 - 가능하면 `os.path.exists()` 검증 후 적절한 에러 메시지
@@ -731,15 +729,20 @@ cross_tab = pd.crosstab(sample['Sex'], sample['Survived'])
 
 ## 출력 형식 (JSON)
 
+**⚠️ 중요: 응답은 간결하게!**
+- `root_cause`: 1-2문장으로 간결하게 작성
+- `reasoning`: 1-2문장으로 간결하게 작성
+- 장황한 설명 금지!
+
 ```json
 {{
   "analysis": {{
-    "root_cause": "근본 원인 분석 (한국어)",
+    "root_cause": "근본 원인을 1-2문장으로 간결하게 (한국어)",
     "is_approach_problem": true/false,
     "missing_prerequisites": ["누락된 선행 작업들"]
   }},
   "decision": "refine | insert_steps | replace_step | replan_remaining",
-  "reasoning": "결정 이유 설명 (한국어)",
+  "reasoning": "결정 이유를 1-2문장으로 간결하게 (한국어)",
   "changes": {{
     // decision이 "refine"인 경우:
     "refined_code": "수정된 코드",
@@ -787,12 +790,12 @@ cross_tab = pd.crosstab(sample['Sex'], sample['Survived'])
 
 **올바른 응답 예시:**
 ```json
-{
-  "analysis": {...},
+{{
+  "analysis": {{...}},
   "decision": "refine",
   "reasoning": "...",
-  "changes": {...}
-}
+  "changes": {{...}}
+}}
 ```
 
 위 형식으로만 응답하세요. 다른 텍스트는 절대 포함하지 마세요!'''
@@ -988,34 +991,42 @@ MODIFY 결과 (✅ 정답!):
 
 ## ⚠️ 초기 설정 (첫 번째 코드 셀에 포함)
 
-첫 번째 코드 셀에 항상 다음 코드를 포함하세요:
-```python
-# === 필수 라이브러리 import (절대 주석 처리하지 마세요!) ===
-import warnings
-import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
-import pandas as pd
-import numpy as np
-import seaborn as sns
+**먼저 "설치된 패키지" 목록을 확인하세요!**
+- 필요한 라이브러리가 없으면 `!pip install {PIP_INDEX_OPTION} --timeout 180 패키지명` 형식으로 설치 단계를 먼저 추가하세요.
 
+첫 번째 코드 셀 예시 (설치된 패키지에 따라 조정):
+```python
 # === 경고 필터링 ===
+import warnings
 warnings.filterwarnings('ignore', category=RuntimeWarning)
 warnings.filterwarnings('ignore', category=FutureWarning)
 
-# === 한글 폰트 설정 (선택적 - 문제 시 이 블록만 주석 처리) ===
+# === 기본 라이브러리 import (pandas, numpy는 대부분 설치되어 있음) ===
+import pandas as pd
+import numpy as np
+
+# === 시각화 라이브러리 (설치 확인 후 import) ===
+# matplotlib, seaborn이 설치된 패키지 목록에 있는 경우에만 import
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# === 한글 폰트 설정 (선택적 - matplotlib 설치된 경우) ===
 try:
+    import matplotlib.font_manager as fm
     korean_fonts = ['Apple SD Gothic Neo', 'Malgun Gothic', 'NanumGothic', 'Noto Sans CJK KR']
     available = set(f.name for f in fm.fontManager.ttflist)
     for font in korean_fonts:
         if font in available:
             plt.rcParams['font.family'] = font
             break
+    plt.rcParams['axes.unicode_minus'] = False
 except Exception:
     pass  # 폰트 설정 실패해도 계속 진행
-plt.rcParams['axes.unicode_minus'] = False
 ```
 
-**🔴 중요**: import 문은 **절대로** 주석 처리하지 마세요! 문제가 생기면 한글 폰트 설정 블록(try 블록)만 수정하세요.
+**🔴 중요**:
+- **설치되지 않은 라이브러리는 import하지 마세요!** 먼저 `!pip install {PIP_INDEX_OPTION} --timeout 180 패키지명` 단계를 추가하세요.
+- import 문은 **절대로** 주석 처리하지 마세요! 문제가 생기면 한글 폰트 설정 블록(try 블록)만 수정하세요.
 
 ## 🔍 파일 탐색 규칙 (중요!)
 

@@ -171,3 +171,57 @@ class BaseAgentHandler(APIHandler):
                 pass
 
         return None
+
+    def _sanitize_code(self, code: str) -> str:
+        """
+        LLM이 반환한 코드에서 markdown 코드 블록 wrapper 제거
+        예: "```python\\nprint('hello')\\n```" -> "print('hello')"
+        """
+        if not code or not isinstance(code, str):
+            return code
+
+        # 1. ```python ... ``` 형태 제거
+        code_match = re.search(r'```python\s*([\s\S]*?)\s*```', code)
+        if code_match:
+            return code_match.group(1).strip()
+
+        # 2. ``` ... ``` 형태 제거
+        code_match = re.search(r'```\s*([\s\S]*?)\s*```', code)
+        if code_match:
+            return code_match.group(1).strip()
+
+        # 3. wrapper 없으면 원본 반환
+        return code
+
+    def _sanitize_tool_calls(self, data: dict) -> dict:
+        """
+        LLM 응답 JSON에서 toolCalls의 code 필드에 있는 markdown wrapper 제거
+
+        처리 대상:
+        - plan['steps'][i]['toolCalls'][j]['parameters']['code']
+        - toolCalls[i]['parameters']['code']
+        """
+        if not data:
+            return data
+
+        # Case 1: plan 구조 (AutoAgentPlanHandler, AutoAgentReplanHandler)
+        if 'plan' in data and isinstance(data['plan'], dict):
+            steps = data['plan'].get('steps', [])
+            for step in steps:
+                if isinstance(step, dict):
+                    tool_calls = step.get('toolCalls', [])
+                    for tc in tool_calls:
+                        if isinstance(tc, dict) and tc.get('tool') == 'jupyter_cell':
+                            params = tc.get('parameters', {})
+                            if 'code' in params:
+                                params['code'] = self._sanitize_code(params['code'])
+
+        # Case 2: 직접 toolCalls (AutoAgentRefineHandler)
+        if 'toolCalls' in data and isinstance(data['toolCalls'], list):
+            for tc in data['toolCalls']:
+                if isinstance(tc, dict) and tc.get('tool') == 'jupyter_cell':
+                    params = tc.get('parameters', {})
+                    if 'code' in params:
+                        params['code'] = self._sanitize_code(params['code'])
+
+        return data

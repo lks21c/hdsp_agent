@@ -198,6 +198,7 @@ export class AgentOrchestrator {
             onProgress({
               phase: 'failed',
               message: `최대 재계획 시도 횟수(${MAX_REPLAN_ATTEMPTS})를 초과했습니다.`,
+              failedStep: step.stepNumber,  // 실패한 step UI에 표시
             });
             return {
               success: false,
@@ -215,6 +216,7 @@ export class AgentOrchestrator {
             phase: 'replanning',
             message: '계획 수정 중...',
             currentStep: step.stepNumber,
+            failedStep: step.stepNumber,  // 실패한 step UI에 표시
           });
 
           // 실패 정보 구성 (errorName 포함 - ModuleNotFoundError 등 식별용)
@@ -430,6 +432,11 @@ export class AgentOrchestrator {
       { pattern: /TypeError/i, reason: '타입 오류' },
       { pattern: /ValueError/i, reason: '값 오류' },
       { pattern: /AttributeError/i, reason: '속성 오류' },
+      // 데이터 검증 에러 (GridSearchCV, NaN/Inf 등)
+      { pattern: /사전\s*검증.*실패|사전\s*검증.*오류|pre-?validation.*fail|validation.*fail/i, reason: '사전 검증 실패' },
+      { pattern: /NaN.*값|Inf.*값|invalid value|contains NaN|contains Inf/i, reason: 'NaN 또는 Inf 값 감지' },
+      { pattern: /수행되지\s*않음|was not performed|did not execute|not executed/i, reason: '실행되지 않음' },
+      { pattern: /fit.*fail|GridSearchCV.*fail|학습.*실패/i, reason: '모델 학습 실패' },
       // 명시적 실패 메시지
       { pattern: /실패|failed|Fail/i, reason: '명시적 오류 메시지 감지' },
       { pattern: /not found|cannot find|찾을 수 없/i, reason: '리소스를 찾을 수 없음' },

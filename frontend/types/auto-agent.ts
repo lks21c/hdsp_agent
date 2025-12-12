@@ -137,6 +137,7 @@ export interface AgentStatus {
   tool?: ToolName;
   attempt?: number;
   error?: ExecutionError;
+  failedStep?: number;  // 실패한 step number (UI에 빨간 X 표시용)
   // Validation & Reflection 상태
   validationStatus?: 'checking' | 'passed' | 'warning' | 'failed';
   reflectionStatus?: 'analyzing' | 'passed' | 'adjusting';

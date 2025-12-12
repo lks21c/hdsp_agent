@@ -379,8 +379,17 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
     if (newStatus.phase === 'executing' && newStatus.currentStep && newStatus.currentStep > 1) {
       setCompletedSteps(Array.from({ length: newStatus.currentStep - 1 }, (_, i) => i + 1));
     }
-    if (newStatus.phase === 'failed' && newStatus.currentStep) {
-      setFailedSteps(prev => [...prev, newStatus.currentStep!]);
+    // 실패한 step 처리 (failedStep 필드 우선 사용)
+    if (newStatus.failedStep) {
+      console.log('[AutoAgentPanel] failedStep detected:', newStatus.failedStep);
+      setFailedSteps(prev => {
+        if (!prev.includes(newStatus.failedStep!)) {
+          console.log('[AutoAgentPanel] Adding to failedSteps:', newStatus.failedStep);
+          return [...prev, newStatus.failedStep!];
+        }
+        console.log('[AutoAgentPanel] failedStep already in list');
+        return prev;
+      });
     }
   }, [originalStepCount]);
 

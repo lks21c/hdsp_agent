@@ -77,6 +77,10 @@ class AutoAgentPlanHandler(BaseAgentHandler):
                 print(f"[AutoAgent] {error_msg}", flush=True)
                 return self.write_error_json(500, error_msg)
 
+            # markdown 코드 블록 제거
+            print("[AutoAgent] Sanitizing code in toolCalls...", flush=True)
+            plan_data = self._sanitize_tool_calls(plan_data)
+
             print(f"[AutoAgent] Success! Steps: {plan_data['plan'].get('totalSteps', 'N/A')}", flush=True)
             # DEBUG: 전체 plan 구조 출력
             import json
@@ -249,6 +253,9 @@ class AutoAgentRefineHandler(BaseAgentHandler):
                 else:
                     return self.write_error_json(500, 'Failed to generate refined code')
 
+            # markdown 코드 블록 제거
+            refine_data = self._sanitize_tool_calls(refine_data)
+
             self.write_json({
                 'toolCalls': refine_data['toolCalls'],
                 'reasoning': refine_data.get('reasoning', '')
@@ -328,6 +335,9 @@ class AutoAgentPlanStreamHandler(BaseAgentHandler):
             plan_data = self._parse_json_response(full_response)
 
             if plan_data and 'plan' in plan_data:
+                # markdown 코드 블록 제거
+                plan_data = self._sanitize_tool_calls(plan_data)
+
                 await self._write_sse({
                     'plan': plan_data['plan'],
                     'done': True
@@ -414,6 +424,10 @@ class AutoAgentReplanHandler(BaseAgentHandler):
                 error_msg = f"Replan JSON 파싱 실패. Response preview: {response[:200]}"
                 print(f"[AutoAgent] {error_msg}", flush=True)
                 return self.write_error_json(500, error_msg)
+
+            # markdown 코드 블록 제거
+            print("[AutoAgent] Sanitizing code in replan toolCalls...", flush=True)
+            replan_data = self._sanitize_tool_calls(replan_data)
 
             # 필수 필드 검증
             decision = replan_data.get('decision')
