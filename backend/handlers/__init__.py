@@ -20,9 +20,11 @@ from .auto_agent import (
     AutoAgentPlanStreamHandler,
     AutoAgentReplanHandler,
     AutoAgentValidateHandler,
-    AutoAgentReflectHandler
+    AutoAgentReflectHandler,
+    AutoAgentVerifyStateHandler
 )
 from .file_action import FileActionHandler
+from .api_keys import GeminiKeysHandler, GeminiKeyToggleHandler, GeminiKeysTestHandler
 
 from jupyter_server.utils import url_path_join
 from ..services.config_manager import ConfigManager
@@ -55,8 +57,13 @@ def setup_handlers(web_app):
         (url_path_join(base_url, 'hdsp-agent', 'auto-agent', 'validate'), AutoAgentValidateHandler),
         (url_path_join(base_url, 'hdsp-agent', 'auto-agent', 'reflect'), AutoAgentReflectHandler),
         (url_path_join(base_url, 'hdsp-agent', 'auto-agent', 'plan', 'stream'), AutoAgentPlanStreamHandler),
+        (url_path_join(base_url, 'hdsp-agent', 'auto-agent', 'verify-state'), AutoAgentVerifyStateHandler),
         # File action routes
         (url_path_join(base_url, 'hdsp-agent', 'file', 'action'), FileActionHandler),
+        # API Key management routes
+        (url_path_join(base_url, 'hdsp-agent', 'gemini-keys'), GeminiKeysHandler),
+        (url_path_join(base_url, 'hdsp-agent', 'gemini-keys', 'toggle'), GeminiKeyToggleHandler),
+        (url_path_join(base_url, 'hdsp-agent', 'gemini-keys', 'test'), GeminiKeysTestHandler),
     ]
 
     web_app.add_handlers(host_pattern, handlers)

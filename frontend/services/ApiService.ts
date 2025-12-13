@@ -25,6 +25,8 @@ import {
   AutoAgentValidateResponse,
   AutoAgentReflectRequest,
   AutoAgentReflectResponse,
+  AutoAgentVerifyStateRequest,
+  AutoAgentVerifyStateResponse,
   ExecutionPlan,
   PlanStep,
   ExecutionError,
@@ -457,6 +459,44 @@ export class ApiService {
 
     const result = await response.json();
     console.log('[ApiService] Reflect API Success:', result);
+    return result;
+  }
+
+  /**
+   * Verify state after step execution - 상태 검증 (Phase 1)
+   */
+  async verifyState(request: AutoAgentVerifyStateRequest): Promise<AutoAgentVerifyStateResponse> {
+    console.log('[ApiService] verifyState request:', request);
+
+    const response = await fetch(`${this.baseUrl}/auto-agent/verify-state`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      credentials: 'include',
+      body: JSON.stringify(request)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[ApiService] Verify State API Error:', {
+        status: response.status,
+        statusText: response.statusText,
+        body: errorText,
+        url: `${this.baseUrl}/auto-agent/verify-state`
+      });
+
+      let errorMessage = '상태 검증 실패';
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error || errorJson.message || errorMessage;
+      } catch (e) {
+        errorMessage = errorText || errorMessage;
+      }
+
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    console.log('[ApiService] Verify State API Success:', result);
     return result;
   }
 

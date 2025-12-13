@@ -15,9 +15,12 @@ from ..prompts.auto_agent_prompts import (
     format_final_answer_prompt,
     format_replan_prompt,
 )
-from ..services.code_validator import CodeValidator
+from ..services.code_validator import CodeValidator, get_api_pattern_checker
 from ..services.reflection_engine import ReflectionEngine
-from ..knowledge.loader import get_knowledge_base
+from ..knowledge.loader import get_knowledge_base, get_library_detector
+from ..services.error_classifier import get_error_classifier, ReplanDecision
+from ..services.summary_generator import get_summary_generator
+from ..services.state_verifier import get_state_verifier
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +43,8 @@ class AutoAgentPlanHandler(BaseAgentHandler):
 
             imported_libraries = notebook_context.get('importedLibraries', [])
 
-            # Step 1: LLM이 필요한 라이브러리 판단
-            detected_libraries = await self._detect_required_libraries(
+            # Step 1: 결정론적 라이브러리 감지 (LLM 호출 없음)
+            detected_libraries = self._detect_required_libraries(
                 request, imported_libraries
             )
             print(f"[AutoAgent] Detected libraries: {detected_libraries}", flush=True)
@@ -115,11 +118,16 @@ class AutoAgentPlanHandler(BaseAgentHandler):
         config = self.config_manager.get_config()
         return await call_llm(prompt, config)
 
-    async def _detect_required_libraries(
+    def _detect_required_libraries(
         self, request: str, imported_libraries: list
     ) -> list:
-        """LLM이 사용자 요청을 분석하여 필요한 라이브러리 판단"""
+        """
+        결정론적 라이브러리 감지 (LLM 호출 없음)
+        키워드 매칭 + 정규식으로 필요한 라이브러리 판단
+        토큰 절약: ~600-800 토큰/세션
+        """
         knowledge_base = get_knowledge_base()
+        library_detector = get_library_detector()
 
         # 사용 가능한 라이브러리 가이드가 없으면 빈 리스트 반환
         available = knowledge_base.list_available_libraries()
@@ -127,44 +135,19 @@ class AutoAgentPlanHandler(BaseAgentHandler):
             print("[AutoAgent] No library guides available", flush=True)
             return []
 
-        # LLM 판단 프롬프트 생성
-        detection_prompt = knowledge_base.get_detection_prompt(
-            request, imported_libraries
+        # 결정론적 감지 (LLM 호출 없음)
+        print("[AutoAgent] Using deterministic library detection...", flush=True)
+        detected = library_detector.detect(
+            request=request,
+            available_libraries=available,
+            imported_libraries=imported_libraries
         )
 
-        print("[AutoAgent] Calling LLM for library detection...", flush=True)
-        try:
-            response = await self._call_llm(detection_prompt)
-            print(f"[AutoAgent] Library detection response: {response[:200]}", flush=True)
+        if detected:
+            print(f"[AutoAgent] Detected libraries: {detected}", flush=True)
+        else:
+            print("[AutoAgent] No libraries detected", flush=True)
 
-            # JSON 파싱
-            result = self._parse_json_response(response)
-            if result and 'libraries' in result:
-                # 실제 존재하는 가이드만 필터링
-                detected = [lib for lib in result['libraries'] if lib in available]
-                if detected:
-                    return detected
-        except Exception as e:
-            print(f"[AutoAgent] Library detection LLM failed: {e}", flush=True)
-
-        # Fallback: 요청 텍스트에서 직접 라이브러리 이름 검색
-        print("[AutoAgent] Using fallback keyword detection...", flush=True)
-        fallback_detected = self._fallback_library_detection(request, available)
-        if fallback_detected:
-            print(f"[AutoAgent] Fallback detected: {fallback_detected}", flush=True)
-        return fallback_detected
-
-    def _fallback_library_detection(self, request: str, available: list) -> list:
-        """
-        Fallback: 요청 텍스트에서 라이브러리 이름 직접 검색
-        LLM 호출이 실패하거나 결과가 없을 때 사용
-        """
-        request_lower = request.lower()
-        detected = []
-        for lib in available:
-            # 라이브러리 이름이 요청에 포함되어 있으면 감지
-            if lib.lower() in request_lower:
-                detected.append(lib)
         return detected
 
     def _parse_json_response(self, response: str) -> dict:
@@ -373,7 +356,13 @@ class AutoAgentPlanStreamHandler(BaseAgentHandler):
 
 
 class AutoAgentReplanHandler(BaseAgentHandler):
-    """Adaptive Replanning 핸들러 - 에러 발생 시 계획 재수립"""
+    """
+    Adaptive Replanning 핸들러 - 에러 발생 시 계획 재수립
+
+    하이브리드 접근 (토큰 절약):
+    - INSERT_STEPS (ModuleNotFoundError): Python이 완전 처리 (LLM 호출 없음)
+    - REFINE (기타 에러): Python이 결정 확정, LLM이 코드 수정
+    """
 
     @web.authenticated
     async def post(self):
@@ -396,7 +385,30 @@ class AutoAgentReplanHandler(BaseAgentHandler):
             if not failed_step or not error_info:
                 return self.write_error_json(400, 'failedStep and error are required')
 
-            # 프롬프트 생성
+            # Step 1: 결정론적 에러 분류 (토큰 절약)
+            error_classifier = get_error_classifier()
+            traceback_data = error_info.get('traceback', [])
+            traceback_str = '\n'.join(traceback_data) if isinstance(traceback_data, list) else str(traceback_data)
+
+            analysis = error_classifier.classify(
+                error_type=error_info.get('errorName', error_info.get('type', 'RuntimeError')),
+                error_message=error_info.get('message', ''),
+                traceback=traceback_str,
+                installed_packages=self._get_installed_packages()
+            )
+
+            print(f"[AutoAgent] Error classified: decision={analysis.decision.value}", flush=True)
+
+            # Step 2: INSERT_STEPS는 Python이 완전 처리 (LLM 호출 없음!)
+            if analysis.decision == ReplanDecision.INSERT_STEPS:
+                print("[AutoAgent] INSERT_STEPS: Python handles completely (no LLM call)", flush=True)
+                result = analysis.to_dict()
+                self.write_json(result)
+                return
+
+            # Step 3: REFINE 등 다른 결정은 LLM이 코드 수정
+            # 단, decision은 이미 확정되어 있으므로 LLM은 코드만 생성
+            print("[AutoAgent] Calling LLM for code refinement...", flush=True)
             prompt = format_replan_prompt(
                 original_request=original_request,
                 executed_steps=executed_steps,
@@ -406,18 +418,14 @@ class AutoAgentReplanHandler(BaseAgentHandler):
                 available_libraries=self._get_installed_packages()
             )
 
-            # LLM 호출
-            print("[AutoAgent] Calling LLM for replan...", flush=True)
             try:
                 response = await self._call_llm(prompt)
                 print(f"[AutoAgent] LLM replan response length: {len(response)}", flush=True)
-                print(f"[AutoAgent] LLM replan response preview: {response[:300]}...", flush=True)
             except Exception as llm_error:
                 print(f"[AutoAgent] LLM replan call failed: {llm_error}", flush=True)
                 raise
 
             # JSON 파싱
-            print("[AutoAgent] Parsing replan JSON...", flush=True)
             replan_data = self._parse_json_response(response)
 
             if not replan_data:
@@ -426,10 +434,16 @@ class AutoAgentReplanHandler(BaseAgentHandler):
                 return self.write_error_json(500, error_msg)
 
             # markdown 코드 블록 제거
-            print("[AutoAgent] Sanitizing code in replan toolCalls...", flush=True)
             replan_data = self._sanitize_tool_calls(replan_data)
 
-            # 필수 필드 검증
+            # LLM 결과에서 decision 강제 오버라이드 (Python 분류 결과 우선)
+            # ModuleNotFoundError인데 LLM이 replace_step을 반환하는 경우 방지
+            llm_decision = replan_data.get('decision')
+            if llm_decision != analysis.decision.value:
+                print(f"[AutoAgent] Decision override: LLM={llm_decision} -> Python={analysis.decision.value}", flush=True)
+                replan_data['decision'] = analysis.decision.value
+                replan_data['reasoning'] = f"[Python 분류] {analysis.reasoning}"
+
             decision = replan_data.get('decision')
             if decision not in ['refine', 'insert_steps', 'replace_step', 'replan_remaining']:
                 print(f"[AutoAgent] Invalid decision: {decision}", flush=True)
@@ -484,12 +498,31 @@ class AutoAgentValidateHandler(BaseAgentHandler):
             # 전체 검증 수행
             result = validator.full_validation(code)
 
+            # API 패턴 검증 추가 (라이브러리별 안티패턴 검사)
+            api_checker = get_api_pattern_checker()
+            detected_libraries = notebook_context.get('importedLibraries', [])
+            api_issues = api_checker.check(code, detected_libraries)
+
+            # API 이슈를 결과에 추가
+            all_issues = [issue.to_dict() for issue in result.issues]
+            api_issue_count = 0
+            for api_issue in api_issues:
+                all_issues.append(api_issue.to_dict())
+                api_issue_count += 1
+                if api_issue.severity == 'error':
+                    result.has_errors = True
+                elif api_issue.severity == 'warning':
+                    result.has_warnings = True
+
+            if api_issue_count > 0:
+                logger.info(f"API pattern check found {api_issue_count} issues")
+
             logger.info(f"Validation result: valid={result.is_valid}, "
                        f"errors={result.has_errors}, warnings={result.has_warnings}")
 
             self.write_json({
-                'valid': result.is_valid,
-                'issues': [issue.to_dict() for issue in result.issues],
+                'valid': result.is_valid and not any(i.severity == 'error' for i in api_issues),
+                'issues': all_issues,
                 'dependencies': result.dependencies.to_dict() if result.dependencies else None,
                 'hasErrors': result.has_errors,
                 'hasWarnings': result.has_warnings,
@@ -548,4 +581,56 @@ class AutoAgentReflectHandler(BaseAgentHandler):
 
         except Exception as e:
             logger.error(f"Auto-Agent reflect error: {str(e)}", exc_info=True)
+            self.write_error_json(500, str(e))
+
+
+class AutoAgentVerifyStateHandler(BaseAgentHandler):
+    """
+    상태 검증 핸들러 (Phase 1: 상태 검증 레이어)
+    각 단계 실행 후 예상 상태와 실제 상태 비교, 신뢰도 계산
+    """
+
+    @web.authenticated
+    async def post(self):
+        """POST /hdsp-agent/auto-agent/verify-state"""
+        try:
+            logger.info("=== Auto-Agent Verify State Request ===")
+            body = self.get_json_body()
+
+            step_number = body.get('stepNumber', 0)
+            executed_code = body.get('executedCode', '')
+            execution_output = body.get('executionOutput', '')
+            execution_status = body.get('executionStatus', 'ok')
+            error_message = body.get('errorMessage')
+            expected_variables = body.get('expectedVariables', [])
+            expected_output_patterns = body.get('expectedOutputPatterns', [])
+            previous_variables = body.get('previousVariables', [])
+            current_variables = body.get('currentVariables', [])
+
+            logger.info(f"Verifying state for step {step_number}, status={execution_status}")
+
+            # StateVerifier로 검증 수행
+            verifier = get_state_verifier()
+            result = verifier.verify(
+                step_number=step_number,
+                executed_code=executed_code,
+                execution_output=execution_output,
+                execution_status=execution_status,
+                error_message=error_message,
+                expected_variables=expected_variables if expected_variables else None,
+                expected_output_patterns=expected_output_patterns if expected_output_patterns else None,
+                previous_variables=previous_variables,
+                current_variables=current_variables,
+            )
+
+            logger.info(f"Verification result: is_valid={result.is_valid}, "
+                       f"confidence={result.confidence:.2f}, "
+                       f"recommendation={result.recommendation.value}")
+
+            self.write_json({
+                'verification': result.to_dict()
+            })
+
+        except Exception as e:
+            logger.error(f"Auto-Agent verify-state error: {str(e)}", exc_info=True)
             self.write_error_json(500, str(e))

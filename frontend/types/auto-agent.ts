@@ -122,6 +122,7 @@ export type AgentPhase =
   | 'executing'
   | 'tool_calling'
   | 'validating'      // 코드 사전 검증 중
+  | 'verifying'       // 상태 검증 중 (Phase 1: State Verification)
   | 'replanning'      // Adaptive Replanning (Fast Fail 후 계획 수정)
   | 'reflecting'      // Reflection 분석 중
   | 'completed'
@@ -142,6 +143,14 @@ export interface AgentStatus {
   validationStatus?: 'checking' | 'passed' | 'warning' | 'failed';
   reflectionStatus?: 'analyzing' | 'passed' | 'adjusting';
   confidenceScore?: number;  // Reflection 신뢰도 점수 (0-100)
+  // Replan 상세 정보
+  replanInfo?: {
+    errorType?: string;      // 에러 타입 (e.g., "ModuleNotFoundError")
+    rootCause?: string;      // 원인 분석
+    decision?: ReplanDecision;  // 결정 (refine, insert_steps, etc.)
+    reasoning?: string;      // 결정 이유
+    missingPackage?: string; // 누락된 패키지 (있는 경우)
+  };
 }
 
 export interface ExecutionError {
@@ -470,3 +479,126 @@ export const DEFAULT_AUTO_AGENT_CONFIG: AutoAgentConfig = {
   autoScrollToCell: true,
   highlightCurrentCell: true,
 };
+
+// ═══════════════════════════════════════════════════════════════════════════
+// State Verification Types (Phase 1: 상태 검증 레이어)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * 신뢰도 임계값 상수
+ * - PROCEED (0.8): 계속 진행
+ * - WARNING (0.6): 경고 로그, 진행
+ * - REPLAN (0.4): 리플래닝 트리거
+ * - ESCALATE (0.2): 사용자 개입 필요
+ */
+export const CONFIDENCE_THRESHOLDS = {
+  PROCEED: 0.8,
+  WARNING: 0.6,
+  REPLAN: 0.4,
+  ESCALATE: 0.2,
+} as const;
+
+export type ConfidenceThresholdKey = keyof typeof CONFIDENCE_THRESHOLDS;
+
+/**
+ * 상태 불일치 유형
+ */
+export type MismatchType =
+  | 'variable_missing'      // 예상 변수가 생성되지 않음
+  | 'variable_type_mismatch' // 변수 타입이 예상과 다름
+  | 'output_missing'        // 예상 출력이 없음
+  | 'output_mismatch'       // 출력이 예상과 다름
+  | 'file_not_created'      // 파일이 생성되지 않음
+  | 'import_failed'         // import가 실패함
+  | 'exception_occurred'    // 예상치 못한 예외 발생
+  | 'partial_execution';    // 부분 실행 (일부만 성공)
+
+/**
+ * 개별 상태 불일치 상세 정보
+ */
+export interface StateMismatch {
+  type: MismatchType;
+  severity: 'critical' | 'major' | 'minor';
+  description: string;
+  expected?: string;
+  actual?: string;
+  suggestion?: string;  // 복구 제안
+}
+
+/**
+ * 신뢰도 계산 상세 정보
+ */
+export interface ConfidenceScore {
+  overall: number;  // 0.0 - 1.0
+  factors: {
+    outputMatch: number;      // 출력 일치도 (0.0 - 1.0)
+    variableCreation: number; // 변수 생성 성공률 (0.0 - 1.0)
+    noExceptions: number;     // 예외 없음 (0 or 1)
+    executionComplete: number; // 완전 실행 (0 or 1)
+  };
+  weights: {
+    outputMatch: number;
+    variableCreation: number;
+    noExceptions: number;
+    executionComplete: number;
+  };
+}
+
+/**
+ * 상태 검증 결과
+ */
+export interface StateVerificationResult {
+  isValid: boolean;
+  confidence: number;  // 0.0 - 1.0
+  confidenceDetails: ConfidenceScore;
+  mismatches: StateMismatch[];
+  recommendation: 'proceed' | 'warning' | 'replan' | 'escalate';
+  timestamp: number;
+}
+
+/**
+ * 스텝 실행 후 예상 상태
+ */
+export interface StateExpectation {
+  stepNumber: number;
+  expectedVariables?: string[];     // 생성될 것으로 예상되는 변수들
+  expectedOutputPatterns?: string[]; // 예상 출력 패턴 (regex)
+  expectedImports?: string[];       // 성공적으로 import될 라이브러리들
+  expectedFiles?: string[];         // 생성될 파일들 (상대 경로)
+  shouldNotError?: boolean;         // 에러가 없어야 하는지
+  customValidators?: string[];      // 커스텀 검증 함수명들
+}
+
+/**
+ * 검증 컨텍스트 - 검증에 필요한 모든 정보
+ */
+export interface VerificationContext {
+  stepNumber: number;
+  executionResult: ExecutionResult;
+  expectation?: StateExpectation;
+  previousVariables: string[];      // 실행 전 커널 변수 목록
+  currentVariables: string[];       // 실행 후 커널 변수 목록
+  notebookContext: NotebookContext;
+}
+
+/**
+ * 검증 상태 API 요청
+ */
+export interface AutoAgentVerifyStateRequest {
+  stepNumber: number;
+  executedCode: string;
+  executionOutput: string;
+  executionStatus: 'ok' | 'error';
+  errorMessage?: string;
+  expectedVariables?: string[];
+  expectedOutputPatterns?: string[];
+  previousVariables: string[];
+  currentVariables: string[];
+}
+
+/**
+ * 검증 상태 API 응답
+ */
+export interface AutoAgentVerifyStateResponse {
+  verification: StateVerificationResult;
+}

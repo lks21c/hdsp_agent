@@ -13,6 +13,7 @@ import type { ISessionContext } from '@jupyterlab/apputils';
 import { ApiService } from './ApiService';
 import { ToolExecutor } from './ToolExecutor';
 import { SafetyChecker } from '../utils/SafetyChecker';
+import { StateVerifier } from './StateVerifier';
 import {
   ToolCall,
   ToolResult,
@@ -37,12 +38,19 @@ import {
   ReflectionAction,
   EnhancedPlanStep,
   Checkpoint,
+  // State Verification Types (Phase 1)
+  StateVerificationResult,
+  VerificationContext,
+  ExecutionResult,
+  StateExpectation,
+  CONFIDENCE_THRESHOLDS,
 } from '../types/auto-agent';
 
 export class AgentOrchestrator {
   private apiService: ApiService;
   private toolExecutor: ToolExecutor;
   private safetyChecker: SafetyChecker;
+  private stateVerifier: StateVerifier;
   private config: AutoAgentConfig;
   private abortController: AbortController | null = null;
   private isRunning: boolean = false;
@@ -55,6 +63,9 @@ export class AgentOrchestrator {
   // Validation & Reflection 설정
   private enablePreValidation: boolean = true;
   private enableReflection: boolean = true;
+
+  // ★ State Verification 설정 (Phase 1)
+  private enableStateVerification: boolean = true;
 
   // ★ 현재 Plan 실행 중 정의된 변수 추적 (cross-step validation용)
   private executedStepVariables: Set<string> = new Set();
@@ -78,6 +89,8 @@ export class AgentOrchestrator {
       enableSafetyCheck: config?.enableSafetyCheck ?? true,
       maxExecutionTime: (config?.executionTimeout ?? 30000) / 1000,
     });
+    // ★ State Verifier 초기화 (Phase 1)
+    this.stateVerifier = new StateVerifier(this.apiService);
     this.config = { ...DEFAULT_AUTO_AGENT_CONFIG, ...config };
     console.log('[Orchestrator] Initialized with config:', {
       executionSpeed: this.config.executionSpeed,
@@ -114,6 +127,8 @@ export class AgentOrchestrator {
     this.executedStepVariables.clear();
     this.executedStepImports.clear();
     this.executedStepVariableValues = {};
+    // ★ State Verification 이력 초기화 (Phase 1)
+    this.stateVerifier.clearHistory();
 
     const createdCells: number[] = [];
     const modifiedCells: number[] = [];
@@ -216,13 +231,6 @@ export class AgentOrchestrator {
             };
           }
 
-          onProgress({
-            phase: 'replanning',
-            message: '계획 수정 중...',
-            currentStep: step.stepNumber,
-            failedStep: step.stepNumber,  // 실패한 step UI에 표시
-          });
-
           // 실패 정보 구성 (errorName 포함 - ModuleNotFoundError 등 식별용)
           const executionError: ExecutionError = {
             type: 'runtime',
@@ -231,6 +239,23 @@ export class AgentOrchestrator {
             traceback: stepResult.toolResults.find(r => r.traceback)?.traceback || [],
             recoverable: true,
           };
+
+          // 에러 타입에서 핵심 정보 추출
+          const errorName = executionError.errorName || '런타임 에러';
+          const shortErrorMsg = executionError.message.length > 80
+            ? executionError.message.substring(0, 80) + '...'
+            : executionError.message;
+
+          onProgress({
+            phase: 'replanning',
+            message: `에러 분석 중: ${errorName}`,
+            currentStep: step.stepNumber,
+            failedStep: step.stepNumber,
+            replanInfo: {
+              errorType: errorName,
+              rootCause: shortErrorMsg,
+            },
+          });
 
           // 마지막 실행 출력
           const lastOutput = stepResult.toolResults
@@ -249,6 +274,27 @@ export class AgentOrchestrator {
 
             console.log('[Orchestrator] Replan decision:', replanResponse.decision);
             console.log('[Orchestrator] Replan reasoning:', replanResponse.reasoning);
+
+            // ★ 결정 결과를 UI에 즉시 반영 (에러 분석 → 결정 완료)
+            const decisionLabel = this.getReplanDecisionLabel(replanResponse.decision);
+            // ModuleNotFoundError일 때 패키지명 추출
+            const missingPackage = errorName === 'ModuleNotFoundError'
+              ? this.extractMissingPackage(executionError.message)
+              : undefined;
+
+            onProgress({
+              phase: 'replanning',
+              message: `결정: ${decisionLabel}`,
+              currentStep: step.stepNumber,
+              failedStep: step.stepNumber,
+              replanInfo: {
+                errorType: errorName,
+                rootCause: shortErrorMsg,
+                decision: replanResponse.decision,
+                reasoning: replanResponse.reasoning,
+                missingPackage,
+              },
+            });
 
             // 실패한 스텝에서 생성된 셀 인덱스 추출 (재사용 위해)
             const failedCellIndex = stepResult.toolResults.find(r => r.cellIndex !== undefined)?.cellIndex;
@@ -299,6 +345,68 @@ export class AgentOrchestrator {
 
         // ★ 성공한 Step에서 정의된 변수 추적 (cross-step validation용)
         this.trackVariablesFromStep(step);
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // STATE VERIFICATION (Phase 1): 상태 검증 레이어
+        // ═══════════════════════════════════════════════════════════════════════
+        if (this.enableStateVerification && stepResult.toolResults.length > 0) {
+          const stateVerificationResult = await this.verifyStepStateAfterExecution(
+            step,
+            stepResult,
+            onProgress
+          );
+
+          // 검증 결과에 따른 처리
+          if (stateVerificationResult) {
+            const { recommendation, confidence } = stateVerificationResult;
+            console.log('[Orchestrator] State verification result:', {
+              confidence,
+              recommendation,
+              isValid: stateVerificationResult.isValid,
+            });
+
+            // 권장 사항에 따른 액션
+            if (recommendation === 'replan') {
+              console.log('[Orchestrator] State verification recommends replan (confidence:', confidence, ')');
+              // Replan을 위한 에러 상태로 전환 (다음 반복에서 replanning 트리거)
+              onProgress({
+                phase: 'replanning',
+                message: `상태 검증 신뢰도 낮음: ${(confidence * 100).toFixed(0)}%`,
+                currentStep: step.stepNumber,
+                replanInfo: {
+                  errorType: 'StateVerificationFailed',
+                  rootCause: stateVerificationResult.mismatches.map(m => m.description).join('; '),
+                },
+              });
+              // Note: 현재는 로깅만 수행, 향후 자동 replanning 트리거 구현
+            } else if (recommendation === 'escalate') {
+              console.log('[Orchestrator] State verification recommends escalation (confidence:', confidence, ')');
+              onProgress({
+                phase: 'failed',
+                message: `상태 검증 실패 - 사용자 개입 필요: ${stateVerificationResult.mismatches.map(m => m.description).join(', ')}`,
+              });
+              // 심각한 상태 불일치 시 실행 중단
+              return {
+                success: false,
+                plan: currentPlan,
+                executedSteps,
+                createdCells,
+                modifiedCells,
+                error: `상태 검증 실패 (신뢰도: ${(confidence * 100).toFixed(0)}%): ${stateVerificationResult.mismatches.map(m => m.description).join('; ')}`,
+                totalAttempts: this.countTotalAttempts(executedSteps),
+                executionTime: Date.now() - startTime,
+              };
+            } else if (recommendation === 'warning') {
+              console.log('[Orchestrator] State verification warning (confidence:', confidence, ')');
+              onProgress({
+                phase: 'verifying',
+                message: `상태 검증 경고: ${(confidence * 100).toFixed(0)}% 신뢰도`,
+                currentStep: step.stepNumber,
+              });
+            }
+            // 'proceed'는 별도 처리 없이 계속 진행
+          }
+        }
 
         // ═══════════════════════════════════════════════════════════════════════
         // REFLECTION: 실행 결과 분석 및 적응적 조정
@@ -1520,6 +1628,129 @@ export class AgentOrchestrator {
     return null;
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STATE VERIFICATION Methods (Phase 1)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * 스텝 실행 후 상태 검증
+   * @param step 실행된 스텝
+   * @param stepResult 스텝 실행 결과
+   * @param onProgress 진행 상태 콜백
+   * @returns 상태 검증 결과 또는 null (검증 불가 시)
+   */
+  private async verifyStepStateAfterExecution(
+    step: PlanStep,
+    stepResult: StepResult,
+    onProgress: (status: AgentStatus) => void
+  ): Promise<StateVerificationResult | null> {
+    // jupyter_cell 실행 결과만 검증
+    const jupyterResult = stepResult.toolResults.find(r => r.cellIndex !== undefined);
+    if (!jupyterResult) {
+      return null;
+    }
+
+    // Progress 업데이트: 검증 시작
+    onProgress({
+      phase: 'verifying',
+      message: '상태 검증 중...',
+      currentStep: step.stepNumber,
+    });
+
+    try {
+      // 실행된 코드 추출
+      const jupyterToolCall = step.toolCalls.find(tc => tc.tool === 'jupyter_cell');
+      const executedCode = jupyterToolCall
+        ? (jupyterToolCall.parameters as JupyterCellParams).code
+        : '';
+
+      // 출력 문자열 생성
+      const outputString = this.extractOutputString(jupyterResult.output);
+
+      // 노트북 컨텍스트에서 현재 변수 목록 추출
+      const notebookContext = this.extractNotebookContext(this.notebook);
+
+      // 실행 결과 객체 생성 (StateVerifier 인터페이스에 맞춤)
+      const executionResult: ExecutionResult = {
+        status: jupyterResult.success ? 'ok' : 'error',
+        stdout: outputString,
+        stderr: '',  // Jupyter에서 stderr는 별도로 제공되지 않음
+        result: jupyterResult.output ? String(jupyterResult.output) : '',
+        error: jupyterResult.error ? {
+          ename: jupyterResult.errorName || 'Error',
+          evalue: jupyterResult.error,
+          traceback: jupyterResult.traceback || [],
+        } : undefined,
+        executionTime: 0,  // 실행 시간은 별도 추적 필요
+        cellIndex: jupyterResult.cellIndex ?? -1,
+      };
+
+      // 상태 기대 정보 추출 (step.checkpoint 또는 expectedOutcome이 있는 경우)
+      const enhancedStep = step as EnhancedPlanStep;
+      const expectation: StateExpectation | undefined = enhancedStep.checkpoint
+        ? {
+            stepNumber: step.stepNumber,
+            expectedVariables: this.extractVariablesFromCode(executedCode),
+            expectedOutputPatterns: enhancedStep.checkpoint.validationCriteria,
+          }
+        : undefined;
+
+      // 검증 컨텍스트 생성
+      const verificationContext: VerificationContext = {
+        stepNumber: step.stepNumber,
+        executionResult,
+        expectation,
+        previousVariables: Array.from(this.executedStepVariables),
+        currentVariables: notebookContext.definedVariables,
+        notebookContext,
+      };
+
+      // 상태 검증 수행
+      const verificationResult = await this.stateVerifier.verifyStepState(verificationContext);
+
+      // Progress 업데이트: 검증 완료
+      const statusMessage = verificationResult.isValid
+        ? `검증 통과 (${(verificationResult.confidence * 100).toFixed(0)}%)`
+        : `검증 경고: ${verificationResult.mismatches.length}건 감지`;
+
+      onProgress({
+        phase: 'verifying',
+        message: statusMessage,
+        currentStep: step.stepNumber,
+      });
+
+      return verificationResult;
+    } catch (error: any) {
+      console.warn('[Orchestrator] State verification failed:', error.message);
+      // 검증 실패 시에도 실행은 계속 진행 (graceful degradation)
+      return null;
+    }
+  }
+
+  /**
+   * 출력 객체에서 문자열 추출
+   */
+  private extractOutputString(output: any): string {
+    if (!output) return '';
+    if (typeof output === 'string') return output;
+    if (typeof output === 'object' && output !== null) {
+      if ('text/plain' in output) {
+        const textPlain = output['text/plain'];
+        return typeof textPlain === 'string' ? textPlain : String(textPlain || '');
+      }
+      try {
+        return JSON.stringify(output);
+      } catch {
+        return '[object]';
+      }
+    }
+    try {
+      return String(output);
+    } catch {
+      return '[unknown]';
+    }
+  }
+
   /**
    * Validation & Reflection 설정 업데이트
    */
@@ -1534,6 +1765,14 @@ export class AgentOrchestrator {
   }
 
   /**
+   * ★ State Verification 설정 업데이트 (Phase 1)
+   */
+  setStateVerificationEnabled(enabled: boolean): void {
+    this.enableStateVerification = enabled;
+    console.log('[Orchestrator] State verification:', enabled ? 'enabled' : 'disabled');
+  }
+
+  /**
    * 현재 설정 확인
    */
   getValidationEnabled(): boolean {
@@ -1542,6 +1781,31 @@ export class AgentOrchestrator {
 
   getReflectionEnabled(): boolean {
     return this.enableReflection;
+  }
+
+  /**
+   * ★ State Verification 설정 확인 (Phase 1)
+   */
+  getStateVerificationEnabled(): boolean {
+    return this.enableStateVerification;
+  }
+
+  /**
+   * ★ State Verification 이력 조회 (Phase 1)
+   */
+  getStateVerificationHistory(count: number = 5): StateVerificationResult[] {
+    return this.stateVerifier.getRecentHistory(count);
+  }
+
+  /**
+   * ★ State Verification 트렌드 분석 (Phase 1)
+   */
+  getStateVerificationTrend(): {
+    average: number;
+    trend: 'improving' | 'declining' | 'stable';
+    criticalCount: number;
+  } {
+    return this.stateVerifier.analyzeConfidenceTrend();
   }
 
   /**
@@ -1560,6 +1824,23 @@ export class AgentOrchestrator {
       default:
         return decision;
     }
+  }
+
+  /**
+   * ModuleNotFoundError 메시지에서 패키지 이름 추출
+   */
+  private extractMissingPackage(errorMessage: string): string | undefined {
+    // "No module named 'plotly'" 패턴
+    const match = errorMessage.match(/No module named ['"]([\w\-_.]+)['"]/);
+    if (match) {
+      return match[1];
+    }
+    // "ModuleNotFoundError: plotly" 패턴
+    const altMatch = errorMessage.match(/ModuleNotFoundError:\s*([\w\-_.]+)/);
+    if (altMatch) {
+      return altMatch[1];
+    }
+    return undefined;
   }
 }
 
