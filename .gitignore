@@ -81,4 +81,13 @@ dev-debug.log
 
 # Task files
 # tasks.json
-# tasks/ 
+# tasks/
+
+# MCP (local config)
+.mcp.json
+
+# Playwright MCP (test artifacts)
+.playwright-mcp/
+
+# Temp files
+hdsp_*.txt
