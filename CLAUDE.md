@@ -59,20 +59,59 @@
 3. **테스트 실행**: 변경 완료 전 반드시 테스트 실행하여 통과 확인
 4. **기존 테스트 유지**: 기존 테스트가 깨지지 않도록 보장
 
-### 테스트 실행 명령어
-```bash
-# Backend (Python)
-python -m pytest tests/ -v
-
-# Frontend (TypeScript)
-yarn test
-# 또는
-npm run test
+### 테스트 구조
+```
+hdsp_agent/
+├── backend/tests/           # Python 백엔드 테스트 (pytest)
+│   ├── cassettes/           # VCR.py 녹화 파일 (LLM 응답 캐시)
+│   ├── conftest.py          # pytest fixtures + VCR 설정
+│   ├── test_auto_agent.py   # Plan 파싱, 코드 검증
+│   ├── test_error_classifier.py
+│   ├── test_state_verifier.py
+│   ├── test_vcr_llm.py      # VCR 기반 LLM 응답 테스트
+│   └── ...
+│
+├── ui-tests/                # Galata E2E 테스트 (Playwright)
+│   ├── fixtures.ts          # 네트워크 모킹 (토큰 0 보장)
+│   └── agent.spec.ts        # UI 통합 테스트
+│
+└── playwright.config.ts     # Galata/Playwright 설정
 ```
 
-### 테스트 위치
-- **Backend**: `tests/` 디렉토리
-- **Frontend**: `src/__tests__/` 또는 `*.test.ts`, `*.test.tsx` 파일
+### 테스트 명령어
+```bash
+# Backend 테스트 (전체)
+poetry run pytest backend/tests/ -v
+
+# Backend 테스트 (특정 파일)
+poetry run pytest backend/tests/test_auto_agent.py -v
+
+# UI E2E 테스트 (Galata + Playwright)
+yarn test:ui              # 헤드리스 실행
+yarn test:ui:headed       # 브라우저 표시
+yarn test:ui:debug        # 디버그 모드
+```
+
+### VCR.py (LLM 응답 녹화/재생)
+실제 LLM API 응답을 1회 녹화 → 이후 무한 재생 (토큰 0)
+```bash
+# 최초 녹화 (API 키 필요, 토큰 발생)
+poetry run pytest backend/tests/test_vcr_llm.py --record-mode=once
+
+# 이후 재생 (토큰 0)
+poetry run pytest backend/tests/test_vcr_llm.py
+
+# 프롬프트 변경 시 재녹화
+poetry run pytest backend/tests/test_vcr_llm.py --record-mode=new_episodes
+```
+
+### 토큰 소비 정책
+| 테스트 유형 | 토큰 소비 | 설명 |
+|------------|----------|------|
+| Backend Unit | 0 | Mock/MagicMock 사용 |
+| VCR 재생 | 0 | cassettes/*.yaml 재생 |
+| VCR 녹화 | 최초 1회 | 실제 API 호출 |
+| UI E2E | 0 | 네트워크 모킹 (fixtures.ts) |
 
 ### 예외 상황
 - 단순 문서 수정 (README, 주석 등)

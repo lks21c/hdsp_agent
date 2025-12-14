@@ -54,7 +54,10 @@
     "stylelint:check": "stylelint --cache \"frontend/styles/**/*.css\"",
     "watch": "run-p watch:src watch:labextension",
     "watch:src": "tsc -w",
-    "watch:labextension": "jupyter labextension watch ."
+    "watch:labextension": "jupyter labextension watch .",
+    "test:ui": "playwright test",
+    "test:ui:headed": "playwright test --headed",
+    "test:ui:debug": "playwright test --debug"
   },
   "dependencies": {
     "@emotion/react": "^11.11.0",
@@ -75,6 +78,8 @@
   },
   "devDependencies": {
     "@jupyterlab/builder": "^4.0.0",
+    "@jupyterlab/galata": "^5.0.0",
+    "@playwright/test": "^1.40.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
