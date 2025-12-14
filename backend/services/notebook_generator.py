@@ -6,7 +6,7 @@ import asyncio
 import json
 import os
 import re
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 from pathlib import Path
 
@@ -18,7 +18,7 @@ class NotebookGenerator:
         self.llm_service = llm_service
         self.task_manager = task_manager
 
-    def _extract_json_from_response(self, response_text: str) -> dict | None:
+    def _extract_json_from_response(self, response_text: str) -> Optional[Dict]:
         """Extract JSON object from LLM response text"""
         content = response_text.strip()
         json_match = re.search(r'\{.*\}', content, re.DOTALL)

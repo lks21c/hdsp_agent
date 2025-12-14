@@ -47,6 +47,7 @@ interface ExecutionPlanViewProps {
   failedSteps: number[];
   isReplanning?: boolean;
   originalStepCount?: number; // 원래 계획의 스텝 수
+  replanInfo?: AgentStatus['replanInfo']; // 계획 수정 상세 정보
 }
 
 const ExecutionPlanView: React.FC<ExecutionPlanViewProps> = ({
@@ -56,6 +57,7 @@ const ExecutionPlanView: React.FC<ExecutionPlanViewProps> = ({
   failedSteps,
   isReplanning,
   originalStepCount,
+  replanInfo,
 }) => {
   const getStepStatus = (stepNumber: number): 'failed' | 'completed' | 'current' | 'pending' | 'replanning' => {
     if (isReplanning && currentStep === stepNumber) return 'replanning';
@@ -121,11 +123,32 @@ const ExecutionPlanView: React.FC<ExecutionPlanViewProps> = ({
 
   const progressPercent = (completedSteps.length / plan.totalSteps) * 100;
 
+  // replanInfo 기반 헤더 메시지 생성
+  const getReplanHeaderMessage = (): string => {
+    if (!isReplanning || !replanInfo) return '계획 수정 중...';
+    const { errorType, decision, missingPackage } = replanInfo;
+    if (decision) {
+      // 결정이 완료된 경우
+      if (decision === 'insert_steps' && missingPackage) {
+        return `패키지 설치 추가: ${missingPackage}`;
+      }
+      switch (decision) {
+        case 'refine': return '코드 수정 중...';
+        case 'insert_steps': return '단계 추가 중...';
+        case 'replace_step': return '단계 교체 중...';
+        case 'replan_remaining': return '남은 계획 재수립 중...';
+        default: return '계획 수정 중...';
+      }
+    }
+    // 아직 분석 중인 경우
+    return `에러 분석: ${errorType || '오류'}`;
+  };
+
   return (
     <div className={`aa-plan ${isReplanning ? 'aa-plan--replanning' : ''}`}>
       <div className="aa-plan-header">
         <span className="aa-plan-title">
-          {isReplanning ? '계획 수정 중...' : '실행 계획'}
+          {isReplanning ? getReplanHeaderMessage() : '실행 계획'}
         </span>
         <span className="aa-plan-progress">
           {completedSteps.length} / {plan.totalSteps}
@@ -206,7 +229,13 @@ const ExecutionPlanView: React.FC<ExecutionPlanViewProps> = ({
                   <span className="aa-step-executing">실행 중...</span>
                 )}
                 {status === 'replanning' && (
-                  <span className="aa-step-replanning">계획 수정 중...</span>
+                  <span className="aa-step-replanning">
+                    {replanInfo?.decision
+                      ? (replanInfo.decision === 'insert_steps' && replanInfo.missingPackage
+                          ? `pip install ${replanInfo.missingPackage}`
+                          : '수정 적용 중...')
+                      : `분석 중: ${replanInfo?.errorType || '오류'}`}
+                  </span>
                 )}
                 <div className="aa-step-tools">
                   {step.toolCalls
@@ -243,7 +272,22 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({ status }) => {
       case 'executing': return `실행 중 (${status.currentStep}/${status.totalSteps})`;
       case 'tool_calling': return `${status.tool} 실행 중`;
       case 'validating': return status.message || '코드 검증 중...';
-      case 'replanning': return `계획 수정 중 (Step ${status.currentStep})`;
+      case 'replanning': {
+        // replanInfo가 있으면 상세 표시
+        if (status.replanInfo) {
+          const { errorType, decision, missingPackage } = status.replanInfo;
+          if (decision) {
+            // 결정 완료 상태
+            if (decision === 'insert_steps' && missingPackage) {
+              return `패키지 설치: pip install ${missingPackage}`;
+            }
+            return status.message || `계획 수정 (Step ${status.currentStep})`;
+          }
+          // 에러 분석 중
+          return `에러 분석 중: ${errorType || '오류'}`;
+        }
+        return `계획 수정 중 (Step ${status.currentStep})`;
+      }
       case 'reflecting': return status.message || '결과 분석 중...';
       case 'completed': return '완료';
       case 'failed': return '실패';
@@ -542,6 +586,7 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
           failedSteps={failedSteps}
           isReplanning={status.phase === 'replanning'}
           originalStepCount={originalStepCount}
+          replanInfo={status.replanInfo}
         />
       )}
 

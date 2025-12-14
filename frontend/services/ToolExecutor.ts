@@ -35,6 +35,46 @@ export class ToolExecutor {
   }
 
   /**
+   * 커널이 idle 상태가 될 때까지 대기
+   * @param timeout 최대 대기 시간 (ms)
+   * @returns true if kernel became idle, false if timeout
+   */
+  private async waitForKernelIdle(timeout: number = 10000): Promise<boolean> {
+    const kernel = this.sessionContext.session?.kernel;
+    if (!kernel) {
+      console.warn('[ToolExecutor] No kernel available');
+      return false;
+    }
+
+    const startTime = Date.now();
+    const pollInterval = 100; // 100ms마다 체크
+
+    return new Promise<boolean>((resolve) => {
+      const checkStatus = () => {
+        const elapsed = Date.now() - startTime;
+        const status = kernel.status;
+
+        if (status === 'idle') {
+          console.log('[ToolExecutor] Kernel is idle after', elapsed, 'ms');
+          resolve(true);
+          return;
+        }
+
+        if (elapsed >= timeout) {
+          console.warn('[ToolExecutor] Kernel idle wait timeout after', timeout, 'ms, status:', status);
+          resolve(false);
+          return;
+        }
+
+        // 아직 idle이 아니면 다시 체크
+        setTimeout(checkStatus, pollInterval);
+      };
+
+      checkStatus();
+    });
+  }
+
+  /**
    * 자동 스크롤 설정
    */
   setAutoScroll(enabled: boolean): void {
@@ -552,36 +592,13 @@ print(json.dumps(result))
     const runSuccess = await NotebookActions.run(notebookContent, this.sessionContext);
     console.log('[ToolExecutor] NotebookActions.run() success:', runSuccess);
 
-    // 실행 완료 후 outputs 업데이트 대기
-    // NotebookActions.run()이 완료되어도 outputs가 바로 업데이트되지 않을 수 있음
-    // 특히 에러 출력은 시간이 더 걸릴 수 있음
-    if (!runSuccess) {
-      // 에러 발생 시 에러 output이 나타날 때까지 최대 2초 대기 (100ms x 20회)
-      let errorFound = false;
-      for (let i = 0; i < 20 && !errorFound; i++) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        const outputs = cell.model?.outputs;
-        if (outputs) {
-          for (let j = 0; j < outputs.length; j++) {
-            const output = outputs.get(j);
-            if (output.type === 'error') {
-              const errorOutput = output as any;
-              if (errorOutput.ename || errorOutput.evalue) {
-                console.log('[ToolExecutor] Error output found after', (i + 1) * 100, 'ms');
-                errorFound = true;
-                break;
-              }
-            }
-          }
-        }
-      }
-      if (!errorFound) {
-        console.warn('[ToolExecutor] Error output not found after 2 seconds of polling');
-      }
-    } else {
-      // 성공 시에는 짧게 대기
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
+    // 커널이 idle 상태가 될 때까지 대기 (출력이 완전히 업데이트되도록)
+    // NotebookActions.run()이 false를 반환해도 커널은 아직 busy 상태일 수 있음
+    const kernelIdled = await this.waitForKernelIdle(10000);
+    console.log('[ToolExecutor] Kernel idle wait result:', kernelIdled);
+
+    // 추가 안정화 대기 (출력 모델 동기화)
+    await new Promise(resolve => setTimeout(resolve, 200));
 
     // 실행 완료 후 결과 캡처
     const executionTime = Date.now() - startTime;
@@ -594,11 +611,19 @@ print(json.dumps(result))
 
     // cell.model과 outputs가 존재하는지 안전하게 체크
     const outputs = cell.model?.outputs;
-    console.log('[ToolExecutor] Cell outputs count:', outputs?.length ?? 0, '| runSuccess:', runSuccess);
+    console.log('[ToolExecutor] After kernel idle - outputs count:', outputs?.length ?? 0, '| runSuccess:', runSuccess);
     if (outputs && outputs.length > 0) {
       for (let i = 0; i < outputs.length; i++) {
         const output = outputs.get(i);
+        // 더 상세한 디버깅: 전체 output 구조 확인
         console.log(`[ToolExecutor] Output ${i} type:`, output.type);
+        try {
+          // toJSON이 있으면 전체 구조 확인
+          const outputJson = (output as any).toJSON?.() || output;
+          console.log(`[ToolExecutor] Output ${i} full structure:`, JSON.stringify(outputJson, null, 2));
+        } catch (e) {
+          console.log(`[ToolExecutor] Output ${i} raw:`, output);
+        }
 
         if (output.type === 'stream') {
           const streamOutput = output as any;
@@ -613,15 +638,18 @@ print(json.dumps(result))
             result = data;
           }
         } else if (output.type === 'error') {
-          const errorOutput = output as any;
-          console.log('[ToolExecutor] Error output detected:', JSON.stringify(errorOutput));
+          // CRITICAL: output 모델 객체는 toJSON()으로 실제 데이터를 추출해야 함
+          // 직접 프로퍼티 접근(output.ename)은 undefined를 반환할 수 있음
+          const errorData = (output as any).toJSON?.() || output;
+          console.log('[ToolExecutor] Error output detected:', JSON.stringify(errorData));
           // 실제로 에러 내용이 있는 경우에만 에러로 처리
-          if (errorOutput.ename || errorOutput.evalue) {
+          if (errorData.ename || errorData.evalue) {
             error = {
-              ename: errorOutput.ename,
-              evalue: errorOutput.evalue,
-              traceback: errorOutput.traceback,
+              ename: errorData.ename,
+              evalue: errorData.evalue,
+              traceback: errorData.traceback || [],
             };
+            console.log('[ToolExecutor] Error captured:', error.ename, '-', error.evalue);
           }
         }
       }
@@ -640,14 +668,25 @@ print(json.dumps(result))
       console.log('[ToolExecutor] - error.evalue:', error.evalue);
     }
 
-    // runSuccess가 false인데 error가 없으면 기본 에러 메시지 설정
+    // runSuccess가 false인데 error가 없으면 stdout/stderr에서 에러 패턴 추출 시도
     if (!runSuccess && !error) {
       console.warn('[ToolExecutor] NotebookActions.run() failed but no error output captured!');
-      error = {
-        ename: 'ExecutionError',
-        evalue: 'Cell execution failed (NotebookActions.run returned false)',
-        traceback: [],
-      };
+      console.log('[ToolExecutor] Attempting to extract error from stdout/stderr...');
+
+      // stdout에서 에러 패턴 검색 (Python traceback 형식)
+      const combinedOutput = stdout + '\n' + stderr;
+      const extractedError = this.extractErrorFromOutput(combinedOutput);
+
+      if (extractedError) {
+        console.log('[ToolExecutor] Extracted error from output:', extractedError);
+        error = extractedError;
+      } else {
+        error = {
+          ename: 'ExecutionError',
+          evalue: 'Cell execution failed (NotebookActions.run returned false)',
+          traceback: [],
+        };
+      }
     }
 
     return {
@@ -714,6 +753,65 @@ print(json.dumps(result))
     if (kernel) {
       await kernel.interrupt();
     }
+  }
+
+  /**
+   * 출력 텍스트에서 Python 에러 패턴을 추출
+   * error 타입 출력이 캡처되지 않았을 때 stdout/stderr에서 에러 추출 시도
+   */
+  private extractErrorFromOutput(output: string): ExecutionResult['error'] | undefined {
+    if (!output) return undefined;
+
+    // 에러 타입 패턴들 (Python 표준 에러들)
+    const errorPatterns = [
+      /^(ModuleNotFoundError):\s*(.+)$/m,
+      /^(ImportError):\s*(.+)$/m,
+      /^(SyntaxError):\s*(.+)$/m,
+      /^(TypeError):\s*(.+)$/m,
+      /^(ValueError):\s*(.+)$/m,
+      /^(KeyError):\s*(.+)$/m,
+      /^(IndexError):\s*(.+)$/m,
+      /^(AttributeError):\s*(.+)$/m,
+      /^(NameError):\s*(.+)$/m,
+      /^(FileNotFoundError):\s*(.+)$/m,
+      /^(ZeroDivisionError):\s*(.+)$/m,
+      /^(RuntimeError):\s*(.+)$/m,
+      /^(PermissionError):\s*(.+)$/m,
+      /^(OSError):\s*(.+)$/m,
+      /^(IOError):\s*(.+)$/m,
+      /^(ConnectionError):\s*(.+)$/m,
+      /^(TimeoutError):\s*(.+)$/m,
+    ];
+
+    for (const pattern of errorPatterns) {
+      const match = output.match(pattern);
+      if (match) {
+        return {
+          ename: match[1],
+          evalue: match[2].trim(),
+          traceback: [],  // traceback 추출은 복잡하므로 생략
+        };
+      }
+    }
+
+    // Traceback이 있으면 마지막 에러 라인 추출 시도
+    if (output.includes('Traceback (most recent call last):')) {
+      // 마지막 줄에서 에러 타입: 메시지 패턴 찾기
+      const lines = output.split('\n').filter(l => l.trim());
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const line = lines[i].trim();
+        const errorMatch = line.match(/^(\w+Error):\s*(.+)$/);
+        if (errorMatch) {
+          return {
+            ename: errorMatch[1],
+            evalue: errorMatch[2].trim(),
+            traceback: [],
+          };
+        }
+      }
+    }
+
+    return undefined;
   }
 
   /**

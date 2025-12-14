@@ -3,6 +3,7 @@ LLM Test Handler - Test LLM configuration
 """
 
 import json
+from typing import Dict, Tuple, Optional
 from jupyter_server.base.handlers import APIHandler
 from tornado import web
 from ..llm_service import LLMService
@@ -28,7 +29,7 @@ class TestLLMHandler(APIHandler):
         'vllm': ('vllm', 'endpoint', 'vLLM 엔드포인트가 필요합니다'),
     }
 
-    def _validate_provider_config(self, config: dict, provider: str) -> tuple[bool, str | None]:
+    def _validate_provider_config(self, config: Dict, provider: str) -> Tuple[bool, Optional[str]]:
         """Validate provider-specific configuration. Returns (is_valid, error_message)"""
         if provider not in self.VALIDATION_RULES:
             return True, None

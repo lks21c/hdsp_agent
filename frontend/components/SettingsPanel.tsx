@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { GeminiKeysPanel } from './GeminiKeysPanel';
 
 export interface LLMConfig {
   provider: 'gemini' | 'vllm' | 'openai';
@@ -124,24 +125,54 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     setTestResult(null);
 
     try {
-      const config = buildLLMConfig();
+      // For Gemini provider, test all individual keys
+      if (provider === 'gemini') {
+        const response = await fetch('/hdsp-agent/gemini-keys/test', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-XSRFToken': getCookie('_xsrf')
+          }
+        });
 
-      // Test API call
-      const response = await fetch('/hdsp-agent/test-llm', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-XSRFToken': getCookie('_xsrf')
-        },
-        body: JSON.stringify(config)
-      });
+        if (response.ok) {
+          const data = await response.json();
+          const results = data.results || [];
 
-      if (response.ok) {
-        const data = await response.json();
-        setTestResult(`✅ 성공: ${data.message}`);
+          if (results.length === 0) {
+            setTestResult('⚠️ 등록된 API 키가 없습니다');
+          } else {
+            const lines = results.map((r: any) =>
+              r.success
+                ? `✅ ${r.maskedKey}: OK`
+                : `❌ ${r.maskedKey}: ${r.message}`
+            );
+            const summary = `테스트 결과: ${data.successCount}/${data.totalKeys} 성공`;
+            setTestResult(`${summary}\n\n${lines.join('\n')}`);
+          }
+        } else {
+          const error = await response.json();
+          setTestResult(`❌ 테스트 실패: ${error.error}`);
+        }
       } else {
-        const error = await response.json();
-        setTestResult(`❌ 실패: ${error.error}`);
+        // For other providers, use the original test
+        const config = buildLLMConfig();
+        const response = await fetch('/hdsp-agent/test-llm', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-XSRFToken': getCookie('_xsrf')
+          },
+          body: JSON.stringify(config)
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setTestResult(`✅ 성공: ${data.message}`);
+        } else {
+          const error = await response.json();
+          setTestResult(`❌ 실패: ${error.error}`);
+        }
       }
     } catch (error) {
       setTestResult(`❌ 오류: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
@@ -190,16 +221,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <div className="jp-agent-settings-provider">
               <h3>Gemini 설정</h3>
               <div className="jp-agent-settings-group">
-                <label className="jp-agent-settings-label">API 키</label>
-                <input
-                  type="password"
-                  className="jp-agent-settings-input"
-                  value={geminiApiKey}
-                  onChange={(e) => setGeminiApiKey(e.target.value)}
-                  placeholder="Gemini API 키를 입력하세요"
-                />
-              </div>
-              <div className="jp-agent-settings-group">
                 <label className="jp-agent-settings-label">모델</label>
                 <select
                   className="jp-agent-settings-select"
@@ -211,6 +232,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
                 </select>
               </div>
+              {/* Multi-Key Management Panel */}
+              <GeminiKeysPanel />
             </div>
           )}
 

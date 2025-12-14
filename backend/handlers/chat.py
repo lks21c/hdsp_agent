@@ -4,6 +4,7 @@ Chat message handler for Jupyter Agent
 
 import json
 from dataclasses import dataclass
+from typing import Optional, Dict, Tuple, Union
 from jupyter_server.base.handlers import APIHandler
 from tornado import web
 from tornado.iostream import StreamClosedError
@@ -15,7 +16,7 @@ import uuid
 class ChatRequest:
     """Parsed chat request data"""
     message: str
-    conversation_id: str | None
+    conversation_id: Optional[str]
 
 
 class BaseChatHandler(APIHandler):
@@ -49,14 +50,14 @@ class BaseChatHandler(APIHandler):
             conversation_id=data.get('conversationId')
         )
 
-    def _get_or_create_conversation(self, conversation_id: str | None) -> str:
+    def _get_or_create_conversation(self, conversation_id: Optional[str]) -> str:
         """Get existing conversation or create new one"""
         if not conversation_id:
             conversation_id = str(uuid.uuid4())
             self.conversations[conversation_id] = []
         return conversation_id
 
-    def _validate_config(self, config: dict | None) -> tuple[bool, str | None]:
+    def _validate_config(self, config: Optional[Dict]) -> Tuple[bool, Optional[str]]:
         """Validate LLM configuration. Returns (is_valid, error_message)"""
         if not config:
             return False, 'LLM not configured. Please configure your LLM provider in settings.'
@@ -66,7 +67,7 @@ class BaseChatHandler(APIHandler):
             return False, 'LLM not configured. Please configure your LLM provider in settings.'
         return True, None
 
-    def _get_config(self) -> tuple[dict | None, str | None]:
+    def _get_config(self) -> Tuple[Optional[Dict], Optional[str]]:
         """Get and validate config. Returns (config, error_message)"""
         config_manager = self.settings.get('config_manager')
         if not config_manager:
@@ -78,7 +79,7 @@ class BaseChatHandler(APIHandler):
             return None, error
         return config, None
 
-    def _build_context(self, conversation_id: str, max_messages: int = 5) -> str | None:
+    def _build_context(self, conversation_id: str, max_messages: int = 5) -> Optional[str]:
         """Build conversation context from history"""
         if conversation_id not in self.conversations:
             return None
@@ -139,7 +140,7 @@ class BaseChatHandler(APIHandler):
             endpoint = provider_config.get('endpoint', 'http://localhost:8000')
             self.log.info(f"vLLM Endpoint: {endpoint}")
 
-    def _create_llm_service(self, config: dict, conversation_id: str) -> tuple[LLMService, str | None]:
+    def _create_llm_service(self, config: Dict, conversation_id: str) -> Tuple[LLMService, Optional[str]]:
         """Create LLM service and build context. Returns (llm_service, context)"""
         return LLMService(config), self._build_context(conversation_id)
 

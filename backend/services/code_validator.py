@@ -749,3 +749,154 @@ class CodeValidator:
             ],
             "summary": result.summary
         }
+
+
+class APIPatternChecker:
+    """
+    라이브러리별 API 안티패턴 감지
+    실행 전에 잘못된 API 사용을 감지하여 에러 예방
+    토큰 절약: replan 호출 자체를 방지하여 간접적으로 절약
+    """
+
+    # Dask 안티패턴 (가장 흔한 실수들)
+    DASK_ANTIPATTERNS = [
+        # head() 후 compute() - head()는 이미 pandas DataFrame 반환
+        (r'\.head\([^)]*\)\.compute\(\)',
+         "head()는 이미 pandas DataFrame을 반환합니다. compute() 불필요!"),
+        # columns.compute() - columns는 이미 pandas Index
+        (r'\.columns\.compute\(\)',
+         "columns는 이미 pandas Index입니다. compute() 불필요!"),
+        # dtypes.compute() - dtypes도 이미 pandas
+        (r'\.dtypes\.compute\(\)',
+         "dtypes는 이미 pandas입니다. compute() 불필요!"),
+        # value_counts(normalize=True) - Dask는 지원 안함
+        (r'\.value_counts\(\s*normalize\s*=\s*True',
+         "Dask는 value_counts(normalize=True)를 지원하지 않습니다."),
+        # value_counts().unstack() - Dask Series에 unstack 없음
+        (r'\.value_counts\([^)]*\)\.unstack\(',
+         "Dask Series에는 unstack() 메서드가 없습니다."),
+        # corr() 전체 - 문자열 컬럼 포함 시 에러
+        (r'(?<!\[\w+\])\.corr\(\)\.compute\(\)',
+         "corr()는 숫자형 컬럼만 선택 후 사용하세요: df[numeric_cols].corr().compute()"),
+    ]
+
+    # Matplotlib 안티패턴
+    MATPLOTLIB_ANTIPATTERNS = [
+        # tick_params에 ha 파라미터 사용 - 지원 안함
+        (r'tick_params\([^)]*ha\s*=',
+         "tick_params()에 ha 파라미터는 사용 불가. plt.setp(ax.get_xticklabels(), ha='right') 사용하세요."),
+        # tick_params에 rotation과 ha 함께 - 지원 안함
+        (r'tick_params\([^)]*rotation\s*=',
+         "tick_params()에 rotation 파라미터는 사용 불가. plt.xticks(rotation=...) 사용하세요."),
+    ]
+
+    # Pandas 안티패턴 (일반적인 실수)
+    PANDAS_ANTIPATTERNS = [
+        # inplace=True와 할당 동시 사용
+        (r'=\s*\w+\.\w+\([^)]*inplace\s*=\s*True',
+         "inplace=True 사용 시 할당하지 마세요. 결과가 None입니다."),
+        # iterrows() 대신 itertuples() 권장
+        (r'\.iterrows\(\)',
+         "iterrows()는 느립니다. 가능하면 itertuples() 또는 벡터 연산을 사용하세요.",
+         IssueSeverity.INFO),  # INFO로 처리 (경고만)
+    ]
+
+    # Polars 안티패턴
+    POLARS_ANTIPATTERNS = [
+        # pandas 스타일 인덱싱
+        (r'\.loc\[',
+         "Polars는 .loc 인덱싱을 지원하지 않습니다. filter() 또는 select()를 사용하세요."),
+        (r'\.iloc\[',
+         "Polars는 .iloc 인덱싱을 지원하지 않습니다. slice() 또는 row()를 사용하세요."),
+    ]
+
+    # 라이브러리별 패턴 매핑
+    LIBRARY_PATTERNS = {
+        'dask': DASK_ANTIPATTERNS,
+        'matplotlib': MATPLOTLIB_ANTIPATTERNS,
+        'pandas': PANDAS_ANTIPATTERNS,
+        'polars': POLARS_ANTIPATTERNS,
+    }
+
+    def check(
+        self,
+        code: str,
+        detected_libraries: List[str] = None
+    ) -> List[ValidationIssue]:
+        """
+        코드에서 API 안티패턴 검사
+
+        Args:
+            code: 검사할 Python 코드
+            detected_libraries: 사용 중인 라이브러리 목록
+
+        Returns:
+            발견된 API 안티패턴 이슈 목록
+        """
+        issues = []
+        detected_libraries = detected_libraries or []
+
+        # 코드에서 라이브러리 사용 감지 (import 또는 alias)
+        libraries_in_use = self._detect_libraries_in_code(code, detected_libraries)
+
+        for lib in libraries_in_use:
+            patterns = self.LIBRARY_PATTERNS.get(lib, [])
+
+            for pattern_info in patterns:
+                # 패턴이 (pattern, message) 또는 (pattern, message, severity) 형태
+                if len(pattern_info) == 2:
+                    pattern, message = pattern_info
+                    severity = IssueSeverity.WARNING
+                else:
+                    pattern, message, severity = pattern_info
+
+                matches = list(re.finditer(pattern, code))
+                for match in matches:
+                    # 매칭 위치에서 라인 번호 계산
+                    line_num = code[:match.start()].count('\n') + 1
+
+                    issues.append(ValidationIssue(
+                        severity=severity,
+                        category=IssueCategory.BEST_PRACTICE,
+                        message=f"[API 패턴] {message}",
+                        line=line_num,
+                        code_snippet=match.group(0)[:50]
+                    ))
+
+        return issues
+
+    def _detect_libraries_in_code(
+        self,
+        code: str,
+        detected_libraries: List[str]
+    ) -> List[str]:
+        """코드에서 사용 중인 라이브러리 감지"""
+        libraries = set(detected_libraries)
+
+        # import 문에서 감지
+        import_patterns = {
+            'dask': [r'import\s+dask', r'from\s+dask', r'\bdd\.', r'\bda\.'],
+            'matplotlib': [r'import\s+matplotlib', r'from\s+matplotlib', r'\bplt\.', r'import\s+seaborn', r'\bsns\.'],
+            'pandas': [r'import\s+pandas', r'from\s+pandas', r'\bpd\.'],
+            'polars': [r'import\s+polars', r'from\s+polars', r'\bpl\.'],
+        }
+
+        for lib, patterns in import_patterns.items():
+            for pattern in patterns:
+                if re.search(pattern, code, re.IGNORECASE):
+                    libraries.add(lib)
+                    break
+
+        return list(libraries)
+
+
+# APIPatternChecker 싱글톤 인스턴스
+_api_pattern_checker_instance: Optional[APIPatternChecker] = None
+
+
+def get_api_pattern_checker() -> APIPatternChecker:
+    """싱글톤 APIPatternChecker 반환"""
+    global _api_pattern_checker_instance
+    if _api_pattern_checker_instance is None:
+        _api_pattern_checker_instance = APIPatternChecker()
+    return _api_pattern_checker_instance

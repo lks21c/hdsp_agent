@@ -1735,7 +1735,12 @@ SyntaxError: '(' was never closed
             </svg>
           )}
           <span className="jp-agent-execution-status-text">
-            {status.message || status.phase}
+            {status.phase === 'completed'
+              ? '완료'
+              : status.phase === 'failed'
+                ? '실패'
+                : (status.message || status.phase)
+            }
           </span>
         </div>
 

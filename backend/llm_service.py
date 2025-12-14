@@ -5,7 +5,7 @@ LLM Service - Handles interactions with different LLM providers
 import os
 import json
 import asyncio
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 from contextlib import asynccontextmanager
 import aiohttp
 
@@ -13,9 +13,24 @@ import aiohttp
 class LLMService:
     """Service for interacting with various LLM providers"""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], key_manager=None):
         self.config = config
         self.provider = config.get('provider', 'gemini')
+        self._key_manager = key_manager  # Optional injection for testing
+
+    def _get_key_manager(self):
+        """Get key manager if using Gemini provider"""
+        if self._key_manager:
+            return self._key_manager
+        if self.provider == 'gemini':
+            try:
+                from .services.api_key_manager import get_key_manager
+                from .services.config_manager import ConfigManager
+                return get_key_manager(ConfigManager.get_instance())
+            except ImportError:
+                # Fallback for standalone usage
+                return None
+        return None
 
     # ========== Config Helpers ==========
 
@@ -301,46 +316,116 @@ class LLMService:
             raise ValueError(f"Unsupported provider: {self.provider}")
 
     async def _call_gemini(self, prompt: str, context: Optional[str] = None, max_retries: int = 3) -> str:
-        """Call Google Gemini API with retry logic"""
-        api_key, model, base_url = self._get_gemini_config()
-        print(f"[LLMService] Calling Gemini API with model: {model}")
-
-        url = f"{base_url}:generateContent?key={api_key}"
+        """Call Google Gemini API with key rotation on rate limits"""
+        key_manager = self._get_key_manager()
+        model = self.config.get('gemini', {}).get('model', 'gemini-2.5-pro')
         full_prompt = self._build_prompt(prompt, context)
         payload = self._build_gemini_payload(full_prompt)
 
-        async def _execute_request():
-            timeout = aiohttp.ClientTimeout(total=60)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(url, json=payload) as response:
-                    # Handle retryable errors with special Gemini-specific backoff
-                    if response.status in (503, 429):
-                        multiplier = 5 if response.status == 429 else 2
-                        error_type = "rate limit" if response.status == 429 else "overloaded"
-                        error_text = await response.text()
-                        raise Exception(f"Gemini API {error_type} ({response.status}): {error_text}")
+        for attempt in range(max_retries):
+            # Get API key (from key manager if available, else from config)
+            if key_manager and key_manager.get_key_count() > 0:
+                api_key, key_id = await key_manager.get_available_key()
+                if not api_key:
+                    # All keys in cooldown, wait for shortest
+                    api_key, key_id = await key_manager.wait_for_available_key()
+                if not api_key:
+                    raise ValueError("No Gemini API keys available")
+            else:
+                # Fallback to legacy single key
+                api_key, _, _ = self._get_gemini_config()
+                key_id = "legacy"
 
-                    if response.status != 200:
-                        error_text = await response.text()
-                        print(f"[LLMService] Gemini API Error: {error_text}")
-                        raise Exception(f"Gemini API error: {error_text}")
+            base_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}"
+            url = f"{base_url}:generateContent?key={api_key}"
+            print(f"[LLMService] Calling Gemini API with model: {model}, key: {key_id}")
 
-                    data = await response.json()
-                    print(f"[LLMService] Gemini API Response Status: {response.status}")
+            try:
+                timeout = aiohttp.ClientTimeout(total=60)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.post(url, json=payload) as response:
+                        # Handle rate limit (429) with key rotation
+                        if response.status == 429:
+                            retry_after_header = response.headers.get('Retry-After')
+                            retry_seconds = int(retry_after_header) if retry_after_header else None
+                            error_text = await response.text()
 
-                    # Debug: finishReason 확인 (응답이 왜 종료되었는지)
-                    if 'candidates' in data and len(data['candidates']) > 0:
-                        candidate = data['candidates'][0]
-                        finish_reason = candidate.get('finishReason', 'UNKNOWN')
-                        print(f"[LLMService] Gemini finishReason: {finish_reason}")
-                        if finish_reason not in ['STOP', 'UNKNOWN']:
-                            print(f"[LLMService] WARNING: Response may be incomplete! finishReason={finish_reason}")
+                            if key_manager and key_id != "legacy":
+                                await key_manager.mark_key_rate_limited(
+                                    key_id,
+                                    retry_after=retry_seconds,
+                                    error_message=error_text
+                                )
 
-                    response_text = self._parse_gemini_response(data)
-                    print(f"[LLMService] Successfully received response from {model} (length: {len(response_text)} chars)")
-                    return response_text
+                                # If more keys available, retry immediately with new key
+                                if key_manager.has_available_key():
+                                    print(f"[LLMService] Key {key_id} rate limited. Rotating to next key...")
+                                    continue
 
-        return await self._retry_with_backoff(_execute_request, max_retries, "Gemini")
+                            # All keys in cooldown or no key manager
+                            if attempt < max_retries - 1:
+                                wait_time = retry_seconds or 60
+                                print(f"[LLMService] Rate limit hit. Waiting {wait_time}s before retry...")
+                                await asyncio.sleep(wait_time)
+                                continue
+
+                            raise Exception(f"Rate limit exceeded after {max_retries} retries")
+
+                        # Handle server overload (503)
+                        if response.status == 503:
+                            if attempt < max_retries - 1:
+                                wait_time = (2 ** attempt) * 5
+                                print(f"[LLMService] Server overloaded. Waiting {wait_time}s...")
+                                await asyncio.sleep(wait_time)
+                                continue
+                            error_text = await response.text()
+                            raise Exception(f"Server overloaded: {error_text}")
+
+                        if response.status != 200:
+                            error_text = await response.text()
+                            print(f"[LLMService] Gemini API Error: {error_text}")
+                            raise Exception(f"Gemini API error: {error_text}")
+
+                        # Success
+                        data = await response.json()
+                        print(f"[LLMService] Gemini API Response Status: {response.status}")
+
+                        # Debug: finishReason 확인
+                        if 'candidates' in data and len(data['candidates']) > 0:
+                            candidate = data['candidates'][0]
+                            finish_reason = candidate.get('finishReason', 'UNKNOWN')
+                            print(f"[LLMService] Gemini finishReason: {finish_reason}")
+                            if finish_reason not in ['STOP', 'UNKNOWN']:
+                                print(f"[LLMService] WARNING: Response may be incomplete! finishReason={finish_reason}")
+
+                        response_text = self._parse_gemini_response(data)
+                        print(f"[LLMService] Successfully received response from {model} (length: {len(response_text)} chars)")
+
+                        # Mark key as successful
+                        if key_manager and key_id != "legacy":
+                            await key_manager.mark_key_success(key_id)
+
+                        return response_text
+
+            except asyncio.TimeoutError:
+                if attempt < max_retries - 1:
+                    wait_time = (2 ** attempt) * 3
+                    print(f"[LLMService] Timeout. Retrying in {wait_time}s...")
+                    await asyncio.sleep(wait_time)
+                    continue
+                raise Exception(f"Request timeout after {max_retries} retries")
+
+            except Exception as e:
+                error_msg = str(e)
+                # Network error - retry
+                if "API error" not in error_msg and attempt < max_retries - 1:
+                    wait_time = (2 ** attempt) * 2
+                    print(f"[LLMService] Network error: {e}. Retrying in {wait_time}s...")
+                    await asyncio.sleep(wait_time)
+                    continue
+                raise
+
+        raise Exception("Max retries exceeded")
 
     async def _call_vllm(self, prompt: str, context: Optional[str] = None) -> str:
         """Call vLLM endpoint with OpenAI Compatible API"""
