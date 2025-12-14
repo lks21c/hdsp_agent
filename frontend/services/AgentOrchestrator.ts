@@ -14,6 +14,8 @@ import { ApiService } from './ApiService';
 import { ToolExecutor } from './ToolExecutor';
 import { SafetyChecker } from '../utils/SafetyChecker';
 import { StateVerifier } from './StateVerifier';
+import { ContextManager } from './ContextManager';
+import { CheckpointManager } from './CheckpointManager';
 import {
   ToolCall,
   ToolResult,
@@ -44,13 +46,27 @@ import {
   ExecutionResult,
   StateExpectation,
   CONFIDENCE_THRESHOLDS,
+  // Tool Registry Types (Phase 1)
+  ApprovalCallback,
+  // Context Management Types (Phase 2)
+  ContextBudget,
+  TokenUsageStats,
+  ContextPruneResult,
+  // Checkpoint Types (Phase 3)
+  ExecutionCheckpoint,
+  RollbackResult,
+  CheckpointConfig,
+  CheckpointManagerState,
 } from '../types/auto-agent';
+import { ToolRegistry } from './ToolRegistry';
 
 export class AgentOrchestrator {
   private apiService: ApiService;
   private toolExecutor: ToolExecutor;
   private safetyChecker: SafetyChecker;
   private stateVerifier: StateVerifier;
+  private contextManager: ContextManager;
+  private checkpointManager: CheckpointManager;
   private config: AutoAgentConfig;
   private abortController: AbortController | null = null;
   private isRunning: boolean = false;
@@ -91,6 +107,10 @@ export class AgentOrchestrator {
     });
     // ★ State Verifier 초기화 (Phase 1)
     this.stateVerifier = new StateVerifier(this.apiService);
+    // ★ Context Manager 초기화 (Phase 2)
+    this.contextManager = new ContextManager();
+    // ★ Checkpoint Manager 초기화 (Phase 3)
+    this.checkpointManager = new CheckpointManager(notebook);
     this.config = { ...DEFAULT_AUTO_AGENT_CONFIG, ...config };
     console.log('[Orchestrator] Initialized with config:', {
       executionSpeed: this.config.executionSpeed,
@@ -129,6 +149,8 @@ export class AgentOrchestrator {
     this.executedStepVariableValues = {};
     // ★ State Verification 이력 초기화 (Phase 1)
     this.stateVerifier.clearHistory();
+    // ★ Checkpoint Manager 새 세션 시작 (Phase 3)
+    this.checkpointManager.startNewSession();
 
     const createdCells: number[] = [];
     const modifiedCells: number[] = [];
@@ -345,6 +367,24 @@ export class AgentOrchestrator {
 
         // ★ 성공한 Step에서 정의된 변수 추적 (cross-step validation용)
         this.trackVariablesFromStep(step);
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // CHECKPOINT CREATION (Phase 3): 성공 스텝 후 체크포인트 저장
+        // ═══════════════════════════════════════════════════════════════════════
+        const newVars = this.extractVariablesFromCode(
+          step.toolCalls
+            .filter(tc => tc.tool === 'jupyter_cell')
+            .map(tc => (tc.parameters as JupyterCellParams).code)
+            .join('\n')
+        );
+        this.checkpointManager.createCheckpoint(
+          step.stepNumber,
+          step.description,
+          currentPlan,
+          stepResult,
+          newVars
+        );
+        console.log(`[Orchestrator] Checkpoint created for step ${step.stepNumber}`);
 
         // ═══════════════════════════════════════════════════════════════════════
         // STATE VERIFICATION (Phase 1): 상태 검증 레이어
@@ -838,12 +878,59 @@ export class AgentOrchestrator {
 
   /**
    * 노트북 컨텍스트 추출
+   * ★ Phase 2: ContextManager를 사용하여 토큰 예산 내에서 최적화된 컨텍스트 반환
    */
-  private extractNotebookContext(notebook: NotebookPanel): NotebookContext {
+  private extractNotebookContext(notebook: NotebookPanel, currentCellIndex?: number): NotebookContext {
     const cells = notebook.content.model?.cells;
     const cellCount = cells?.length || 0;
 
-    // 최근 3개 셀 정보 추출
+    // 모든 셀 정보 추출 (ContextManager가 우선순위에 따라 필터링)
+    const allCells: CellContext[] = [];
+    if (cells) {
+      for (let i = 0; i < cellCount; i++) {
+        const cell = cells.get(i);
+        allCells.push({
+          index: i,
+          type: cell.type as 'code' | 'markdown',
+          source: cell.sharedModel.getSource(),
+          output: this.toolExecutor.getCellOutput(i),
+        });
+      }
+    }
+
+    const rawContext: NotebookContext = {
+      cellCount,
+      recentCells: allCells,
+      importedLibraries: this.detectImportedLibraries(notebook),
+      definedVariables: this.detectDefinedVariables(notebook),
+      notebookPath: notebook.context?.path,
+    };
+
+    // ★ ContextManager를 통한 토큰 예산 기반 최적화
+    const { context: optimizedContext, usage, pruneResult } =
+      this.contextManager.extractOptimizedContext(rawContext, currentCellIndex);
+
+    // 로깅
+    if (pruneResult) {
+      console.log(
+        `[Orchestrator] Context optimized: ${pruneResult.originalTokens} → ${pruneResult.prunedTokens} tokens ` +
+        `(removed: ${pruneResult.removedCellCount}, truncated: ${pruneResult.truncatedCellCount})`
+      );
+    } else {
+      console.log(`[Orchestrator] Context usage: ${usage.totalTokens} tokens (${(usage.usagePercent * 100).toFixed(1)}%)`);
+    }
+
+    return optimizedContext;
+  }
+
+  /**
+   * 원본 노트북 컨텍스트 추출 (최적화 없이)
+   * ★ Phase 2: 디버깅/테스트용
+   */
+  private extractRawNotebookContext(notebook: NotebookPanel): NotebookContext {
+    const cells = notebook.content.model?.cells;
+    const cellCount = cells?.length || 0;
+
     const recentCells: CellContext[] = [];
     if (cells) {
       const startIndex = Math.max(0, cellCount - 3);
@@ -852,8 +939,8 @@ export class AgentOrchestrator {
         recentCells.push({
           index: i,
           type: cell.type as 'code' | 'markdown',
-          source: cell.sharedModel.getSource().slice(0, 500), // 처음 500자만
-          output: this.toolExecutor.getCellOutput(i).slice(0, 300), // 처음 300자만
+          source: cell.sharedModel.getSource().slice(0, 500),
+          output: this.toolExecutor.getCellOutput(i).slice(0, 300),
         });
       }
     }
@@ -1280,6 +1367,29 @@ export class AgentOrchestrator {
     if (config.autoScrollToCell !== undefined) {
       this.toolExecutor.setAutoScroll(this.config.autoScrollToCell);
     }
+  }
+
+  /**
+   * 승인 콜백 설정 (Tool Registry 연동)
+   * @param callback 승인 요청 시 호출될 콜백 함수
+   */
+  setApprovalCallback(callback: ApprovalCallback): void {
+    this.toolExecutor.setApprovalCallback(callback);
+  }
+
+  /**
+   * 승인 필요 여부 설정
+   * @param required true면 위험 도구 실행 전 승인 필요
+   */
+  setApprovalRequired(required: boolean): void {
+    this.toolExecutor.setApprovalRequired(required);
+  }
+
+  /**
+   * Tool Registry 인스턴스 반환 (외부 도구 등록용)
+   */
+  getToolRegistry(): ToolRegistry {
+    return this.toolExecutor.getRegistry();
   }
 
   /**
@@ -1808,6 +1918,71 @@ export class AgentOrchestrator {
     return this.stateVerifier.analyzeConfidenceTrend();
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Context Management Methods (Phase 2)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * ★ 컨텍스트 예산 설정 업데이트 (Phase 2)
+   * @param budget 새로운 예산 설정 (부분 업데이트 가능)
+   */
+  updateContextBudget(budget: Partial<ContextBudget>): void {
+    this.contextManager.updateBudget(budget);
+    console.log('[Orchestrator] Context budget updated:', this.contextManager.getBudget());
+  }
+
+  /**
+   * ★ 현재 컨텍스트 예산 설정 반환 (Phase 2)
+   */
+  getContextBudget(): ContextBudget {
+    return this.contextManager.getBudget();
+  }
+
+  /**
+   * ★ 현재 토큰 사용량 통계 반환 (Phase 2)
+   */
+  getContextUsage(): TokenUsageStats | null {
+    return this.contextManager.getLastUsage();
+  }
+
+  /**
+   * ★ 현재 노트북의 컨텍스트 사용량 분석 (Phase 2)
+   * 예산 상태와 권장 사항을 반환
+   */
+  analyzeContextUsage(): {
+    usage: TokenUsageStats;
+    status: 'ok' | 'warning' | 'critical';
+    recommendation: string;
+  } {
+    const rawContext = this.extractRawNotebookContext(this.notebook);
+    const usage = this.contextManager.calculateUsage(rawContext);
+    const budget = this.contextManager.getBudget();
+
+    let status: 'ok' | 'warning' | 'critical';
+    let recommendation: string;
+
+    if (usage.usagePercent >= 1.0) {
+      status = 'critical';
+      recommendation = '토큰 예산 초과. 컨텍스트가 자동 축소됩니다.';
+    } else if (usage.usagePercent >= budget.warningThreshold) {
+      status = 'warning';
+      recommendation = '토큰 사용량이 경고 임계값에 근접합니다. 필요 시 예산을 늘리세요.';
+    } else {
+      status = 'ok';
+      recommendation = '토큰 사용량이 정상 범위입니다.';
+    }
+
+    return { usage, status, recommendation };
+  }
+
+  /**
+   * ★ ContextManager 인스턴스 반환 (Phase 2)
+   * 외부에서 직접 컨텍스트 관리가 필요한 경우
+   */
+  getContextManager(): ContextManager {
+    return this.contextManager;
+  }
+
   /**
    * Replan decision 레이블 반환
    */
@@ -1841,6 +2016,95 @@ export class AgentOrchestrator {
       return altMatch[1];
     }
     return undefined;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Checkpoint Management Methods (Phase 3)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * ★ CheckpointManager 인스턴스 반환 (Phase 3)
+   * 외부에서 직접 체크포인트 관리가 필요한 경우
+   */
+  getCheckpointManager(): CheckpointManager {
+    return this.checkpointManager;
+  }
+
+  /**
+   * ★ 특정 체크포인트로 롤백 (Phase 3)
+   * @param stepNumber 롤백할 스텝 번호
+   * @returns 롤백 결과
+   */
+  async rollbackToCheckpoint(stepNumber: number): Promise<RollbackResult> {
+    console.log(`[Orchestrator] Initiating rollback to step ${stepNumber}`);
+    return this.checkpointManager.rollbackTo(stepNumber);
+  }
+
+  /**
+   * ★ 모든 체크포인트 조회 (Phase 3)
+   * @returns 체크포인트 배열 (스텝 번호 순)
+   */
+  getCheckpoints(): ExecutionCheckpoint[] {
+    return this.checkpointManager.getAllCheckpoints();
+  }
+
+  /**
+   * ★ 가장 최근 체크포인트 조회 (Phase 3)
+   * @returns 최신 체크포인트 또는 undefined
+   */
+  getLatestCheckpoint(): ExecutionCheckpoint | undefined {
+    return this.checkpointManager.getLatestCheckpoint();
+  }
+
+  /**
+   * ★ 체크포인트 매니저 상태 조회 (Phase 3)
+   * @returns 체크포인트 매니저 상태 정보
+   */
+  getCheckpointState(): CheckpointManagerState {
+    return this.checkpointManager.getState();
+  }
+
+  /**
+   * ★ 체크포인트 설정 업데이트 (Phase 3)
+   * @param config 새로운 설정 (부분 업데이트 가능)
+   */
+  updateCheckpointConfig(config: Partial<CheckpointConfig>): void {
+    this.checkpointManager.updateConfig(config);
+    console.log('[Orchestrator] Checkpoint config updated:', this.checkpointManager.getConfig());
+  }
+
+  /**
+   * ★ 현재 체크포인트 설정 반환 (Phase 3)
+   */
+  getCheckpointConfig(): CheckpointConfig {
+    return this.checkpointManager.getConfig();
+  }
+
+  /**
+   * ★ 가장 최근 체크포인트로 롤백 (Phase 3)
+   * @returns 롤백 결과
+   */
+  async rollbackToLatestCheckpoint(): Promise<RollbackResult> {
+    console.log('[Orchestrator] Initiating rollback to latest checkpoint');
+    return this.checkpointManager.rollbackToLatest();
+  }
+
+  /**
+   * ★ 특정 스텝 이전 체크포인트로 롤백 (Phase 3)
+   * @param stepNumber 이 스텝 바로 이전 체크포인트로 롤백
+   * @returns 롤백 결과
+   */
+  async rollbackBeforeStep(stepNumber: number): Promise<RollbackResult> {
+    console.log(`[Orchestrator] Initiating rollback before step ${stepNumber}`);
+    return this.checkpointManager.rollbackBefore(stepNumber);
+  }
+
+  /**
+   * ★ 모든 체크포인트 삭제 (Phase 3)
+   */
+  clearAllCheckpoints(): void {
+    this.checkpointManager.clearAllCheckpoints();
+    console.log('[Orchestrator] All checkpoints cleared');
   }
 }
 

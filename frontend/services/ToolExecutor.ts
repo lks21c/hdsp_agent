@@ -22,16 +22,87 @@ import {
   FinalAnswerParams,
   ExecutionResult,
   CellOperation,
+  ToolExecutionContext,
+  ApprovalCallback,
 } from '../types/auto-agent';
+
+import { ToolRegistry, BUILTIN_TOOL_DEFINITIONS } from './ToolRegistry';
 
 export class ToolExecutor {
   private notebook: NotebookPanel;
   private sessionContext: ISessionContext;
   private autoScrollEnabled: boolean = true;
+  private registry: ToolRegistry;
 
   constructor(notebook: NotebookPanel, sessionContext: ISessionContext) {
     this.notebook = notebook;
     this.sessionContext = sessionContext;
+    this.registry = ToolRegistry.getInstance();
+
+    // 빌트인 도구들 등록
+    this.registerBuiltinTools();
+  }
+
+  /**
+   * 빌트인 도구들을 레지스트리에 등록
+   */
+  private registerBuiltinTools(): void {
+    // jupyter_cell 도구 등록
+    const jupyterCellDef = BUILTIN_TOOL_DEFINITIONS.find(t => t.name === 'jupyter_cell');
+    if (jupyterCellDef && !this.registry.hasTool('jupyter_cell')) {
+      this.registry.register({
+        ...jupyterCellDef,
+        executor: async (params: JupyterCellParams, context: ToolExecutionContext) => {
+          return this.executeJupyterCell(params, context.stepNumber);
+        },
+      });
+    }
+
+    // markdown 도구 등록
+    const markdownDef = BUILTIN_TOOL_DEFINITIONS.find(t => t.name === 'markdown');
+    if (markdownDef && !this.registry.hasTool('markdown')) {
+      this.registry.register({
+        ...markdownDef,
+        executor: async (params: MarkdownParams, context: ToolExecutionContext) => {
+          return this.executeMarkdown(params, context.stepNumber);
+        },
+      });
+    }
+
+    // final_answer 도구 등록
+    const finalAnswerDef = BUILTIN_TOOL_DEFINITIONS.find(t => t.name === 'final_answer');
+    if (finalAnswerDef && !this.registry.hasTool('final_answer')) {
+      this.registry.register({
+        ...finalAnswerDef,
+        executor: async (params: FinalAnswerParams, _context: ToolExecutionContext) => {
+          return this.executeFinalAnswer(params);
+        },
+      });
+    }
+
+    console.log('[ToolExecutor] Built-in tools registered');
+    this.registry.printStatus();
+  }
+
+  /**
+   * 승인 콜백 설정 (ApprovalDialog 연동용)
+   */
+  setApprovalCallback(callback: ApprovalCallback): void {
+    this.registry.setApprovalCallback(callback);
+  }
+
+  /**
+   * 승인 필요 여부 설정
+   */
+  setApprovalRequired(required: boolean): void {
+    this.registry.setApprovalRequired(required);
+  }
+
+  /**
+   * 레지스트리 인스턴스 반환 (외부 도구 등록용)
+   */
+  getRegistry(): ToolRegistry {
+    return this.registry;
   }
 
   /**
@@ -100,33 +171,22 @@ export class ToolExecutor {
   }
 
   /**
-   * Tool 실행 라우터
+   * Tool 실행 라우터 (레지스트리 기반)
    * @param call - 도구 호출 정보
    * @param stepNumber - 실행 계획의 단계 번호 (셀에 표시용)
    */
   async executeTool(call: ToolCall, stepNumber?: number): Promise<ToolResult> {
     console.log('[ToolExecutor] executeTool called:', JSON.stringify(call, null, 2), 'stepNumber:', stepNumber);
 
-    let result: ToolResult;
-    switch (call.tool) {
-      case 'jupyter_cell':
-        console.log('[ToolExecutor] Executing jupyter_cell tool');
-        result = await this.executeJupyterCell(call.parameters as JupyterCellParams, stepNumber);
-        break;
-      case 'markdown':
-        console.log('[ToolExecutor] Executing markdown tool');
-        result = await this.executeMarkdown(call.parameters as MarkdownParams, stepNumber);
-        break;
-      case 'final_answer':
-        console.log('[ToolExecutor] Executing final_answer tool');
-        result = await this.executeFinalAnswer(call.parameters as FinalAnswerParams);
-        break;
-      default:
-        result = {
-          success: false,
-          error: `Unknown tool: ${(call as any).tool}`,
-        };
-    }
+    // 실행 컨텍스트 생성
+    const context: ToolExecutionContext = {
+      notebook: this.notebook,
+      sessionContext: this.sessionContext,
+      stepNumber,
+    };
+
+    // 레지스트리를 통해 도구 실행 (승인 게이트 포함)
+    const result = await this.registry.executeTool(call.tool, call.parameters, context);
 
     console.log('[ToolExecutor] Tool result:', JSON.stringify(result, null, 2));
     return result;

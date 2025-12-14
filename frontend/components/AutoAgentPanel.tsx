@@ -20,7 +20,13 @@ import {
   ExecutionSpeed,
   EXECUTION_SPEED_DELAYS,
   CellOperation,
+  ApprovalRequest,
+  ApprovalResult,
+  // Checkpoint Types (Phase 3)
+  ExecutionCheckpoint,
+  RollbackResult,
 } from '../types/auto-agent';
+import { ApprovalDialog } from './ApprovalDialog';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Props
@@ -378,6 +384,17 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
   const [executionSpeed, setExecutionSpeed] = useState<ExecutionSpeed>('normal');
   const [isPaused, setIsPaused] = useState(false);
 
+  // Tool Approval State (Phase 1)
+  const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
+  const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(null);
+  const approvalResolverRef = useRef<((result: ApprovalResult) => void) | null>(null);
+
+  // Checkpoint/Rollback State (Phase 3)
+  const [checkpoints, setCheckpoints] = useState<ExecutionCheckpoint[]>([]);
+  const [showRollbackUI, setShowRollbackUI] = useState(false);
+  const [isRollingBack, setIsRollingBack] = useState(false);
+  const [rollbackResult, setRollbackResult] = useState<RollbackResult | null>(null);
+
   const orchestratorRef = useRef<AgentOrchestrator | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mergedConfig = { ...DEFAULT_AUTO_AGENT_CONFIG, ...config, executionSpeed };
@@ -386,12 +403,113 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
   const sessionContext = propSessionContext || (notebook?.sessionContext as ISessionContext | null);
   const apiService = propApiService || new ApiService();
 
+  // Approval Callback - 승인 요청 시 다이얼로그 표시
+  const handleApprovalRequest = useCallback(async (request: ApprovalRequest): Promise<ApprovalResult> => {
+    return new Promise((resolve) => {
+      setPendingApproval(request);
+      setApprovalDialogOpen(true);
+      approvalResolverRef.current = resolve;
+    });
+  }, []);
+
+  // Approval Dialog Handlers
+  const handleApprove = useCallback((requestId: string) => {
+    if (approvalResolverRef.current) {
+      approvalResolverRef.current({
+        approved: true,
+        requestId,
+        timestamp: Date.now(),
+      });
+      approvalResolverRef.current = null;
+    }
+    setApprovalDialogOpen(false);
+    setPendingApproval(null);
+  }, []);
+
+  const handleReject = useCallback((requestId: string, reason?: string) => {
+    if (approvalResolverRef.current) {
+      approvalResolverRef.current({
+        approved: false,
+        requestId,
+        reason: reason || '사용자가 거부함',
+        timestamp: Date.now(),
+      });
+      approvalResolverRef.current = null;
+    }
+    setApprovalDialogOpen(false);
+    setPendingApproval(null);
+  }, []);
+
+  const handleApprovalDialogClose = useCallback(() => {
+    if (pendingApproval) {
+      handleReject(pendingApproval.id, '다이얼로그 닫힘');
+    }
+  }, [pendingApproval, handleReject]);
+
+  // Rollback Handlers (Phase 3)
+  const handleShowRollbackUI = useCallback(() => {
+    if (orchestratorRef.current) {
+      const currentCheckpoints = orchestratorRef.current.getCheckpoints();
+      setCheckpoints(currentCheckpoints);
+      setShowRollbackUI(true);
+      setRollbackResult(null);
+    }
+  }, []);
+
+  const handleHideRollbackUI = useCallback(() => {
+    setShowRollbackUI(false);
+    setRollbackResult(null);
+  }, []);
+
+  const handleRollbackToCheckpoint = useCallback(async (stepNumber: number) => {
+    if (!orchestratorRef.current) return;
+
+    setIsRollingBack(true);
+    setRollbackResult(null);
+
+    try {
+      const result = await orchestratorRef.current.rollbackToCheckpoint(stepNumber);
+      setRollbackResult(result);
+
+      if (result.success) {
+        // 롤백 성공 시 체크포인트 목록 업데이트
+        const updatedCheckpoints = orchestratorRef.current.getCheckpoints();
+        setCheckpoints(updatedCheckpoints);
+        // 실패한 스텝 목록에서 롤백된 스텝 이후 제거
+        setFailedSteps(prev => prev.filter(s => s <= stepNumber));
+        // 완료된 스텝 목록 업데이트
+        setCompletedSteps(prev => prev.filter(s => s <= stepNumber));
+      }
+    } catch (error: any) {
+      setRollbackResult({
+        success: false,
+        rolledBackTo: stepNumber,
+        deletedCells: [],
+        restoredCells: [],
+        error: error.message || '롤백 중 오류 발생',
+      });
+    } finally {
+      setIsRollingBack(false);
+    }
+  }, []);
+
+  const handleRollbackToLatest = useCallback(async () => {
+    if (!orchestratorRef.current) return;
+
+    const latestCheckpoint = orchestratorRef.current.getLatestCheckpoint();
+    if (latestCheckpoint) {
+      await handleRollbackToCheckpoint(latestCheckpoint.stepNumber);
+    }
+  }, [handleRollbackToCheckpoint]);
+
   useEffect(() => {
     if (notebook && sessionContext) {
       orchestratorRef.current = new AgentOrchestrator(notebook, sessionContext, apiService, mergedConfig);
+      // 승인 콜백 설정
+      orchestratorRef.current.setApprovalCallback(handleApprovalRequest);
     }
     return () => { orchestratorRef.current = null; };
-  }, [notebook, sessionContext, apiService]);
+  }, [notebook, sessionContext, apiService, handleApprovalRequest]);
 
   // 일시정지 상태 폴링 (step-by-step 모드용)
   useEffect(() => {
@@ -478,6 +596,14 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
     setCompletedSteps([]);
     setFailedSteps([]);
     setIsPaused(false);
+    // Phase 3: Checkpoint 관련 상태 초기화
+    setCheckpoints([]);
+    setShowRollbackUI(false);
+    setRollbackResult(null);
+    // Orchestrator 체크포인트 클리어
+    if (orchestratorRef.current) {
+      orchestratorRef.current.clearAllCheckpoints();
+    }
     textareaRef.current?.focus();
   }, []);
 
@@ -612,6 +738,85 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
             <span>{result.createdCells.length}개 셀 생성</span>
             <span>{result.modifiedCells.length}개 셀 수정</span>
           </div>
+          {/* Phase 3: 실패 시 롤백 버튼 */}
+          {!result.success && !isRunning && (
+            <button
+              className="aa-btn aa-btn--rollback"
+              onClick={handleShowRollbackUI}
+              disabled={isRollingBack}
+            >
+              체크포인트로 롤백
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Rollback UI (Phase 3) */}
+      {showRollbackUI && (
+        <div className="aa-rollback-panel">
+          <div className="aa-rollback-header">
+            <span className="aa-rollback-title">체크포인트 롤백</span>
+            <button className="aa-rollback-close" onClick={handleHideRollbackUI}>
+              <svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14">
+                <path d="M3.72 3.72a.75.75 0 011.06 0L8 6.94l3.22-3.22a.75.75 0 111.06 1.06L9.06 8l3.22 3.22a.75.75 0 11-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 01-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 010-1.06z"/>
+              </svg>
+            </button>
+          </div>
+
+          {/* 롤백 결과 메시지 */}
+          {rollbackResult && (
+            <div className={`aa-rollback-result aa-rollback-result--${rollbackResult.success ? 'success' : 'error'}`}>
+              {rollbackResult.success ? (
+                <span>
+                  Step {rollbackResult.rolledBackTo}로 롤백 완료
+                  ({rollbackResult.deletedCells.length}개 셀 삭제, {rollbackResult.restoredCells.length}개 셀 복원)
+                </span>
+              ) : (
+                <span>롤백 실패: {rollbackResult.error}</span>
+              )}
+            </div>
+          )}
+
+          {/* 체크포인트 목록 */}
+          {checkpoints.length > 0 ? (
+            <div className="aa-checkpoint-list">
+              {checkpoints.map((cp) => (
+                <div key={cp.id} className="aa-checkpoint-item">
+                  <div className="aa-checkpoint-info">
+                    <span className="aa-checkpoint-step">Step {cp.stepNumber}</span>
+                    <span className="aa-checkpoint-desc">{cp.description}</span>
+                    <span className="aa-checkpoint-time">
+                      {new Date(cp.timestamp).toLocaleTimeString()}
+                    </span>
+                  </div>
+                  <button
+                    className="aa-btn aa-btn--small"
+                    onClick={() => handleRollbackToCheckpoint(cp.stepNumber)}
+                    disabled={isRollingBack}
+                  >
+                    {isRollingBack ? '롤백 중...' : '롤백'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="aa-checkpoint-empty">
+              저장된 체크포인트가 없습니다.
+            </div>
+          )}
+
+          {/* 최신 체크포인트로 롤백 버튼 */}
+          {checkpoints.length > 0 && (
+            <div className="aa-rollback-actions">
+              <button
+                className="aa-btn aa-btn--primary"
+                onClick={handleRollbackToLatest}
+                disabled={isRollingBack}
+              >
+                {isRollingBack ? '롤백 중...' : '마지막 성공 지점으로 롤백'}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -622,6 +827,16 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
           <p className="aa-hint-sub">Shift+Enter로 줄바꿈</p>
         </div>
       )}
+
+      {/* Approval Dialog (Phase 1) */}
+      <ApprovalDialog
+        open={approvalDialogOpen}
+        request={pendingApproval}
+        onApprove={handleApprove}
+        onReject={handleReject}
+        onClose={handleApprovalDialogClose}
+        autoRejectTimeout={30}  // 30초 후 자동 거부
+      />
     </div>
   );
 };

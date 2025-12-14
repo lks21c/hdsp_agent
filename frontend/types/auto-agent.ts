@@ -602,3 +602,215 @@ export interface AutoAgentVerifyStateRequest {
 export interface AutoAgentVerifyStateResponse {
   verification: StateVerificationResult;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Tool Registry & Approval Types (Phase 1)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * 도구 위험 수준 (Tool Registry용)
+ * - low: 읽기 전용, 셀 내부 실행
+ * - medium: 셀 생성/수정
+ * - high: 파일 시스템 접근
+ * - critical: 네트워크/시스템 명령
+ */
+export type ToolRiskLevel = 'low' | 'medium' | 'high' | 'critical';
+
+/**
+ * 도구 카테고리
+ */
+export type ToolCategory = 'cell' | 'file' | 'network' | 'system' | 'answer';
+
+/**
+ * 도구 실행 컨텍스트
+ */
+export interface ToolExecutionContext {
+  notebook: any;  // NotebookPanel
+  sessionContext: any;  // ISessionContext
+  stepNumber?: number;
+}
+
+/**
+ * 도구 정의 인터페이스
+ */
+export interface ToolDefinition {
+  name: ToolName;
+  description: string;
+  riskLevel: ToolRiskLevel;
+  requiresApproval: boolean;
+  category: ToolCategory;
+  executor: (params: any, context: ToolExecutionContext) => Promise<ToolResult>;
+}
+
+/**
+ * 승인 요청 정보
+ */
+export interface ApprovalRequest {
+  id: string;
+  toolName: ToolName;
+  toolDefinition: ToolDefinition;
+  parameters: any;
+  stepNumber?: number;
+  description?: string;
+  timestamp: number;
+}
+
+/**
+ * 승인 결과
+ */
+export interface ApprovalResult {
+  approved: boolean;
+  requestId: string;
+  reason?: string;
+  timestamp: number;
+}
+
+/**
+ * 승인 콜백 타입
+ */
+export type ApprovalCallback = (request: ApprovalRequest) => Promise<ApprovalResult>;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Context Window Management Types (Phase 2)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * 셀 우선순위 레벨
+ * - critical: 현재 실행 중인 셀
+ * - high: 최근 3개 셀
+ * - medium: 최근 5개 셀 (high 제외)
+ * - low: 나머지 셀
+ */
+export type CellPriority = 'critical' | 'high' | 'medium' | 'low';
+
+/**
+ * 우선순위가 부여된 셀 정보
+ */
+export interface PrioritizedCell extends CellContext {
+  priority: CellPriority;
+  tokenEstimate: number;
+}
+
+/**
+ * 토큰 사용량 통계
+ */
+export interface TokenUsageStats {
+  totalTokens: number;
+  cellTokens: number;
+  variableTokens: number;
+  libraryTokens: number;
+  reservedTokens: number;
+  usagePercent: number;
+}
+
+/**
+ * 컨텍스트 예산 설정
+ */
+export interface ContextBudget {
+  maxTokens: number;           // 최대 토큰 수 (기본: 8000)
+  warningThreshold: number;    // 경고 임계값 (0-1, 기본: 0.75)
+  reservedForResponse: number; // 응답용 예약 토큰 (기본: 2000)
+}
+
+/**
+ * 기본 컨텍스트 예산 설정
+ */
+export const DEFAULT_CONTEXT_BUDGET: ContextBudget = {
+  maxTokens: 8000,
+  warningThreshold: 0.75,
+  reservedForResponse: 2000,
+};
+
+/**
+ * 컨텍스트 관리자 상태
+ */
+export interface ContextManagerState {
+  budget: ContextBudget;
+  currentUsage: TokenUsageStats;
+  isPruningRequired: boolean;
+  lastPruneTimestamp?: number;
+}
+
+/**
+ * 컨텍스트 축소 결과
+ */
+export interface ContextPruneResult {
+  originalTokens: number;
+  prunedTokens: number;
+  removedCellCount: number;
+  truncatedCellCount: number;
+  preservedCells: number[];  // 유지된 셀 인덱스들
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Checkpoint/Rollback Types (Phase 3)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * 셀 스냅샷 정보
+ * 롤백 시 셀 상태 복원에 사용
+ */
+export interface CellSnapshot {
+  index: number;
+  type: 'code' | 'markdown';
+  source: string;
+  outputs: any[];
+  wasCreated: boolean;       // 이 스텝에서 새로 생성된 셀인지
+  wasModified: boolean;      // 이 스텝에서 수정된 셀인지
+  previousSource?: string;   // 수정 전 원본 소스 (wasModified=true일 때)
+}
+
+/**
+ * 실행 체크포인트
+ * 각 성공 스텝 후 저장되는 상태 스냅샷
+ */
+export interface ExecutionCheckpoint {
+  id: string;
+  stepNumber: number;
+  timestamp: number;
+  description: string;        // 스텝 설명
+  planSnapshot: ExecutionPlan;
+  cellSnapshots: CellSnapshot[];
+  variableNames: string[];    // 이 시점까지 정의된 변수들
+  createdCellIndices: number[];   // 이 시점까지 생성된 셀 인덱스들
+  modifiedCellIndices: number[];  // 이 시점까지 수정된 셀 인덱스들
+}
+
+/**
+ * 롤백 결과
+ */
+export interface RollbackResult {
+  success: boolean;
+  rolledBackTo: number;       // 롤백된 체크포인트의 stepNumber
+  deletedCells: number[];     // 삭제된 셀 인덱스들
+  restoredCells: number[];    // 복원된 셀 인덱스들
+  error?: string;
+}
+
+/**
+ * 체크포인트 관리자 설정
+ */
+export interface CheckpointConfig {
+  maxCheckpoints: number;     // 최대 체크포인트 수 (순환 버퍼, 기본: 10)
+  autoSave: boolean;          // 자동 저장 여부 (기본: true)
+  saveToNotebookMetadata: boolean;  // 노트북 메타데이터에 저장 (기본: false)
+}
+
+/**
+ * 기본 체크포인트 설정
+ */
+export const DEFAULT_CHECKPOINT_CONFIG: CheckpointConfig = {
+  maxCheckpoints: 10,
+  autoSave: true,
+  saveToNotebookMetadata: false,
+};
+
+/**
+ * 체크포인트 관리자 상태
+ */
+export interface CheckpointManagerState {
+  config: CheckpointConfig;
+  checkpointCount: number;
+  oldestCheckpoint?: number;  // 가장 오래된 체크포인트의 stepNumber
+  latestCheckpoint?: number;  // 가장 최근 체크포인트의 stepNumber
+}
