@@ -100,8 +100,13 @@ function injectButtonsIntoCell(cell: Cell, panel: any): void {
     return;
   }
 
+  // Only inject buttons into code cells (not markdown, raw, etc.)
+  if (cell.model.type !== 'code') {
+    return;
+  }
+
   const cellNode = cell.node;
-  if (!cellNode || !cellNode.classList.contains('jp-Cell')) {
+  if (!cellNode || !cellNode.classList.contains('jp-CodeCell')) {
     return;
   }
 
