@@ -18,6 +18,9 @@ from .state_verifier import (
 from .session_manager import (
     SessionManager, get_session_manager, Session, ChatMessage
 )
+from .context_condenser import (
+    ContextCondenser, get_context_condenser, CompressionStrategy, CompressionStats
+)
 
 __all__ = [
     'ConfigManager',
@@ -56,4 +59,9 @@ __all__ = [
     'get_session_manager',
     'Session',
     'ChatMessage',
+    # Context Condenser (Token Optimization)
+    'ContextCondenser',
+    'get_context_condenser',
+    'CompressionStrategy',
+    'CompressionStats',
 ]

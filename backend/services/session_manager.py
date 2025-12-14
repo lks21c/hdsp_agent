@@ -160,17 +160,46 @@ class SessionManager:
             return []
         return session.messages[-limit:]
 
-    def build_context(self, session_id: str, max_messages: int = 5) -> Optional[str]:
-        """Build conversation context string from recent history."""
+    def build_context(
+        self,
+        session_id: str,
+        max_messages: int = 5,
+        compress: bool = False,
+        target_tokens: Optional[int] = None,
+    ) -> Optional[str]:
+        """Build conversation context string from recent history.
+
+        Args:
+            session_id: Session ID to get context from
+            max_messages: Maximum messages to include (before compression)
+            compress: Enable context compression for token efficiency
+            target_tokens: Target token count for compression (default: auto)
+
+        Returns:
+            Formatted context string or None if session empty
+        """
         session = self._sessions.get(session_id)
         if not session or not session.messages:
             return None
 
-        recent = session.messages[-max_messages:]
+        messages = session.messages[-max_messages:]
+
+        if compress:
+            from .context_condenser import get_context_condenser
+
+            condenser = get_context_condenser()
+            msg_dicts = [{"role": m.role, "content": m.content} for m in messages]
+            compressed, _stats = condenser.condense(msg_dicts, target_tokens)
+            messages_to_format = compressed
+        else:
+            messages_to_format = [
+                {"role": m.role, "content": m.content} for m in messages
+            ]
+
         return "\n".join(
             [
-                f"{'User' if msg.role == 'user' else 'Assistant'}: {msg.content}"
-                for msg in recent
+                f"{'User' if msg['role'] == 'user' else 'Assistant'}: {msg['content']}"
+                for msg in messages_to_format
             ]
         )
 
