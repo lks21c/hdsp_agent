@@ -15,6 +15,9 @@ from .state_verifier import (
     StateMismatch, ConfidenceScore, MismatchType, Severity, Recommendation,
     CONFIDENCE_THRESHOLDS
 )
+from .session_manager import (
+    SessionManager, get_session_manager, Session, ChatMessage
+)
 
 __all__ = [
     'ConfigManager',
@@ -48,4 +51,9 @@ __all__ = [
     'Severity',
     'Recommendation',
     'CONFIDENCE_THRESHOLDS',
+    # Session Manager (Persistence Layer)
+    'SessionManager',
+    'get_session_manager',
+    'Session',
+    'ChatMessage',
 ]
