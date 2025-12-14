@@ -1,0 +1,401 @@
+/**
+ * Settings Panel Styles
+ */
+
+/* Overlay */
+.jp-agent-settings-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+/* Dialog */
+.jp-agent-settings-dialog {
+  background-color: var(--jp-layout-color1);
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  width: 90%;
+  max-width: 500px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header */
+.jp-agent-settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--jp-border-color1);
+}
+
+.jp-agent-settings-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--jp-ui-font-color1);
+}
+
+.jp-agent-settings-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: var(--jp-ui-font-color2);
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.jp-agent-settings-close:hover {
+  background-color: var(--jp-layout-color2);
+  color: var(--jp-ui-font-color1);
+}
+
+/* Content */
+.jp-agent-settings-content {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.jp-agent-settings-group {
+  margin-bottom: 16px;
+}
+
+.jp-agent-settings-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--jp-ui-font-color1);
+}
+
+.jp-agent-settings-input,
+.jp-agent-settings-select {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+  border: 1px solid var(--jp-border-color2);
+  border-radius: 4px;
+  background-color: var(--jp-layout-color1);
+  color: var(--jp-ui-font-color1);
+  font-family: var(--jp-ui-font-family);
+}
+
+.jp-agent-settings-input:focus,
+.jp-agent-settings-select:focus {
+  outline: none;
+  border-color: var(--jp-brand-color1);
+  box-shadow: 0 0 0 1px var(--jp-brand-color1);
+}
+
+.jp-agent-settings-input::placeholder {
+  color: var(--jp-ui-font-color3);
+}
+
+.jp-agent-settings-provider {
+  margin-top: 20px;
+}
+
+.jp-agent-settings-provider h3 {
+  margin: 0 0 16px 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--jp-ui-font-color1);
+}
+
+/* Test Result */
+.jp-agent-settings-test-result {
+  margin: 16px 20px 0;
+  padding: 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  background-color: var(--jp-layout-color2);
+  border: 1px solid var(--jp-border-color2);
+  color: var(--jp-ui-font-color1);
+  font-family: var(--jp-code-font-family);
+}
+
+/* Footer */
+.jp-agent-settings-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--jp-border-color1);
+}
+
+.jp-agent-settings-button {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: var(--jp-ui-font-family);
+}
+
+.jp-agent-settings-button-secondary {
+  background-color: var(--jp-layout-color2);
+  color: var(--jp-ui-font-color1);
+}
+
+.jp-agent-settings-button-secondary:hover {
+  background-color: var(--jp-layout-color3);
+}
+
+.jp-agent-settings-button-test {
+  background-color: var(--jp-warn-color1);
+  color: white;
+}
+
+.jp-agent-settings-button-test:hover:not(:disabled) {
+  background-color: var(--jp-warn-color0);
+}
+
+.jp-agent-settings-button-test:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.jp-agent-settings-button-primary {
+  background-color: var(--jp-brand-color1);
+  color: white;
+}
+
+.jp-agent-settings-button-primary:hover {
+  background-color: var(--jp-brand-color0);
+}
+
+.jp-agent-settings-button:active {
+  transform: translateY(1px);
+}
+
+.jp-agent-settings-button-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Small Button Variant */
+.jp-agent-settings-button-small {
+  padding: 4px 10px;
+  font-size: 11px;
+}
+
+/* Danger Button (Delete) */
+.jp-agent-settings-button-danger {
+  background-color: var(--jp-error-color1);
+  color: white;
+}
+
+.jp-agent-settings-button-danger:hover:not(:disabled) {
+  background-color: var(--jp-error-color0);
+}
+
+.jp-agent-settings-button-danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Outline Button (Inactive state) */
+.jp-agent-settings-button-outline {
+  background-color: transparent;
+  border: 1px solid var(--jp-brand-color1);
+  color: var(--jp-brand-color1);
+}
+
+.jp-agent-settings-button-outline:hover {
+  background-color: var(--jp-brand-color3);
+}
+
+/* ========== API Keys Panel Styles ========== */
+
+.jp-agent-keys-panel {
+  margin-top: 20px;
+  padding: 16px;
+  border: 1px solid var(--jp-border-color2);
+  border-radius: 6px;
+  background-color: var(--jp-layout-color0);
+}
+
+.jp-agent-keys-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.jp-agent-keys-header h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--jp-ui-font-color1);
+}
+
+.jp-agent-keys-count {
+  font-size: 12px;
+  color: var(--jp-ui-font-color2);
+  background-color: var(--jp-layout-color2);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.jp-agent-keys-error {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  background-color: var(--jp-error-color3);
+  border-radius: 4px;
+  color: var(--jp-error-color1);
+  font-size: 13px;
+}
+
+.jp-agent-keys-error button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  color: var(--jp-error-color1);
+  padding: 0 4px;
+}
+
+.jp-agent-keys-error button:hover {
+  opacity: 0.8;
+}
+
+.jp-agent-keys-list {
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+
+.jp-agent-keys-empty {
+  padding: 24px 20px;
+  text-align: center;
+  color: var(--jp-ui-font-color2);
+  font-size: 13px;
+  background-color: var(--jp-layout-color1);
+  border-radius: 4px;
+  border: 1px dashed var(--jp-border-color2);
+}
+
+.jp-agent-key-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  border-radius: 4px;
+  background-color: var(--jp-layout-color1);
+  border: 1px solid var(--jp-border-color2);
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.jp-agent-key-item:last-child {
+  margin-bottom: 0;
+}
+
+.jp-agent-key-item:hover {
+  border-color: var(--jp-border-color1);
+}
+
+.jp-agent-key-item-active {
+  border-color: var(--jp-brand-color1);
+  background-color: var(--jp-brand-color3);
+}
+
+.jp-agent-key-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.jp-agent-key-masked {
+  font-family: var(--jp-code-font-family);
+  font-size: 12px;
+  color: var(--jp-ui-font-color1);
+  background-color: var(--jp-layout-color2);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.jp-agent-key-status {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.jp-agent-key-status-active {
+  background-color: var(--jp-success-color3);
+  color: var(--jp-success-color1);
+}
+
+.jp-agent-key-status-cooldown {
+  background-color: var(--jp-warn-color3);
+  color: var(--jp-warn-color1);
+}
+
+.jp-agent-key-status-disabled {
+  background-color: var(--jp-layout-color2);
+  color: var(--jp-ui-font-color2);
+}
+
+.jp-agent-key-current {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  background-color: var(--jp-brand-color1);
+  color: white;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.jp-agent-key-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.jp-agent-keys-add {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.jp-agent-keys-add input {
+  flex: 1;
+  min-width: 0;
+}
+
+.jp-agent-keys-add button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.jp-agent-keys-info-text {
+  color: var(--jp-ui-font-color2);
+  font-size: 11px;
+  text-align: center;
+  line-height: 1.5;
+  padding-top: 8px;
+  border-top: 1px solid var(--jp-border-color2);
+}

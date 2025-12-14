@@ -1,0 +1,5 @@
+{
+  "packageManager": "python",
+  "packageName": "hdsp-jupyter-extension",
+  "uninstallInstructions": "Use your Python package manager (pip, conda, etc.) to uninstall hdsp-jupyter-extension"
+}

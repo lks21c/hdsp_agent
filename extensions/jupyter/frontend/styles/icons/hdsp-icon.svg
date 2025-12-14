@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 60">
+  <!-- H -->
+  <text x="0" y="48" font-family="Arial Black, Arial, sans-serif" font-size="52" font-weight="900" fill="#333333">H</text>
+  <!-- a -->
+  <text x="38" y="48" font-family="Arial Black, Arial, sans-serif" font-size="52" font-weight="900" fill="#333333">a</text>
+  <!-- l -->
+  <text x="76" y="48" font-family="Arial Black, Arial, sans-serif" font-size="52" font-weight="900" fill="#333333">l</text>
+  <!-- o with planet ring -->
+  <g transform="translate(100, 30)">
+    <!-- o letter (circuit pattern style) -->
+    <circle cx="18" cy="0" r="16" fill="none" stroke="#888888" stroke-width="5"/>
+    <!-- Orange Saturn ring -->
+    <ellipse cx="18" cy="0" rx="32" ry="12" fill="none" stroke="#E07020" stroke-width="3" transform="rotate(-20)"/>
+    <!-- Small orange dot -->
+    <circle cx="48" cy="10" r="3" fill="#E07020"/>
+  </g>
+</svg>

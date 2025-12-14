@@ -1,0 +1,1358 @@
+/**
+ * Auto-Agent Panel - Claude/Cursor Style
+ * Minimal, matte design
+ */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Panel Container
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.aa-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  height: 100%;
+  overflow-y: auto;
+  background: var(--jp-layout-color1);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Empty State
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.aa-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 16px;
+  color: var(--jp-ui-font-color3);
+}
+
+.aa-empty-text {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Input Section
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.aa-input-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.aa-textarea {
+  width: 100%;
+  min-height: 72px;
+  max-height: 180px;
+  padding: 12px;
+  border: 1px solid var(--jp-border-color2);
+  border-radius: 6px;
+  background: var(--jp-layout-color0);
+  color: var(--jp-ui-font-color1);
+  font-family: var(--jp-ui-font-family);
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.aa-textarea:focus {
+  border-color: var(--jp-brand-color1);
+}
+
+.aa-textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.aa-textarea::placeholder {
+  color: var(--jp-ui-font-color3);
+}
+
+/* Actions */
+.aa-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.aa-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.aa-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.aa-btn--primary {
+  background: var(--jp-brand-color1);
+  color: white;
+}
+
+.aa-btn--primary:hover:not(:disabled) {
+  background: var(--jp-brand-color0);
+}
+
+.aa-btn--secondary {
+  background: var(--jp-layout-color2);
+  color: var(--jp-ui-font-color1);
+}
+
+.aa-btn--secondary:hover:not(:disabled) {
+  background: var(--jp-layout-color3);
+}
+
+.aa-btn--cancel {
+  background: transparent;
+  color: var(--jp-error-color1);
+  border: 1px solid var(--jp-error-color1);
+}
+
+.aa-btn--cancel:hover {
+  background: var(--jp-error-color1);
+  color: white;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Status Indicator
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.aa-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  background: var(--jp-layout-color2);
+  border-left: 3px solid var(--jp-border-color1);
+}
+
+.aa-status--planning,
+.aa-status--executing,
+.aa-status--tool_calling {
+  border-left-color: var(--jp-brand-color1);
+}
+
+.aa-status--self_healing {
+  border-left-color: var(--jp-warn-color1);
+}
+
+.aa-status--replanning {
+  border-left-color: var(--jp-info-color1, #2196f3);
+  background: rgba(33, 150, 243, 0.06);
+}
+
+/* Replanning indicator for step */
+.aa-step--replanning {
+  background: rgba(33, 150, 243, 0.08);
+  border-left: 2px solid var(--jp-info-color1, #2196f3);
+}
+
+.aa-step--replanning .aa-step-indicator {
+  color: var(--jp-info-color1, #2196f3);
+}
+
+.aa-step-replanning {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--jp-info-color1, #2196f3);
+  margin-left: 8px;
+  animation: aa-pulse 1.5s ease-in-out infinite;
+}
+
+/* Spinning icon for replanning */
+.aa-icon-spin {
+  animation: aa-spin 1s linear infinite;
+}
+
+/* Plan replanning state */
+.aa-plan--replanning {
+  border-color: var(--jp-info-color1, #2196f3);
+}
+
+.aa-plan--replanning .aa-plan-header {
+  background: rgba(33, 150, 243, 0.1);
+}
+
+.aa-plan--replanning .aa-plan-title {
+  color: var(--jp-info-color1, #2196f3);
+}
+
+/* Plan changed indicator */
+.aa-plan-changed {
+  margin-left: 6px;
+  font-weight: 600;
+  color: var(--jp-info-color1, #2196f3);
+}
+
+/* New step styles - 새로 추가된 스텝을 강조 */
+.aa-step--new {
+  background: linear-gradient(90deg, rgba(34, 197, 94, 0.15) 0%, rgba(34, 197, 94, 0.06) 100%);
+  border-left: 3px solid var(--jp-success-color1, #22c55e);
+  animation: aa-new-step-appear 0.5s ease-out;
+  position: relative;
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.15);
+}
+
+/* 새 스텝에 글로우 애니메이션 (처음 나타날 때) */
+.aa-step--new::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(34, 197, 94, 0.2) 0%, transparent 100%);
+  animation: aa-new-glow 2s ease-out forwards;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.aa-step-desc--new {
+  color: var(--jp-ui-font-color1);
+  font-weight: 500;
+}
+
+/* NEW 배지 - 더 눈에 띄게 */
+.aa-new-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  color: white;
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-right: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: 0 1px 3px rgba(34, 197, 94, 0.4);
+  animation: aa-badge-pulse 2s ease-in-out 3;
+}
+
+/* NEW 배지 앞에 + 아이콘 */
+.aa-new-badge::before {
+  content: '+';
+  font-size: 11px;
+  font-weight: 800;
+}
+
+/* 새 스텝 나타나는 애니메이션 */
+@keyframes aa-new-step-appear {
+  0% {
+    opacity: 0;
+    transform: translateX(-20px) scale(0.95);
+    background: rgba(34, 197, 94, 0.3);
+  }
+  50% {
+    background: rgba(34, 197, 94, 0.2);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+    background: linear-gradient(90deg, rgba(34, 197, 94, 0.15) 0%, rgba(34, 197, 94, 0.06) 100%);
+  }
+}
+
+/* 새 스텝 글로우 페이드아웃 */
+@keyframes aa-new-glow {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* NEW 배지 펄스 애니메이션 */
+@keyframes aa-badge-pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 1px 3px rgba(34, 197, 94, 0.4);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 2px 8px rgba(34, 197, 94, 0.6);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Cell Operation Badges (MODIFIED, INSERTED, REPLACED)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Base badge style */
+.aa-operation-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  color: white;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-right: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* MODIFIED badge - amber/yellow */
+.aa-operation-badge--modify {
+  background: var(--jp-warn-color1, #f59e0b);
+}
+
+/* INSERTED badge - blue */
+.aa-operation-badge--insert {
+  background: var(--jp-info-color1, #2196f3);
+}
+
+/* REPLACED badge - purple */
+.aa-operation-badge--replace {
+  background: var(--jp-accent-color1, #8b5cf6);
+}
+
+/* CREATE badge - green (same as NEW) */
+.aa-operation-badge--create {
+  background: var(--jp-success-color1, #22c55e);
+}
+
+/* Step with MODIFY operation */
+.aa-step--modified {
+  background: rgba(245, 158, 11, 0.06);
+  border-left: 2px solid var(--jp-warn-color1, #f59e0b);
+}
+
+.aa-step--modified .aa-step-indicator {
+  color: var(--jp-warn-color1, #f59e0b);
+}
+
+/* Step with INSERT operation */
+.aa-step--inserted {
+  background: rgba(33, 150, 243, 0.06);
+  border-left: 2px solid var(--jp-info-color1, #2196f3);
+}
+
+.aa-step--inserted .aa-step-indicator {
+  color: var(--jp-info-color1, #2196f3);
+}
+
+/* Step with REPLACE operation */
+.aa-step--replaced {
+  background: rgba(139, 92, 246, 0.06);
+  border-left: 2px solid var(--jp-accent-color1, #8b5cf6);
+}
+
+.aa-step--replaced .aa-step-indicator {
+  color: var(--jp-accent-color1, #8b5cf6);
+}
+
+/* Cell index indicator */
+.aa-cell-index {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--jp-ui-font-color2);
+  background: var(--jp-layout-color2);
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-left: 4px;
+  font-family: var(--jp-code-font-family);
+}
+
+/* Highlight for cell index when targeting specific cell */
+.aa-cell-index--target {
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--jp-brand-color1);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+@keyframes aa-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.aa-status--completed {
+  border-left-color: var(--jp-success-color1);
+}
+
+.aa-status--failed {
+  border-left-color: var(--jp-error-color1);
+}
+
+.aa-status-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--jp-border-color2);
+  border-top-color: var(--jp-brand-color1);
+  border-radius: 50%;
+  animation: aa-spin 0.8s linear infinite;
+}
+
+.aa-status-text {
+  flex: 1;
+  color: var(--jp-ui-font-color1);
+}
+
+.aa-status-error {
+  font-size: 12px;
+  color: var(--jp-error-color1);
+  margin-left: auto;
+}
+
+@keyframes aa-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Execution Plan
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.aa-plan {
+  background: var(--jp-layout-color0);
+  border: 1px solid var(--jp-border-color2);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.aa-plan-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--jp-layout-color2);
+  border-bottom: 1px solid var(--jp-border-color2);
+}
+
+.aa-plan-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--jp-ui-font-color2);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.aa-plan-progress {
+  font-size: 12px;
+  color: var(--jp-ui-font-color3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Progress Bar */
+.aa-progress-bar {
+  height: 3px;
+  background: var(--jp-border-color2);
+  overflow: hidden;
+}
+
+.aa-progress-fill {
+  height: 100%;
+  background: var(--jp-brand-color1);
+  transition: width 0.3s ease;
+}
+
+.aa-plan-steps {
+  display: flex;
+  flex-direction: column;
+}
+
+.aa-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--jp-border-color3);
+  transition: background 0.15s ease;
+}
+
+.aa-step:last-child {
+  border-bottom: none;
+}
+
+.aa-step--current {
+  background: rgba(99, 102, 241, 0.06);
+}
+
+.aa-step--completed {
+  opacity: 0.7;
+}
+
+.aa-step--failed {
+  background: rgba(239, 68, 68, 0.06);
+}
+
+.aa-step--pending {
+  opacity: 0.5;
+}
+
+.aa-step-indicator {
+  min-width: 42px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* 상태 아이콘 */
+.aa-step-status-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.aa-step-status-icon--completed {
+  color: var(--jp-success-color1);
+}
+
+.aa-step-status-icon--failed {
+  color: var(--jp-error-color1);
+}
+
+/* 대기 중 점 */
+.aa-step-pending-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--jp-ui-font-color3);
+  flex-shrink: 0;
+  margin: 0 3px;
+}
+
+.aa-step-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--jp-border-color2);
+  border-top-color: var(--jp-brand-color1);
+  border-radius: 50%;
+  animation: aa-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+/* Step 번호 - 항상 표시 */
+.aa-step-number {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--jp-ui-font-color2);
+  min-width: 18px;
+}
+
+/* 완료된 스텝: 번호를 초록색으로 */
+.aa-step--completed .aa-step-number {
+  color: var(--jp-success-color1);
+}
+
+/* 실패한 스텝: 번호를 빨간색으로 */
+.aa-step--failed .aa-step-number {
+  color: var(--jp-error-color1);
+}
+
+/* 현재 실행 중인 스텝: 번호를 강조 */
+.aa-step--current .aa-step-number {
+  color: var(--jp-brand-color1);
+  font-weight: 700;
+}
+
+/* 오버레이 스피너 */
+.aa-step-overlay-spinner {
+  position: absolute;
+  right: -2px;
+  bottom: 0;
+  width: 10px;
+  height: 10px;
+}
+
+.aa-step-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.aa-step-desc {
+  display: block;
+  font-size: 13px;
+  color: var(--jp-ui-font-color1);
+  line-height: 1.4;
+  margin-bottom: 4px;
+  transition: all 0.2s ease;
+}
+
+/* Step label (Step 1:, Step 2:, etc.) */
+.aa-step-label {
+  font-weight: 600;
+  color: var(--jp-brand-color1);
+  margin-right: 4px;
+}
+
+.aa-step--completed .aa-step-label {
+  color: var(--jp-success-color1);
+}
+
+.aa-step--failed .aa-step-label {
+  color: var(--jp-error-color1);
+}
+
+/* Completed step: strikethrough effect */
+.aa-step-desc--done {
+  text-decoration: line-through;
+  color: var(--jp-ui-font-color3);
+}
+
+.aa-step-desc--done .aa-step-label {
+  text-decoration: line-through;
+}
+
+/* Currently executing step indicator */
+.aa-step-executing {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--jp-brand-color1);
+  margin-left: 8px;
+  animation: aa-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes aa-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.aa-step-tools {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.aa-tool-tag {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--jp-ui-font-color3);
+  background: var(--jp-layout-color2);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: var(--jp-code-font-family);
+  transition: all 0.2s ease;
+}
+
+/* Completed tool tag */
+.aa-tool-tag--done {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Result Section
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.aa-result {
+  padding: 12px;
+  border-radius: 6px;
+  border: 1px solid var(--jp-border-color2);
+}
+
+.aa-result--success {
+  border-left: 3px solid var(--jp-success-color1);
+  background: var(--jp-layout-color0);
+}
+
+.aa-result--error {
+  border-left: 3px solid var(--jp-error-color1);
+  background: var(--jp-layout-color0);
+}
+
+.aa-result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.aa-result-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--jp-ui-font-color1);
+}
+
+.aa-result--success .aa-result-title {
+  color: var(--jp-success-color1);
+}
+
+.aa-result--error .aa-result-title {
+  color: var(--jp-error-color1);
+}
+
+.aa-result-time {
+  font-size: 11px;
+  color: var(--jp-ui-font-color3);
+  font-variant-numeric: tabular-nums;
+}
+
+.aa-result-message {
+  font-size: 13px;
+  color: var(--jp-ui-font-color1);
+  line-height: 1.5;
+  margin: 0 0 8px 0;
+  overflow: hidden;
+}
+
+/* Result message 내 리스트 스타일 - 번호 표시 */
+.aa-result-message ul,
+.aa-result-message ol {
+  padding-left: 0;
+  margin: 0.5em 0;
+  list-style: none;
+  overflow: hidden;
+  counter-reset: result-item;
+}
+
+.aa-result-message li {
+  margin: 0.25em 0;
+  padding-left: 1.8em;
+  position: relative;
+  counter-increment: result-item;
+}
+
+.aa-result-message li::before {
+  content: counter(result-item) ".";
+  position: absolute;
+  left: 0;
+  min-width: 1.5em;
+  color: var(--jp-ui-font-color2);
+  font-weight: 500;
+  font-size: 0.9em;
+}
+
+/* 중첩 리스트 */
+.aa-result-message ul ul,
+.aa-result-message ol ol,
+.aa-result-message ul ol,
+.aa-result-message ol ul {
+  margin: 0.25em 0;
+  counter-reset: result-subitem;
+}
+
+.aa-result-message ul ul li,
+.aa-result-message ol ol li,
+.aa-result-message ul ol li,
+.aa-result-message ol ul li {
+  counter-increment: result-subitem;
+}
+
+.aa-result-message ul ul li::before,
+.aa-result-message ol ol li::before,
+.aa-result-message ul ol li::before,
+.aa-result-message ol ul li::before {
+  content: counter(result-subitem) ".";
+}
+
+.aa-result-error {
+  font-size: 12px;
+  color: var(--jp-error-color1);
+  line-height: 1.4;
+  margin: 0 0 8px 0;
+  word-break: break-word;
+}
+
+.aa-result-stats {
+  display: flex;
+  gap: 16px;
+  font-size: 11px;
+  color: var(--jp-ui-font-color3);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Hint Section
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.aa-hint {
+  padding: 16px;
+  text-align: center;
+}
+
+.aa-hint p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--jp-ui-font-color2);
+  line-height: 1.5;
+}
+
+.aa-hint-sub {
+  margin-top: 4px !important;
+  font-size: 11px !important;
+  color: var(--jp-ui-font-color3) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Scrollbar
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.aa-panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+.aa-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.aa-panel::-webkit-scrollbar-thumb {
+  background: var(--jp-border-color2);
+  border-radius: 3px;
+}
+
+.aa-panel::-webkit-scrollbar-thumb:hover {
+  background: var(--jp-border-color1);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Cell Execution Highlight (노트북 내 셀)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* 현재 실행 중인 셀 하이라이트 */
+.aa-cell-executing {
+  position: relative;
+  animation: aa-cell-pulse 1.5s ease-in-out infinite;
+}
+
+.aa-cell-executing::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -4px;
+  width: 4px;
+  height: 100%;
+  background: var(--jp-brand-color1);
+  border-radius: 2px;
+  animation: aa-glow 1.5s ease-in-out infinite;
+}
+
+@keyframes aa-cell-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.15);
+  }
+}
+
+@keyframes aa-glow {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Speed Control
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.aa-speed-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--jp-layout-color2);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.aa-speed-label {
+  color: var(--jp-ui-font-color2);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.aa-speed-select {
+  flex: 1;
+  padding: 4px 8px;
+  border: 1px solid var(--jp-border-color2);
+  border-radius: 4px;
+  background: var(--jp-layout-color0);
+  color: var(--jp-ui-font-color1);
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+}
+
+.aa-speed-select:focus {
+  border-color: var(--jp-brand-color1);
+}
+
+.aa-speed-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Step-by-step 모드 다음 버튼 */
+.aa-btn--next {
+  background: var(--jp-brand-color1);
+  color: white;
+  animation: aa-pulse-btn 1.5s ease-in-out infinite;
+}
+
+.aa-btn--next:hover:not(:disabled) {
+  background: var(--jp-brand-color0);
+}
+
+@keyframes aa-pulse-btn {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+}
+
+/* 일시정지 상태 표시 */
+.aa-paused-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid var(--jp-brand-color1);
+  border-radius: 6px;
+  color: var(--jp-brand-color1);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.aa-paused-icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Validation & Reflection Status
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Validation Phase Styles */
+.aa-status--validating {
+  border-left-color: var(--jp-info-color1, #2196f3);
+  background: rgba(33, 150, 243, 0.06);
+}
+
+.aa-status--validation-passed {
+  border-left-color: var(--jp-success-color1, #22c55e);
+  background: rgba(34, 197, 94, 0.06);
+}
+
+.aa-status--validation-warning {
+  border-left-color: var(--jp-warn-color1, #f59e0b);
+  background: rgba(245, 158, 11, 0.06);
+}
+
+.aa-status--validation-failed {
+  border-left-color: var(--jp-error-color1, #ef4444);
+  background: rgba(239, 68, 68, 0.06);
+}
+
+/* Reflection Phase Styles */
+.aa-status--reflecting {
+  border-left-color: var(--jp-accent-color1, #8b5cf6);
+  background: rgba(139, 92, 246, 0.06);
+}
+
+.aa-status--reflection-passed {
+  border-left-color: var(--jp-success-color1, #22c55e);
+  background: rgba(34, 197, 94, 0.06);
+}
+
+.aa-status--reflection-adjusting {
+  border-left-color: var(--jp-warn-color1, #f59e0b);
+  background: rgba(245, 158, 11, 0.06);
+}
+
+/* Status Icons */
+.aa-status-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.aa-status-icon--success {
+  color: var(--jp-success-color1, #22c55e);
+}
+
+.aa-status-icon--warning {
+  color: var(--jp-warn-color1, #f59e0b);
+}
+
+.aa-status-icon--error {
+  color: var(--jp-error-color1, #ef4444);
+}
+
+/* Confidence Score Bar */
+.aa-status-confidence {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.aa-confidence-bar {
+  width: 60px;
+  height: 6px;
+  background: var(--jp-border-color2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.aa-confidence-fill {
+  height: 100%;
+  background: linear-gradient(90deg,
+    var(--jp-error-color1, #ef4444) 0%,
+    var(--jp-warn-color1, #f59e0b) 50%,
+    var(--jp-success-color1, #22c55e) 100%
+  );
+  background-size: 200% 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.aa-confidence-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--jp-ui-font-color2);
+  min-width: 32px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* High confidence (>70%) - green */
+.aa-confidence-fill[style*="width: 7"],
+.aa-confidence-fill[style*="width: 8"],
+.aa-confidence-fill[style*="width: 9"],
+.aa-confidence-fill[style*="width: 100"] {
+  background: var(--jp-success-color1, #22c55e);
+}
+
+/* Medium confidence (50-70%) - yellow */
+.aa-confidence-fill[style*="width: 5"],
+.aa-confidence-fill[style*="width: 6"] {
+  background: var(--jp-warn-color1, #f59e0b);
+}
+
+/* Low confidence (<50%) - red */
+.aa-confidence-fill[style*="width: 1"],
+.aa-confidence-fill[style*="width: 2"],
+.aa-confidence-fill[style*="width: 3"],
+.aa-confidence-fill[style*="width: 4"] {
+  background: var(--jp-error-color1, #ef4444);
+}
+
+/* Quality Badge Indicators */
+.aa-quality-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.aa-quality-badge--validated {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--jp-success-color1, #22c55e);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.aa-quality-badge--warning {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--jp-warn-color1, #f59e0b);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.aa-quality-badge--reflected {
+  background: rgba(139, 92, 246, 0.15);
+  color: var(--jp-accent-color1, #8b5cf6);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+/* Step Quality Indicators */
+.aa-step-quality {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.aa-step-quality-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: var(--jp-ui-font-color3);
+}
+
+.aa-step-quality-item svg {
+  width: 12px;
+  height: 12px;
+}
+
+.aa-step-quality-item--pass {
+  color: var(--jp-success-color1, #22c55e);
+}
+
+.aa-step-quality-item--warn {
+  color: var(--jp-warn-color1, #f59e0b);
+}
+
+.aa-step-quality-item--fail {
+  color: var(--jp-error-color1, #ef4444);
+}
+
+/* Shimmer Animation for Active States */
+.aa-status--validating .aa-status-text,
+.aa-status--reflecting .aa-status-text {
+  background: linear-gradient(
+    90deg,
+    var(--jp-ui-font-color1) 0%,
+    var(--jp-ui-font-color3) 50%,
+    var(--jp-ui-font-color1) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: aa-shimmer 2s linear infinite;
+}
+
+@keyframes aa-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Rollback UI Styles (Phase 3 - Checkpoint/Rollback System)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Rollback Button */
+.aa-btn--rollback {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.aa-btn--rollback:hover {
+  background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+}
+
+.aa-btn--rollback:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Rollback Panel */
+.aa-rollback-panel {
+  background: var(--jp-layout-color1);
+  border: 1px solid var(--jp-border-color1);
+  border-radius: 8px;
+  margin-top: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Rollback Header */
+.aa-rollback-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: white;
+}
+
+.aa-rollback-title {
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.aa-rollback-close {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+  transition: background 0.2s ease;
+}
+
+.aa-rollback-close:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Rollback Result Message */
+.aa-rollback-result {
+  padding: 10px 16px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.aa-rollback-result--success {
+  background: rgba(34, 197, 94, 0.1);
+  color: var(--jp-success-color1, #22c55e);
+  border-bottom: 1px solid rgba(34, 197, 94, 0.2);
+}
+
+.aa-rollback-result--error {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--jp-error-color1, #ef4444);
+  border-bottom: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+/* Checkpoint List */
+.aa-checkpoint-list {
+  max-height: 250px;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.aa-checkpoint-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.aa-checkpoint-list::-webkit-scrollbar-track {
+  background: var(--jp-layout-color2);
+}
+
+.aa-checkpoint-list::-webkit-scrollbar-thumb {
+  background: var(--jp-border-color2);
+  border-radius: 3px;
+}
+
+/* Checkpoint Item */
+.aa-checkpoint-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  background: var(--jp-layout-color2);
+  border: 1px solid var(--jp-border-color1);
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.aa-checkpoint-item:hover {
+  border-color: var(--jp-brand-color1);
+  background: var(--jp-layout-color3);
+}
+
+.aa-checkpoint-item:last-child {
+  margin-bottom: 0;
+}
+
+/* Checkpoint Info */
+.aa-checkpoint-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.aa-checkpoint-step {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--jp-ui-font-color1);
+}
+
+.aa-checkpoint-desc {
+  font-size: 12px;
+  color: var(--jp-ui-font-color2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.aa-checkpoint-time {
+  font-size: 11px;
+  color: var(--jp-ui-font-color3);
+}
+
+/* Checkpoint Empty State */
+.aa-checkpoint-empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--jp-ui-font-color3);
+  font-size: 13px;
+}
+
+/* Rollback Actions */
+.aa-rollback-actions {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--jp-border-color1);
+  background: var(--jp-layout-color2);
+}
+
+.aa-rollback-actions .aa-btn {
+  flex: 1;
+}
+
+/* Small Rollback Button for Checkpoint Items */
+.aa-checkpoint-item .aa-btn--rollback {
+  padding: 4px 10px;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+/* Rolling Back State */
+.aa-rollback-panel--rolling-back {
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+.aa-rollback-panel--rolling-back::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.1);
+}
