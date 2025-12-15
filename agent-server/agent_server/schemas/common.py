@@ -48,3 +48,46 @@ class APIResponse(BaseModel):
     message: Optional[str] = None
     data: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
+
+
+# ============ LLM Configuration (Client-Provided) ============
+
+
+class GeminiConfig(BaseModel):
+    """Gemini provider configuration"""
+
+    apiKey: str = Field(description="Primary Gemini API key")
+    apiKeys: Optional[List[str]] = Field(
+        default=None,
+        description="Multiple API keys for rate limit rotation (max 10)"
+    )
+    model: str = Field(default="gemini-2.5-flash", description="Model name")
+
+
+class OpenAIConfig(BaseModel):
+    """OpenAI provider configuration"""
+
+    apiKey: str = Field(description="OpenAI API key")
+    model: str = Field(default="gpt-4", description="Model name")
+
+
+class VLLMConfig(BaseModel):
+    """vLLM provider configuration"""
+
+    endpoint: str = Field(default="http://localhost:8000", description="vLLM endpoint")
+    apiKey: Optional[str] = Field(default=None, description="Optional API key")
+    model: str = Field(default="default", description="Model name")
+
+
+class LLMConfig(BaseModel):
+    """
+    LLM configuration provided by the client.
+    API keys are managed client-side and passed with each request.
+    """
+
+    provider: str = Field(
+        default="gemini", description="LLM provider (gemini, openai, vllm)"
+    )
+    gemini: Optional[GeminiConfig] = Field(default=None, description="Gemini config")
+    openai: Optional[OpenAIConfig] = Field(default=None, description="OpenAI config")
+    vllm: Optional[VLLMConfig] = Field(default=None, description="vLLM config")

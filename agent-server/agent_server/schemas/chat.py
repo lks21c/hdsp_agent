@@ -6,6 +6,8 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from .common import LLMConfig
+
 
 class ChatRequest(BaseModel):
     """Request body for chat messages"""
@@ -13,6 +15,9 @@ class ChatRequest(BaseModel):
     message: str = Field(description="User's chat message")
     conversationId: Optional[str] = Field(
         default=None, description="Conversation ID for context continuity"
+    )
+    llmConfig: Optional[LLMConfig] = Field(
+        default=None, description="LLM configuration with API keys (client-provided)"
     )
 
 

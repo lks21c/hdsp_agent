@@ -43,15 +43,49 @@ logger = logging.getLogger(__name__)
 
 
 def _get_config() -> Dict[str, Any]:
-    """Get current configuration"""
+    """Get current configuration (fallback only)"""
     return ConfigManager.get_instance().get_config()
 
 
-async def _call_llm(prompt: str) -> str:
-    """Call LLM with prompt"""
-    config = _get_config()
+def _build_llm_config(llm_config) -> Dict[str, Any]:
+    """
+    Build LLM config dict from client-provided LLMConfig.
+    Falls back to server config if not provided.
+    """
+    if llm_config is None:
+        # Fallback to server config (backward compatibility)
+        return _get_config()
+
+    # Build config from client-provided data
+    config = {"provider": llm_config.provider}
+
+    if llm_config.gemini:
+        config["gemini"] = {
+            "apiKey": llm_config.gemini.apiKey,
+            "model": llm_config.gemini.model,
+        }
+
+    if llm_config.openai:
+        config["openai"] = {
+            "apiKey": llm_config.openai.apiKey,
+            "model": llm_config.openai.model,
+        }
+
+    if llm_config.vllm:
+        config["vllm"] = {
+            "endpoint": llm_config.vllm.endpoint,
+            "apiKey": llm_config.vllm.apiKey,
+            "model": llm_config.vllm.model,
+        }
+
+    return config
+
+
+async def _call_llm(prompt: str, llm_config=None) -> str:
+    """Call LLM with prompt using client-provided config"""
+    config = _build_llm_config(llm_config)
     llm_service = LLMService(config)
-    return await llm_service.generate(prompt)
+    return await llm_service.generate_response(prompt)
 
 
 def _parse_json_response(response: str) -> Dict[str, Any]:
@@ -183,8 +217,8 @@ async def generate_plan(request: PlanRequest) -> Dict[str, Any]:
             detected_libraries=detected_libraries,
         )
 
-        # Call LLM
-        response = await _call_llm(prompt)
+        # Call LLM with client-provided config
+        response = await _call_llm(prompt, request.llmConfig)
         logger.info(f"LLM response length: {len(response)}")
 
         # Parse response
@@ -252,8 +286,8 @@ async def refine_code(request: RefineRequest) -> Dict[str, Any]:
             defined_variables=[],
         )
 
-        # Call LLM
-        response = await _call_llm(prompt)
+        # Call LLM with client-provided config
+        response = await _call_llm(prompt, request.llmConfig)
 
         # Parse response
         refine_data = _parse_json_response(response)

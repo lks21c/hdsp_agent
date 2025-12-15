@@ -1,27 +1,23 @@
 /**
  * Settings Panel Component
  * Allows users to configure LLM provider settings
+ *
+ * API keys are stored in browser localStorage and sent with each request.
+ * The Agent Server does not store API keys - it receives them with each request.
  */
 
 import React, { useState, useEffect } from 'react';
-import { GeminiKeysPanel } from './GeminiKeysPanel';
+import {
+  getLLMConfig,
+  saveLLMConfig,
+  hasValidApiKey,
+  testApiKey,
+  getDefaultLLMConfig,
+  LLMConfig
+} from '../services/ApiKeyManager';
 
-export interface LLMConfig {
-  provider: 'gemini' | 'vllm' | 'openai';
-  gemini?: {
-    apiKey: string;
-    model: string;
-  };
-  vllm?: {
-    endpoint: string;
-    apiKey: string;
-    model: string;
-  };
-  openai?: {
-    apiKey: string;
-    model: string;
-  };
-}
+// Re-export LLMConfig type for use by other components
+export type { LLMConfig } from '../services/ApiKeyManager';
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -34,55 +30,74 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   onSave,
   currentConfig
 }) => {
+  // Initialize from localStorage or props
+  const initConfig = currentConfig || getLLMConfig() || getDefaultLLMConfig();
+
   const [provider, setProvider] = useState<'gemini' | 'vllm' | 'openai'>(
-    currentConfig?.provider || 'gemini'
+    initConfig.provider || 'gemini'
   );
   const [isTesting, setIsTesting] = useState(false);
-  const [testResult, setTestResult] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Record<number, 'success' | 'error' | 'testing' | null>>({});
 
-  // Gemini settings
-  const [geminiApiKey, setGeminiApiKey] = useState(
-    currentConfig?.gemini?.apiKey || ''
+  // Track active key index (first valid key by default)
+  const [activeKeyIndex, setActiveKeyIndex] = useState(0);
+
+  // Gemini settings - support multiple keys (max 10)
+  const [geminiApiKeys, setGeminiApiKeys] = useState<string[]>(
+    initConfig.gemini?.apiKeys?.length
+      ? initConfig.gemini.apiKeys
+      : initConfig.gemini?.apiKey
+        ? [initConfig.gemini.apiKey]
+        : ['']
   );
+
+  // Legacy single key for backward compatibility
+  const geminiApiKey = geminiApiKeys[0] || '';
 
   // Validate gemini model - only allow valid options
   const validateGeminiModel = (model: string | undefined): string => {
-    const validModels = ['gemini-3-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash'];
+    const validModels = ['gemini-2.5-pro', 'gemini-2.5-flash'];
     if (model && validModels.includes(model)) {
       return model;
     }
-    console.warn(`[SettingsPanel] Invalid Gemini model "${model}", defaulting to gemini-2.5-pro`);
-    return 'gemini-2.5-pro';
+    return 'gemini-2.5-flash';
   };
 
   const [geminiModel, setGeminiModel] = useState(
-    validateGeminiModel(currentConfig?.gemini?.model)
+    validateGeminiModel(initConfig.gemini?.model)
   );
 
   // vLLM settings
   const [vllmEndpoint, setVllmEndpoint] = useState(
-    currentConfig?.vllm?.endpoint || 'http://localhost:8000'
+    initConfig.vllm?.endpoint || 'http://localhost:8000'
   );
   const [vllmApiKey, setVllmApiKey] = useState(
-    currentConfig?.vllm?.apiKey || ''
+    initConfig.vllm?.apiKey || ''
   );
   const [vllmModel, setVllmModel] = useState(
-    currentConfig?.vllm?.model || 'meta-llama/Llama-2-7b-chat-hf'
+    initConfig.vllm?.model || 'meta-llama/Llama-2-7b-chat-hf'
   );
 
   // OpenAI settings
   const [openaiApiKey, setOpenaiApiKey] = useState(
-    currentConfig?.openai?.apiKey || ''
+    initConfig.openai?.apiKey || ''
   );
   const [openaiModel, setOpenaiModel] = useState(
-    currentConfig?.openai?.model || 'gpt-4'
+    initConfig.openai?.model || 'gpt-4'
   );
 
   // Update state when currentConfig changes
   useEffect(() => {
     if (currentConfig) {
       setProvider(currentConfig.provider || 'gemini');
-      setGeminiApiKey(currentConfig.gemini?.apiKey || '');
+      // Handle multiple keys
+      if (currentConfig.gemini?.apiKeys?.length) {
+        setGeminiApiKeys(currentConfig.gemini.apiKeys);
+      } else if (currentConfig.gemini?.apiKey) {
+        setGeminiApiKeys([currentConfig.gemini.apiKey]);
+      } else {
+        setGeminiApiKeys(['']);
+      }
       setGeminiModel(validateGeminiModel(currentConfig.gemini?.model));
       setVllmEndpoint(currentConfig.vllm?.endpoint || 'http://localhost:8000');
       setVllmApiKey(currentConfig.vllm?.apiKey || '');
@@ -92,21 +107,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     }
   }, [currentConfig]);
 
-  // Helper: Get cookie value by name
-  const getCookie = (name: string): string => {
-    const value = `; ${document.cookie}`;
-    const parts = value.split(`; ${name}=`);
-    if (parts.length === 2) {
-      return parts.pop()?.split(';').shift() || '';
-    }
-    return '';
-  };
-
   // Helper: Build LLM config from state
   const buildLLMConfig = (): LLMConfig => ({
     provider,
     gemini: {
-      apiKey: geminiApiKey,
+      apiKey: geminiApiKeys[0] || '',  // Primary key for backward compatibility
+      apiKeys: geminiApiKeys.filter(k => k && k.trim()),  // All valid keys
       model: geminiModel
     },
     vllm: {
@@ -120,71 +126,91 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     }
   });
 
+  // Handlers for multiple API keys
+  const handleAddKey = () => {
+    if (geminiApiKeys.length < 10) {
+      setGeminiApiKeys([...geminiApiKeys, '']);
+    }
+  };
+
+  const handleRemoveKey = (index: number) => {
+    if (geminiApiKeys.length > 1) {
+      const newKeys = geminiApiKeys.filter((_, i) => i !== index);
+      setGeminiApiKeys(newKeys);
+    }
+  };
+
+  const handleKeyChange = (index: number, value: string) => {
+    const newKeys = [...geminiApiKeys];
+    newKeys[index] = value;
+    setGeminiApiKeys(newKeys);
+  };
+
+  const validKeyCount = geminiApiKeys.filter(k => k && k.trim()).length;
+
   const handleTest = async () => {
     setIsTesting(true);
-    setTestResult(null);
+    setTestResults({});
 
-    try {
-      // For Gemini provider, test all individual keys
-      if (provider === 'gemini') {
-        const response = await fetch('/hdsp-agent/gemini-keys/test', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-XSRFToken': getCookie('_xsrf')
-          }
-        });
+    if (provider === 'gemini') {
+      // Test each Gemini key individually
+      const validKeys = geminiApiKeys.map((k, i) => ({ key: k, index: i }))
+        .filter(({ key }) => key && key.trim());
 
-        if (response.ok) {
-          const data = await response.json();
-          const results = data.results || [];
+      for (const { key, index } of validKeys) {
+        setTestResults(prev => ({ ...prev, [index]: 'testing' }));
 
-          if (results.length === 0) {
-            setTestResult('⚠️ 등록된 API 키가 없습니다');
-          } else {
-            const lines = results.map((r: any) =>
-              r.success
-                ? `✅ ${r.maskedKey}: OK`
-                : `❌ ${r.maskedKey}: ${r.message}`
-            );
-            const summary = `테스트 결과: ${data.successCount}/${data.totalKeys} 성공`;
-            setTestResult(`${summary}\n\n${lines.join('\n')}`);
-          }
-        } else {
-          const error = await response.json();
-          setTestResult(`❌ 테스트 실패: ${error.error}`);
-        }
-      } else {
-        // For other providers, use the original test
-        const config = buildLLMConfig();
-        const response = await fetch('/hdsp-agent/test-llm', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-XSRFToken': getCookie('_xsrf')
-          },
-          body: JSON.stringify(config)
-        });
+        const testConfig: LLMConfig = {
+          provider: 'gemini',
+          gemini: { apiKey: key, apiKeys: [key], model: geminiModel }
+        };
 
-        if (response.ok) {
-          const data = await response.json();
-          setTestResult(`✅ 성공: ${data.message}`);
-        } else {
-          const error = await response.json();
-          setTestResult(`❌ 실패: ${error.error}`);
+        try {
+          const result = await testApiKey(testConfig);
+          setTestResults(prev => ({ ...prev, [index]: result.success ? 'success' : 'error' }));
+        } catch {
+          setTestResults(prev => ({ ...prev, [index]: 'error' }));
         }
       }
-    } catch (error) {
-      setTestResult(`❌ 오류: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
-    } finally {
-      setIsTesting(false);
+    } else {
+      // For other providers, just test the single config
+      try {
+        const config = buildLLMConfig();
+        const result = await testApiKey(config);
+        setTestResults({ 0: result.success ? 'success' : 'error' });
+      } catch {
+        setTestResults({ 0: 'error' });
+      }
+    }
+
+    setIsTesting(false);
+  };
+
+  // Handle clicking a key row to set it as active
+  const handleSetActiveKey = (index: number) => {
+    if (geminiApiKeys[index] && geminiApiKeys[index].trim()) {
+      setActiveKeyIndex(index);
     }
   };
 
   const handleSave = () => {
     const config = buildLLMConfig();
+
+    // Save to localStorage
+    saveLLMConfig(config);
+
+    // Notify parent component
     onSave(config);
     onClose();
+  };
+
+  // Get test status icon for a key
+  const getTestStatusIcon = (index: number): string => {
+    const status = testResults[index];
+    if (status === 'testing') return '⏳';
+    if (status === 'success') return '✅';
+    if (status === 'error') return '❌';
+    return '';
   };
 
   return (
@@ -202,6 +228,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         </div>
 
         <div className="jp-agent-settings-content">
+          {/* Info notice about localStorage */}
+          <div className="jp-agent-settings-notice">
+            <span>API 키는 브라우저에 안전하게 저장되며, 요청 시에만 서버로 전송됩니다.</span>
+          </div>
+
           {/* Provider Selection */}
           <div className="jp-agent-settings-group">
             <label className="jp-agent-settings-label">프로바이더</label>
@@ -220,6 +251,91 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           {provider === 'gemini' && (
             <div className="jp-agent-settings-provider">
               <h3>Gemini 설정</h3>
+
+              {/* Multiple API Keys */}
+              <div className="jp-agent-settings-group">
+                <label className="jp-agent-settings-label">
+                  API 키 ({validKeyCount}/10)
+                  <small style={{ fontWeight: 'normal', marginLeft: '8px', color: '#666' }}>
+                    Rate limit 시 자동 로테이션
+                  </small>
+                </label>
+
+                {geminiApiKeys.map((key, index) => (
+                  <div key={index} className="jp-agent-settings-key-row" style={{
+                    display: 'flex',
+                    gap: '8px',
+                    marginBottom: '8px',
+                    alignItems: 'center',
+                    padding: '4px',
+                    borderRadius: '4px',
+                    background: activeKeyIndex === index && key && key.trim() ? 'rgba(66, 133, 244, 0.1)' : 'transparent',
+                    border: activeKeyIndex === index && key && key.trim() ? '1px solid rgba(66, 133, 244, 0.3)' : '1px solid transparent'
+                  }}>
+                    {/* Active indicator (radio button) */}
+                    <input
+                      type="radio"
+                      name="activeKey"
+                      checked={activeKeyIndex === index && key && key.trim() !== ''}
+                      onChange={() => handleSetActiveKey(index)}
+                      disabled={!key || !key.trim()}
+                      title="활성 키로 설정"
+                      style={{ cursor: key && key.trim() ? 'pointer' : 'default' }}
+                    />
+                    <span style={{
+                      minWidth: '20px',
+                      color: '#666',
+                      fontSize: '12px'
+                    }}>
+                      {index + 1}.
+                    </span>
+                    <input
+                      type="password"
+                      className="jp-agent-settings-input"
+                      style={{ flex: 1 }}
+                      value={key}
+                      onChange={(e) => handleKeyChange(index, e.target.value)}
+                      placeholder="AIza..."
+                    />
+                    {/* Test status icon */}
+                    {getTestStatusIcon(index) && (
+                      <span style={{ fontSize: '14px', minWidth: '20px' }}>
+                        {getTestStatusIcon(index)}
+                      </span>
+                    )}
+                    {geminiApiKeys.length > 1 && (
+                      <button
+                        type="button"
+                        className="jp-agent-settings-button-icon"
+                        onClick={() => handleRemoveKey(index)}
+                        title="키 삭제"
+                        style={{
+                          padding: '4px 8px',
+                          background: '#ff4444',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                ))}
+
+                {geminiApiKeys.length < 10 && (
+                  <button
+                    type="button"
+                    className="jp-agent-settings-button jp-agent-settings-button-secondary"
+                    onClick={handleAddKey}
+                    style={{ marginTop: '8px' }}
+                  >
+                    + 키 추가
+                  </button>
+                )}
+              </div>
+
               <div className="jp-agent-settings-group">
                 <label className="jp-agent-settings-label">모델</label>
                 <select
@@ -227,13 +343,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   value={geminiModel}
                   onChange={(e) => setGeminiModel(e.target.value)}
                 >
-                  <option value="gemini-3-pro-preview">Gemini 3.0 Pro</option>
-                  <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
                   <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                  <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
                 </select>
               </div>
-              {/* Multi-Key Management Panel */}
-              <GeminiKeysPanel />
             </div>
           )}
 
@@ -303,13 +416,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             </div>
           )}
         </div>
-
-        {/* Test Result */}
-        {testResult && (
-          <div className="jp-agent-settings-test-result">
-            {testResult}
-          </div>
-        )}
 
         <div className="jp-agent-settings-footer">
           <button

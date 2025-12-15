@@ -11,8 +11,17 @@ import {
   IHealthStatus,
   IModelInfo,
   IFileFixRequest,
-  IFileFixResponse
+  IFileFixResponse,
+  ILLMConfig
 } from '../types';
+
+import {
+  buildSingleKeyConfig,
+  handleRateLimitError,
+  isRateLimitError,
+  resetKeyRotation,
+  LLMConfig
+} from './ApiKeyManager';
 
 import {
   AutoAgentPlanRequest,
@@ -131,8 +140,86 @@ export class ApiService {
 
   /**
    * Send chat message with streaming response
+   *
+   * NOTE (Financial Security Compliance):
+   * - API key rotation is handled by frontend (not server)
+   * - Server receives ONLY ONE key per request
+   * - On 429 rate limit, frontend rotates key and retries with next key
    */
   async sendMessageStream(
+    request: IChatRequest,
+    onChunk: (chunk: string) => void,
+    onMetadata?: (metadata: { conversationId?: string; messageId?: string; provider?: string; model?: string }) => void
+  ): Promise<void> {
+    // Maximum retry attempts (should match number of keys)
+    const MAX_RETRIES = 10;
+    let currentConfig = request.llmConfig as LLMConfig | undefined;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      // Build request with single key for this attempt
+      const requestToSend = currentConfig
+        ? { ...request, llmConfig: buildSingleKeyConfig(currentConfig) }
+        : request;
+
+      try {
+        await this.sendMessageStreamInternal(requestToSend, onChunk, onMetadata);
+        // Success - reset key rotation state
+        resetKeyRotation();
+        return;
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        lastError = error instanceof Error ? error : new Error(errorMsg);
+
+        // Check if rate limit error and we have config to rotate
+        if (isRateLimitError(errorMsg) && request.llmConfig) {
+          console.log(`[ApiService] Rate limit on attempt ${attempt + 1}, trying next key...`);
+
+          // Try to rotate to next key using ORIGINAL config (with all keys)
+          const rotatedConfig = handleRateLimitError(request.llmConfig as LLMConfig);
+
+          if (rotatedConfig) {
+            // Update currentConfig with the rotated key for next attempt
+            // Note: rotatedConfig already has single key, but we need full config for next rotation
+            currentConfig = request.llmConfig as LLMConfig;
+            continue; // Try next key
+          } else {
+            // All keys exhausted
+            throw new Error('모든 API 키가 Rate Limit 상태입니다. 잠시 후 다시 시도해주세요.');
+          }
+        }
+
+        // Not a rate limit error, throw immediately
+        throw error;
+      }
+    }
+
+    // Should not reach here, but just in case
+    throw lastError || new Error('Maximum retry attempts exceeded');
+  }
+
+  /**
+   * Build request with single API key for server
+   * (Key rotation is managed by frontend for financial security compliance)
+   */
+  private buildRequestWithSingleKey(request: IChatRequest): IChatRequest {
+    if (!request.llmConfig) {
+      return request;
+    }
+
+    // Build config with single key (server only uses apiKey field)
+    const singleKeyConfig = buildSingleKeyConfig(request.llmConfig as LLMConfig);
+
+    return {
+      ...request,
+      llmConfig: singleKeyConfig
+    };
+  }
+
+  /**
+   * Internal streaming implementation (without retry logic)
+   */
+  private async sendMessageStreamInternal(
     request: IChatRequest,
     onChunk: (chunk: string) => void,
     onMetadata?: (metadata: { conversationId?: string; messageId?: string; provider?: string; model?: string }) => void
@@ -140,7 +227,7 @@ export class ApiService {
     const response = await fetch(`${this.baseUrl}/chat/stream`, {
       method: 'POST',
       headers: this.getHeaders(),
-      credentials: 'include', // ✅ 핵심 수정: 쿠키를 같이 보냄
+      credentials: 'include',
       body: JSON.stringify(request)
     });
 

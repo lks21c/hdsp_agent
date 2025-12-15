@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from .common import ErrorInfo, NotebookContext, ToolCall
+from .common import ErrorInfo, LLMConfig, NotebookContext, ToolCall
 
 
 # ============ Plan Request/Response ============
@@ -40,6 +40,9 @@ class PlanRequest(BaseModel):
     notebookContext: NotebookContext = Field(
         default_factory=NotebookContext, description="Current notebook state"
     )
+    llmConfig: Optional[LLMConfig] = Field(
+        default=None, description="LLM configuration with API keys (client-provided)"
+    )
 
 
 class PlanResponse(BaseModel):
@@ -60,6 +63,9 @@ class RefineRequest(BaseModel):
     attempt: int = Field(default=1, description="Current attempt number")
     previousCode: Optional[str] = Field(
         default=None, description="Previously executed code"
+    )
+    llmConfig: Optional[LLMConfig] = Field(
+        default=None, description="LLM configuration with API keys (client-provided)"
     )
 
 

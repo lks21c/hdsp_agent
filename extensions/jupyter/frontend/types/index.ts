@@ -52,6 +52,34 @@ export interface IChatMessage {
   metadata?: Record<string, any>;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// LLM Configuration Types (Client-side managed)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface IGeminiConfig {
+  apiKey: string;  // Primary key for backward compatibility
+  apiKeys?: string[];  // Multiple keys (max 10) for rate limit rotation
+  model: string;
+}
+
+export interface IOpenAIConfig {
+  apiKey: string;
+  model: string;
+}
+
+export interface IVLLMConfig {
+  endpoint: string;
+  apiKey?: string;
+  model: string;
+}
+
+export interface ILLMConfig {
+  provider: 'gemini' | 'openai' | 'vllm';
+  gemini?: IGeminiConfig;
+  openai?: IOpenAIConfig;
+  vllm?: IVLLMConfig;
+}
+
 export interface IChatRequest {
   message: string;
   conversationId?: string;
@@ -59,6 +87,7 @@ export interface IChatRequest {
     selectedCells?: string[];
     notebookPath?: string;
   };
+  llmConfig?: ILLMConfig;
 }
 
 export interface IChatResponse {

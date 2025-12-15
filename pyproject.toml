@@ -55,8 +55,9 @@ dev = [
 Homepage = "https://github.com/yourusername/hdsp-agent"
 Repository = "https://github.com/yourusername/hdsp-agent.git"
 
-[tool.hatch.version]
-path = "backend/_version.py"
+# Note: This is now a monorepo root. Actual packages are in:
+# - agent-server/: FastAPI Agent Server (hdsp-agent-server)
+# - extensions/jupyter/: JupyterLab Extension (hdsp-jupyter-extension)
 
 [tool.hatch.build.targets.sdist]
 exclude = [
@@ -64,36 +65,11 @@ exclude = [
     "node_modules",
     "*.egg-info",
     ".ipynb_checkpoints",
+    "backend",
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["backend"]
-
-[tool.hatch.build.targets.wheel.shared-data]
-"backend/labextension" = "share/jupyter/labextensions/@hdsp-agent/extension"
-"install.json" = "share/jupyter/labextensions/@hdsp-agent/extension/install.json"
-"backend/etc/jupyter/jupyter_server_config.d/hdsp_agent.json" = "etc/jupyter/jupyter_server_config.d/hdsp_agent.json"
-
-[tool.hatch.build.hooks.jupyter-builder]
-dependencies = ["hatch-jupyter-builder>=0.8.3"]
-build-function = "hatch_jupyter_builder.npm_builder"
-ensured-targets = [
-    "backend/labextension/static/style.js",
-    "backend/labextension/package.json",
-]
-skip-if-exists = ["backend/labextension/static/style.js"]
-
-[tool.hatch.build.hooks.jupyter-builder.build-kwargs]
-build_cmd = "build:prod"
-npm = ["jlpm"]
-source_dir = "frontend"
-build_dir = "backend/labextension"
-
-[tool.hatch.build.hooks.jupyter-builder.editable-build-kwargs]
-build_cmd = "build"
-npm = ["jlpm"]
-source_dir = "frontend"
-build_dir = "backend/labextension"
+packages = []
 
 # Black configuration
 [tool.black]
@@ -112,7 +88,7 @@ extend-exclude = '''
   | build
   | dist
   | node_modules
-  | backend/labextension
+  | backend
 )/
 '''
 
@@ -121,25 +97,25 @@ extend-exclude = '''
 profile = "black"
 line_length = 88
 skip_gitignore = true
-extend_skip_glob = ["backend/labextension/*"]
+extend_skip_glob = ["backend/*", "node_modules/*"]
 
 # pytest configuration
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["agent-server/tests", "backend/tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"
 
-# Poetry compatibility (for local development)
+# Poetry compatibility (for local development - monorepo root)
 [tool.poetry]
 name = "hdsp-agent"
 version = "0.1.1"
-description = "AI-powered code assistance for JupyterLab with cell-level actions"
+description = "AI-powered code assistance for JupyterLab - Monorepo"
 authors = ["Your Name <your.email@example.com>"]
 license = "MIT"
 readme = "README.md"
-packages = [{ include = "backend" }]
+packages = []
 
 [tool.poetry.dependencies]
 python = "^3.8.1"
@@ -152,6 +128,7 @@ tabulate = "^0.9.0"
 numpy = "<2"
 pandas = "<2.1"
 pyarrow = "<15"
+httpx = "^0.28.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.0.0"
@@ -163,3 +140,4 @@ flake8 = "^6.0.0"
 jupyterlab = "^4.0.0"
 hatchling = "^1.5.0"
 hatch-jupyter-builder = "^0.8.3"
+ruff = "^0.8.0"

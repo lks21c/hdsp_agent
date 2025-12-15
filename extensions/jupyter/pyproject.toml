@@ -50,6 +50,7 @@ exclude = [".github", "binder"]
 [tool.hatch.build.targets.wheel.shared-data]
 "jupyter_ext/labextension" = "share/jupyter/labextensions/hdsp-agent"
 "install.json" = "share/jupyter/labextensions/hdsp-agent/install.json"
+"jupyter_ext/etc/jupyter/jupyter_server_config.d/hdsp_jupyter_extension.json" = "etc/jupyter/jupyter_server_config.d/hdsp_jupyter_extension.json"
 
 [tool.hatch.build.hooks.version]
 path = "jupyter_ext/_version.py"

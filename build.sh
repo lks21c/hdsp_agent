@@ -1,74 +1,54 @@
 #!/bin/bash
 set -e
 
-echo "=== HDSP Agent Build Script ==="
+echo "=== HDSP Agent Build Script (Monorepo) ==="
 echo ""
 
 # Change to script directory
 cd "$(dirname "$0")"
+ROOT_DIR=$(pwd)
 
-echo "📂 Working directory: $(pwd)"
+echo "Working directory: $ROOT_DIR"
 echo ""
 
-# [추가됨] Step 0: Clean previous builds (필수!)
-# 기존에 남아있는 컴파일 결과물과 캐시를 강제로 삭제합니다.
-echo "0️⃣  Cleaning previous build artifacts..."
-rm -rf lib dist tsconfig.tsbuildinfo
-# 주피터랩 확장 빌드 캐시도 청소
-poetry run jupyter lab clean
-echo "✅ Clean complete"
+# Step 1: Build Agent Server
+echo "1. Building Agent Server..."
+cd "$ROOT_DIR/agent-server"
+poetry install --no-interaction
+poetry run pytest tests/ -v --tb=short
+echo "Agent Server build complete"
 echo ""
 
-# Step 1: TypeScript compilation
-echo "1️⃣  Compiling TypeScript..."
-npx tsc
-echo "✅ TypeScript compilation complete"
-echo ""
+# Step 2: Build Jupyter Extension
+echo "2. Building Jupyter Extension..."
+cd "$ROOT_DIR/extensions/jupyter"
 
-# [확인 절차] 정말로 JS 파일이 변했는지 확인 (디버깅용, 나중에 주석 처리 가능)
-if grep -q "PageConfig" lib/services/ApiService.js; then
-    echo "✅ Verified: ApiService.js contains PageConfig logic."
-else
-    echo "❌ Error: ApiService.js does NOT contain PageConfig logic. Check source file."
-    exit 1
+# Clean previous builds
+rm -rf lib dist tsconfig.tsbuildinfo jupyter_ext/labextension
+
+# Install dependencies
+if [ ! -d "node_modules" ]; then
+    echo "Installing node dependencies..."
+    yarn install
 fi
 
-echo "📂 Copying static assets..."
-# frontend/styles 폴더를 lib/styles로 통째로 복사합니다.
-cp -R frontend/styles lib/
-# SVG 로고 파일들도 lib로 복사합니다.
-cp frontend/*.svg lib/
-echo "✅ Assets copied"
+# TypeScript compilation with asset copy
+echo "Compiling TypeScript..."
+mkdir -p lib/styles/icons
+cp -r frontend/styles/icons/* lib/styles/icons/
+./node_modules/.bin/tsc
 
-# Step 2: JupyterLab extension build (production mode)
-echo "2️⃣  Building JupyterLab extension (production)..."
-poetry run jupyter labextension build .
-echo "✅ JupyterLab extension build complete"
+# Build labextension
+echo "Building labextension..."
+cd "$ROOT_DIR"
+poetry run jupyter labextension build "$ROOT_DIR/extensions/jupyter" --development True
+
+echo "Jupyter Extension build complete"
 echo ""
 
-# Step 3: Build wheel package
-echo "3️⃣  Building wheel package and make hdsp-agent-assets.zip for statics..."
-poetry build
-
-# 기존 zip 파일 삭제 (오래된 파일 제거)
-rm -f hdsp-agent-assets.zip
-
-# 새로운 zip 파일 생성
-cd backend/labextension
-zip -r ../../hdsp-agent-assets.zip .
-cd ../..
-echo "✅ Wheel package build & zipping complete"
+# Step 3: Show results
+echo "Build complete!"
 echo ""
-
-# Step 4: Show results
-echo "📦 Build artifacts:"
-ls -lh dist/
-echo ""
-
-echo "🎉 Build complete!"
-echo ""
-echo "📝 To install in another environment:"
-echo "   poetry add $(pwd)/dist/hdsp_agent-0.1.0-py3-none-any.whl"
-echo ""
-echo "   Or (Force Reinstall Recommended):"
-echo "   poetry run pip install --force-reinstall --no-cache-dir $(pwd)/dist/hdsp_agent-0.1.0-py3-none-any.whl"
+echo "To run:"
+echo "  Agent Server: cd agent-server && poetry run uvicorn agent_server.main:app --port 8000"
+echo "  Jupyter Lab:  poetry run jupyter lab"

@@ -1,6 +1,6 @@
 # Agent Server 분리 아키텍처 마이그레이션
 
-## 진행 상태: Phase 2 완료 ✅
+## 진행 상태: Phase 4 완료 ✅
 
 **시작일**: 2024-12-15
 **마지막 업데이트**: 2024-12-15
@@ -63,6 +63,38 @@
 
 3. **테스트 결과**: 118 tests passed ✅
 
+### Phase 3: 통합 테스트 ✅
+
+1. **Agent Server 독립 실행 테스트** ✅
+   ```bash
+   cd agent-server
+   poetry install  # 성공
+   poetry run pytest tests/ -v  # 118 tests passed
+   poetry run uvicorn agent_server.main:app --port 8000
+   # Health check: {"status":"healthy","version":"1.0.0"}
+   ```
+
+2. **Jupyter Extension 빌드 테스트** ✅
+   ```bash
+   cd extensions/jupyter
+   touch yarn.lock  # 독립 프로젝트로 설정
+   jlpm install  # 의존성 설치 완료
+   jlpm build:lib  # TypeScript 빌드 성공
+   jupyter labextension build . --development True  # webpack 빌드 성공
+   pip install -e .  # 패키지 설치 완료
+   # Extension status: @hdsp-agent/extension enabled OK
+   ```
+
+3. **통합 E2E 테스트** ✅
+   - Agent Server → Jupyter Proxy 연결 확인
+   - `/hdsp-agent/config` 프록시 테스트 성공
+   - Config 응답: `{"provider":"gemini",...}` 정상 수신
+
+4. **발견된 사항**
+   - SVG 아이콘 복사 필요: `cp frontend/styles/icons/*.svg lib/styles/icons/`
+   - 기존 `backend` 서버 익스텐션이 여전히 활성 상태
+   - 새로운 `jupyter_ext`는 Phase 4에서 전환 필요
+
 ### Phase 2: Jupyter Extension 분리 ✅
 
 1. **디렉토리 구조 생성**
@@ -102,55 +134,41 @@
 
 ---
 
-## 남은 작업
+## 완료된 작업 (Phase 4)
 
-### Phase 3: 통합 테스트 (예상 1주)
+### Phase 4: 정리 및 전환 ✅
 
-1. **Agent Server 독립 실행 테스트**
+1. **서버 익스텐션 전환** ✅
    ```bash
-   cd agent-server
-   poetry install
-   poetry run uvicorn agent_server.main:app --reload --port 8000
+   # 기존 backend 비활성화
+   jupyter server extension disable backend --sys-prefix
+   jupyter server extension disable backend --user
+
+   # hdsp_agent.json 설정 파일 삭제 (backend: true 설정 제거)
+   rm ~/.jupyter/jupyter_server_config.d/hdsp_agent.json
+   rm $VIRTUAL_ENV/etc/jupyter/jupyter_server_config.d/hdsp_agent.json
+
+   # 새로운 jupyter_ext 활성화
+   jupyter server extension enable jupyter_ext
    ```
 
-2. **Jupyter Extension 빌드 테스트**
-   ```bash
-   cd extensions/jupyter
-   yarn install
-   yarn build
-   pip install -e .
-   jupyter labextension develop . --overwrite
-   ```
+2. **빌드 스크립트 수정** ✅
+   - `extensions/jupyter/package.json`에 SVG 복사 스크립트 추가
+   - `"prebuild:lib": "mkdir -p lib/styles/icons && cp -r frontend/styles/icons/* lib/styles/icons/"`
+   - `"build:lib": "jlpm prebuild:lib && tsc"`
 
-3. **통합 E2E 테스트**
-   ```bash
-   # Terminal 1: Agent Server
-   cd agent-server && poetry run uvicorn agent_server.main:app --port 8000
+3. **루트 파일 정리** ✅
+   - `tsconfig.json` → 삭제 (extensions/jupyter에 존재)
+   - `playwright.config.ts` → 삭제 (extensions/jupyter에 존재)
+   - `install.json` → 삭제 (extensions/jupyter에 존재)
+   - `node_modules/` → 삭제 (618MB, extensions/jupyter에서 별도 관리)
+   - `lib/`, `dist/` → 삭제 (빌드 결과물)
+   - `pyproject.toml` → 수정 (monorepo 구조로 변경)
 
-   # Terminal 2: Jupyter Lab
-   cd extensions/jupyter && jupyter lab
-
-   # Terminal 3: UI Tests
-   cd extensions/jupyter && yarn test:ui
-   ```
-
-### Phase 4: 정리 (예상 0.5주)
-
-1. **기존 backend/ 폴더 처리**
-   - `backend/services/` → 삭제 (agent-server/로 이동 완료)
-   - `backend/prompts/`, `backend/knowledge/` → 삭제 (복사 완료)
-   - `backend/handlers/` → 삭제 예정 (proxy로 대체)
-   - `backend/__init__.py` → 삭제 예정
-   - `backend/labextension/` → extensions/jupyter/로 이동
-
-2. **루트 파일 정리**
-   - `package.json` → extensions/jupyter/로 이동 완료
-   - `tsconfig.json` → extensions/jupyter/로 이동 완료
-   - `ui-tests/` → extensions/jupyter/로 이동 완료
-
-3. **문서 업데이트**
-   - `CLAUDE.md` 업데이트
-   - `README.md` 업데이트
+4. **기존 backend/ 폴더 상태**
+   - 서버 익스텐션으로서는 비활성화됨
+   - 레거시 참조를 위해 유지 (추후 완전 삭제 가능)
+   - 새로운 기능은 agent-server/ 및 extensions/jupyter/ 사용
 
 ---
 
@@ -197,9 +215,35 @@ yarn build
 
 ---
 
-## 이어서 작업할 때
+## 마이그레이션 완료 ✅
 
-1. Phase 3부터 시작
-2. Agent Server 실행 확인
-3. Jupyter Extension 빌드 확인
-4. 통합 테스트 실행
+모든 Phase가 완료되었습니다. 새로운 아키텍처:
+
+```
+[Agent Server (FastAPI :8000)]     ← agent-server/
+        ↑ HTTP/WebSocket
+        └── Jupyter Extension      ← extensions/jupyter/
+              (thin client)
+```
+
+### 실행 방법
+
+**1. Agent Server 실행**
+```bash
+cd agent-server
+poetry install
+poetry run uvicorn agent_server.main:app --port 8000
+```
+
+**2. Jupyter Lab 실행**
+```bash
+cd extensions/jupyter
+jlpm install && jlpm build
+pip install -e .
+jupyter lab
+```
+
+### 향후 개선 사항
+- [ ] backend/ 폴더 완전 삭제 (레거시 코드 정리)
+- [ ] VS Code Extension 추가 (extensions/vscode/)
+- [ ] PyCharm Extension 추가 (extensions/pycharm/)

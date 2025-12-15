@@ -3,6 +3,8 @@
  * HuggingFace Jupyter Agent 패턴 기반 Tool Calling 구조
  */
 
+import { ILLMConfig } from './index';
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Tool Definitions (HF Jupyter Agent 패턴)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -222,6 +224,7 @@ export interface AutoAgentPlanRequest {
   request: string;
   notebookContext: NotebookContext;
   availableTools?: ToolName[];
+  llmConfig?: ILLMConfig;
 }
 
 export interface AutoAgentPlanResponse {
@@ -234,6 +237,7 @@ export interface AutoAgentRefineRequest {
   error: ExecutionError;
   attempt: number;
   previousCode?: string;
+  llmConfig?: ILLMConfig;
 }
 
 export interface AutoAgentRefineResponse {

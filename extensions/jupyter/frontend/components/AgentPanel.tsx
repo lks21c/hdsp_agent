@@ -7,7 +7,14 @@ import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef, us
 import { ReactWidget, LabIcon } from '@jupyterlab/ui-components';
 import { ApiService } from '../services/ApiService';
 import { IChatMessage, IFileFixRequest, IFixedFile } from '../types';
-import { SettingsPanel, LLMConfig } from './SettingsPanel';
+import { SettingsPanel } from './SettingsPanel';
+import {
+  getLLMConfig,
+  saveLLMConfig,
+  hasValidApiKey,
+  getDefaultLLMConfig,
+  LLMConfig
+} from '../services/ApiKeyManager';
 import { AgentOrchestrator } from '../services/AgentOrchestrator';
 import {
   AgentStatus,
@@ -435,6 +442,9 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
     setIsAgentRunning(true);
 
     try {
+      // Get current llmConfig for the agent execution
+      const currentLlmConfig = llmConfig || getLLMConfig() || getDefaultLLMConfig();
+
       const result = await orchestratorRef.current.executeTask(
         request,
         notebook,
@@ -457,7 +467,8 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
                 : msg
             )
           );
-        }
+        },
+        currentLlmConfig  // Pass llmConfig to orchestrator
       );
 
       // 최종 결과 업데이트
@@ -493,56 +504,36 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
     }
   }, [notebookTracker, apiService]);
 
-  const loadConfig = async () => {
-    try {
-      const config = await apiService.getConfig();
-      
-      // If config doesn't have provider, use default
-      if (!config || !(config as any).provider) {
-        console.warn('Config missing provider, using default');
-        const defaultConfig: LLMConfig = {
-          provider: 'gemini',
-          gemini: {
-            apiKey: '',
-            model: 'gemini-2.5-pro'
-          },
-          vllm: {
-            endpoint: 'http://localhost:8000',
-            apiKey: 'test',
-            model: 'gpt-oss-120b'
-          },
-          openai: {
-            apiKey: '',
-            model: 'gpt-4'
-          }
-        };
-        setLlmConfig(defaultConfig);
-        return;
-      }
-      
-      setLlmConfig(config as any);
+  const loadConfig = () => {
+    // Load from localStorage using ApiKeyManager
+    const config = getLLMConfig();
 
-      // Log loaded model configuration
-      const configData = config as any;
-      console.log('=== HDSP Agent Model Configuration ===');
-      console.log('Provider:', configData.provider);
-
-      if (configData.provider === 'gemini') {
-        console.log('Gemini Model:', configData.gemini?.model || 'gemini-pro (default)');
-        console.log('Gemini API Key:', configData.gemini?.apiKey ? '✓ Configured' : '✗ Not configured');
-      } else if (configData.provider === 'vllm') {
-        console.log('vLLM Model:', configData.vllm?.model || 'default');
-        console.log('vLLM Endpoint:', configData.vllm?.endpoint || 'http://localhost:8000');
-        console.log('vLLM API Key:', configData.vllm?.apiKey ? '✓ Configured' : '✗ Not configured');
-      } else if (configData.provider === 'openai') {
-        console.log('OpenAI Model:', configData.openai?.model || 'gpt-4');
-        console.log('OpenAI API Key:', configData.openai?.apiKey ? '✓ Configured' : '✗ Not configured');
-      }
-
-      console.log('=====================================');
-    } catch (error) {
-      console.error('Failed to load config:', error);
+    if (!config) {
+      console.log('[AgentPanel] No config in localStorage, using default');
+      const defaultConfig = getDefaultLLMConfig();
+      setLlmConfig(defaultConfig);
+      return;
     }
+
+    setLlmConfig(config);
+
+    // Log loaded model configuration
+    console.log('=== HDSP Agent Model Configuration (localStorage) ===');
+    console.log('Provider:', config.provider);
+
+    if (config.provider === 'gemini') {
+      console.log('Gemini Model:', config.gemini?.model || 'gemini-2.5-flash (default)');
+      console.log('Gemini API Key:', config.gemini?.apiKey ? '✓ Configured' : '✗ Not configured');
+    } else if (config.provider === 'vllm') {
+      console.log('vLLM Model:', config.vllm?.model || 'default');
+      console.log('vLLM Endpoint:', config.vllm?.endpoint || 'http://localhost:8000');
+      console.log('vLLM API Key:', config.vllm?.apiKey ? '✓ Configured' : '✗ Not configured');
+    } else if (config.provider === 'openai') {
+      console.log('OpenAI Model:', config.openai?.model || 'gpt-4');
+      console.log('OpenAI API Key:', config.openai?.apiKey ? '✓ Configured' : '✗ Not configured');
+    }
+
+    console.log('====================================================');
   };
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -755,28 +746,18 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
     setMessages(prev => [...prev, errorMessage]);
   };
 
-  const handleSaveConfig = async (config: LLMConfig) => {
-    try {
-      console.log('=== handleSaveConfig 시작 ===');
-      console.log('전송할 config:', JSON.stringify(config, null, 2));
-      console.log('Provider:', config.provider);
-      console.log('Gemini API Key:', config.gemini?.apiKey ? `${config.gemini.apiKey.substring(0, 10)}...` : 'empty');
+  const handleSaveConfig = (config: LLMConfig) => {
+    console.log('[AgentPanel] Saving config to localStorage');
+    console.log('Provider:', config.provider);
+    console.log('API Key configured:', hasValidApiKey(config) ? '✓ Yes' : '✗ No');
 
-      await apiService.saveConfig(config as any);
+    // Save to localStorage using ApiKeyManager
+    saveLLMConfig(config);
 
-      console.log('서버 저장 완료, state 업데이트 중...');
-      setLlmConfig(config);
-      
-      // Reload config from server to ensure consistency
-      await loadConfig();
-      
-      console.log('=== handleSaveConfig 완료 ===');
-      alert('설정이 성공적으로 저장되었습니다!');
-    } catch (error) {
-      console.error('=== handleSaveConfig 실패 ===');
-      console.error('Error:', error);
-      alert('설정 저장 실패. 다시 시도해주세요.');
-    }
+    // Update state
+    setLlmConfig(config);
+
+    console.log('[AgentPanel] Config saved successfully');
   };
 
   // Auto-scroll to bottom when messages change
@@ -831,7 +812,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
 
       // Update code blocks ref
       allCodeBlocksRef.current = codeBlocks;
-      console.log(`[AgentPanel] Stored ${codeBlocks.length} code blocks`);
+      console.log(`[AgentPanel] Stored ${codeBlocks.length} code blocks`, codeBlocks.map(b => b.id));
 
       // Use event delegation - attach single listener to container
       const handleContainerClick = async (e: Event) => {
@@ -885,6 +866,11 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
 
           const block = allCodeBlocksRef.current.find(b => b.id === blockId);
           if (!block) {
+            console.error('[AgentPanel] Block not found!', {
+              clickedId: blockId,
+              availableIds: allCodeBlocksRef.current.map(b => b.id),
+              blocksCount: allCodeBlocksRef.current.length
+            });
             showNotification('코드를 찾을 수 없습니다.', 'error');
             return;
           }
@@ -971,6 +957,62 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
     animateNotification(notification);
   };
 
+  // Show tooltip on a specific cell
+  const showCellTooltip = (cellElement: HTMLElement, message: string) => {
+    // Remove any existing tooltip
+    const existingTooltip = document.querySelector('.jp-agent-cell-tooltip');
+    if (existingTooltip) {
+      existingTooltip.remove();
+    }
+
+    const tooltip = document.createElement('div');
+    tooltip.className = 'jp-agent-cell-tooltip';
+    tooltip.textContent = message;
+    tooltip.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 8px 16px;
+      border-radius: 0 0 8px 8px;
+      font-size: 13px;
+      font-weight: 500;
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+      z-index: 1000;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      pointer-events: none;
+      white-space: nowrap;
+    `;
+
+    // Make cell position relative if not already
+    const originalPosition = cellElement.style.position;
+    if (!originalPosition || originalPosition === 'static') {
+      cellElement.style.position = 'relative';
+    }
+
+    cellElement.appendChild(tooltip);
+
+    // Fade in
+    requestAnimationFrame(() => {
+      tooltip.style.opacity = '1';
+    });
+
+    // Fade out and remove after 2 seconds
+    setTimeout(() => {
+      tooltip.style.opacity = '0';
+      setTimeout(() => {
+        tooltip.remove();
+        // Restore original position
+        if (!originalPosition || originalPosition === 'static') {
+          cellElement.style.position = originalPosition || '';
+        }
+      }, 300);
+    }, 2000);
+  };
+
   // Apply code to Jupyter cell
   const applyCodeToCell = async (code: string, blockId: string, button: HTMLButtonElement) => {
     console.log('[AgentPanel] applyCodeToCell called', { codeLength: code.length, blockId });
@@ -1049,18 +1091,27 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
     originalText: string | null
   ) => {
     try {
+      // Get widgets from notebook
+      const cells = notebook.widgets || [];
+      const modelCellsLength = notebook.model?.cells?.length || 0;
+
       console.log('[AgentPanel] applyCodeToNotebookCell called', {
         currentCellIndex: currentCellIndexRef.current,
         currentCellId: currentCellIdRef.current,
-        blockId
+        blockId,
+        widgetsLength: cells.length,
+        modelCellsLength: modelCellsLength
       });
 
       // Try cell index first (most reliable)
       if (currentCellIndexRef.current !== null && currentCellIndexRef.current !== undefined) {
         console.log('[AgentPanel] Using cell index:', currentCellIndexRef.current);
-        const cells = notebook.widgets || [];
 
-        if (currentCellIndexRef.current >= 0 && currentCellIndexRef.current < cells.length) {
+        // Safety check: if widgets array is empty but model has cells, there might be a rendering issue
+        if (cells.length === 0 && modelCellsLength > 0) {
+          console.warn('[AgentPanel] Widgets not rendered yet, model has', modelCellsLength, 'cells');
+          // Fall through to show selector dialog
+        } else if (currentCellIndexRef.current >= 0 && currentCellIndexRef.current < cells.length) {
           const cell = cells[currentCellIndexRef.current];
           const cellModel = cell.model || cell;
 
@@ -1069,7 +1120,12 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
           try {
             setCellSource(cellModel, code);
             console.log('[AgentPanel] Code applied successfully!');
-            showNotification('코드가 셀에 적용되었습니다!', 'info');
+            // Show tooltip on the target cell
+            if (cell.node) {
+              showCellTooltip(cell.node as HTMLElement, '✓ 코드가 적용되었습니다');
+            } else {
+              showNotification('코드가 셀에 적용되었습니다!', 'info');
+            }
             resetButtonState(button, originalText);
             // Clear the cell index after successful application
             currentCellIndexRef.current = null;
@@ -1082,17 +1138,19 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
             return;
           }
         } else {
-          console.error('[AgentPanel] Cell index out of bounds:', currentCellIndexRef.current, 'cells.length:', cells.length);
-          showNotification('대상 셀을 찾을 수 없습니다. 셀이 삭제되었거나 이동했을 수 있습니다.', 'error');
-          resetButtonState(button, originalText);
+          console.error('[AgentPanel] Cell index out of bounds:', {
+            currentIndex: currentCellIndexRef.current,
+            widgetsLength: cells.length,
+            modelCellsLength: modelCellsLength
+          });
+          // Don't show error, fall through to selector dialog
           currentCellIndexRef.current = null;
           currentCellIdRef.current = null;
-          return;
         }
       }
 
       // Fallback: show selector dialog
-      console.log('[AgentPanel] No current cell index set, showing selector dialog');
+      console.log('[AgentPanel] Showing cell selector dialog');
       showCellSelectorDialog(code, button, originalText);
     } catch (error) {
       console.error('Failed to apply code:', error);
@@ -1292,8 +1350,13 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
           // Apply code to cell
           try {
             setCellSource(cellModel, code);
-            showNotification('코드가 셀에 적용되었습니다!', 'info');
             dialogOverlay.remove();
+            // Show tooltip on the target cell
+            if (cellInfo.cell.node) {
+              showCellTooltip(cellInfo.cell.node as HTMLElement, '✓ 코드가 적용되었습니다');
+            } else {
+              showNotification('코드가 셀에 적용되었습니다!', 'info');
+            }
             resetButtonState(button, originalText);
           } catch (error) {
             console.error('Failed to apply code to cell:', error);
@@ -1523,27 +1586,15 @@ SyntaxError: '(' was never closed
     }
 
     // Check if API key is configured before sending
-    if (!llmConfig) {
-      // Config not loaded yet, try to load it
-      await loadConfig();
+    let currentConfig = llmConfig;
+    if (!currentConfig) {
+      // Config not loaded yet, try to load from localStorage
+      currentConfig = getLLMConfig() || getDefaultLLMConfig();
+      setLlmConfig(currentConfig);
     }
 
-    // Check API key based on provider
-    const hasApiKey = (() => {
-      if (!llmConfig || !llmConfig.provider) {
-        return false;
-      }
-      const provider = llmConfig.provider;
-      if (provider === 'gemini') {
-        return !!(llmConfig.gemini?.apiKey && llmConfig.gemini.apiKey.trim());
-      } else if (provider === 'vllm') {
-        // vLLM may not require API key, but check if endpoint is configured
-        return !!(llmConfig.vllm?.endpoint && llmConfig.vllm.endpoint.trim());
-      } else if (provider === 'openai') {
-        return !!(llmConfig.openai?.apiKey && llmConfig.openai.apiKey.trim());
-      }
-      return false;
-    })();
+    // Check API key using ApiKeyManager
+    const hasApiKey = hasValidApiKey(currentConfig);
 
     if (!hasApiKey) {
       // Show error message and open settings
@@ -1603,7 +1654,8 @@ SyntaxError: '(' was never closed
       await apiService.sendMessageStream(
         {
           message: messageToSend,
-          conversationId: conversationId || undefined
+          conversationId: conversationId || undefined,
+          llmConfig: currentConfig  // Include API keys with request
         },
         // onChunk callback - update message content incrementally
         (chunk: string) => {

@@ -16,6 +16,7 @@ import { SafetyChecker } from '../utils/SafetyChecker';
 import { StateVerifier } from './StateVerifier';
 import { ContextManager } from './ContextManager';
 import { CheckpointManager } from './CheckpointManager';
+import { ILLMConfig } from '../types';
 import {
   ToolCall,
   ToolResult,
@@ -127,7 +128,8 @@ export class AgentOrchestrator {
   async executeTask(
     userRequest: string,
     notebook: NotebookPanel,
-    onProgress: (status: AgentStatus) => void
+    onProgress: (status: AgentStatus) => void,
+    llmConfig?: ILLMConfig
   ): Promise<AutoAgentResult> {
     if (this.isRunning) {
       return {
@@ -168,6 +170,7 @@ export class AgentOrchestrator {
         request: userRequest,
         notebookContext,
         availableTools: ['jupyter_cell', 'markdown', 'final_answer'],
+        llmConfig,  // Include API keys with request
       });
 
       const plan = planResponse.plan;

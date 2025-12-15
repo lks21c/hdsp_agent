@@ -22,8 +22,40 @@ logger = logging.getLogger(__name__)
 
 
 def _get_config() -> Dict[str, Any]:
-    """Get current configuration"""
+    """Get current configuration (fallback only)"""
     return ConfigManager.get_instance().get_config()
+
+
+def _build_llm_config(llm_config) -> Dict[str, Any]:
+    """
+    Build LLM config dict from client-provided LLMConfig.
+    Falls back to server config if not provided.
+    """
+    if llm_config is None:
+        return _get_config()
+
+    config = {"provider": llm_config.provider}
+
+    if llm_config.gemini:
+        config["gemini"] = {
+            "apiKey": llm_config.gemini.apiKey,
+            "model": llm_config.gemini.model,
+        }
+
+    if llm_config.openai:
+        config["openai"] = {
+            "apiKey": llm_config.openai.apiKey,
+            "model": llm_config.openai.model,
+        }
+
+    if llm_config.vllm:
+        config["vllm"] = {
+            "endpoint": llm_config.vllm.endpoint,
+            "apiKey": llm_config.vllm.apiKey,
+            "model": llm_config.vllm.model,
+        }
+
+    return config
 
 
 def _get_or_create_conversation(conversation_id: str | None) -> str:
@@ -60,12 +92,13 @@ async def chat_message(request: ChatRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail="message is required")
 
     try:
-        config = _get_config()
+        # Use client-provided config or fallback to server config
+        config = _build_llm_config(request.llmConfig)
 
         if not config or not config.get("provider"):
             raise HTTPException(
                 status_code=400,
-                detail="LLM not configured. Please configure your LLM provider.",
+                detail="LLM not configured. Please provide llmConfig with API keys.",
             )
 
         # Get or create conversation
@@ -74,9 +107,9 @@ async def chat_message(request: ChatRequest) -> Dict[str, Any]:
         # Build context from history
         context = _build_context(conversation_id)
 
-        # Call LLM
+        # Call LLM with client-provided config
         llm_service = LLMService(config)
-        response = await llm_service.generate(
+        response = await llm_service.generate_response(
             request.message, context=context
         )
 
@@ -114,10 +147,11 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
 
     async def generate() -> AsyncGenerator[str, None]:
         try:
-            config = _get_config()
+            # Use client-provided config or fallback to server config
+            config = _build_llm_config(request.llmConfig)
 
             if not config or not config.get("provider"):
-                yield f"data: {json.dumps({'error': 'LLM not configured'})}\n\n"
+                yield f"data: {json.dumps({'error': 'LLM not configured. Please provide llmConfig with API keys.'})}\n\n"
                 return
 
             # Get or create conversation
@@ -126,11 +160,11 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             # Build context
             context = _build_context(conversation_id)
 
-            # Stream LLM response
+            # Stream LLM response with client-provided config
             llm_service = LLMService(config)
             full_response = ""
 
-            async for chunk in llm_service.stream(request.message, context=context):
+            async for chunk in llm_service.generate_response_stream(request.message, context=context):
                 full_response += chunk
                 yield f"data: {json.dumps({'content': chunk, 'done': False})}\n\n"
 
