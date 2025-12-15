@@ -233,6 +233,10 @@ async def generate_plan(request: PlanRequest) -> Dict[str, Any]:
         # Sanitize code blocks
         plan_data = _sanitize_tool_calls(plan_data)
 
+        # Ensure goal field exists (use user request if not provided by LLM)
+        if "goal" not in plan_data["plan"]:
+            plan_data["plan"]["goal"] = request.request
+
         return {
             "plan": plan_data["plan"],
             "reasoning": plan_data.get("reasoning", ""),
