@@ -37,6 +37,7 @@ interface AgentExecutionMessage {
   result: AutoAgentResult | null;
   completedSteps: number[];
   failedSteps: number[];
+  skippedSteps: number[];  // 건너뛴 단계들
   timestamp: number;
 }
 
@@ -427,6 +428,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
       result: null,
       completedSteps: [],
       failedSteps: [],
+      skippedSteps: [],  // 건너뛴 단계들
       timestamp: Date.now(),
     };
 
@@ -439,6 +441,13 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
         request,
         notebook,
         (newStatus: AgentStatus) => {
+          console.log('[AgentPanel] handleProgress called:', {
+            phase: newStatus.phase,
+            currentStep: newStatus.currentStep,
+            failedStep: newStatus.failedStep,
+            message: newStatus.message
+          });
+
           // 실시간 상태 업데이트
           setMessages(prev =>
             prev.map(msg =>
@@ -450,9 +459,12 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
                     completedSteps: newStatus.currentStep && newStatus.currentStep > 1
                       ? Array.from({ length: newStatus.currentStep - 1 }, (_, i) => i + 1)
                       : msg.completedSteps,
-                    failedSteps: newStatus.phase === 'failed' && newStatus.currentStep
-                      ? [...msg.failedSteps, newStatus.currentStep]
+                    // 🔴 FIX: failedStep 필드를 직접 확인 (phase === 'failed'가 아니라!)
+                    failedSteps: newStatus.failedStep && !msg.failedSteps.includes(newStatus.failedStep)
+                      ? [...msg.failedSteps, newStatus.failedStep]
                       : msg.failedSteps,
+                    // 건너뛴 단계들 업데이트
+                    skippedSteps: newStatus.skippedSteps || msg.skippedSteps,
                   }
                 : msg
             )
@@ -1695,10 +1707,11 @@ SyntaxError: '(' was never closed
 
   // Agent 실행 메시지 렌더링
   const renderAgentExecutionMessage = (msg: AgentExecutionMessage) => {
-    const { status, plan, result, completedSteps, failedSteps, request } = msg;
+    const { status, plan, result, completedSteps, failedSteps, skippedSteps, request } = msg;
     const isActive = ['planning', 'executing', 'tool_calling', 'self_healing', 'replanning', 'validating', 'reflecting'].includes(status.phase);
 
-    const getStepStatus = (stepNumber: number): 'completed' | 'failed' | 'current' | 'pending' => {
+    const getStepStatus = (stepNumber: number): 'completed' | 'failed' | 'current' | 'pending' | 'skipped' => {
+      if (skippedSteps.includes(stepNumber)) return 'skipped';  // 건너뛴 단계 (최대 재시도 초과 후)
       if (failedSteps.includes(stepNumber)) return 'failed';
       if (completedSteps.includes(stepNumber)) return 'completed';
       if (status.currentStep === stepNumber) return 'current';
@@ -1764,10 +1777,14 @@ SyntaxError: '(' was never closed
             <div className="jp-agent-execution-steps">
               {plan.steps.map((step) => {
                 const stepStatus = getStepStatus(step.stepNumber);
+                const depth = step.replanDepth || 0;  // 재시도 깊이 (0: 원본, 1: A-1, 2: A-2, ...)
+                const indentPx = depth * 20;  // 깊이당 20px 들여쓰기
+
                 return (
                   <div
                     key={step.stepNumber}
                     className={`jp-agent-execution-step jp-agent-execution-step--${stepStatus}`}
+                    style={{ paddingLeft: `${indentPx}px` }}
                     ref={(el) => {
                       // 현재 진행 중인 단계로 자동 스크롤
                       if (stepStatus === 'current' && el) {
@@ -1775,6 +1792,11 @@ SyntaxError: '(' was never closed
                       }
                     }}
                   >
+                    {/* 재시도 깊이 표시: 연결선 */}
+                    {depth > 0 && (
+                      <div className="jp-agent-execution-step-indent-line" style={{ left: `${indentPx - 10}px` }} />
+                    )}
+
                     <div className="jp-agent-execution-step-indicator">
                       {stepStatus === 'completed' && (
                         <svg viewBox="0 0 16 16" fill="currentColor">
@@ -1784,6 +1806,11 @@ SyntaxError: '(' was never closed
                       {stepStatus === 'failed' && (
                         <svg viewBox="0 0 16 16" fill="currentColor">
                           <path d="M3.72 3.72a.75.75 0 011.06 0L8 6.94l3.22-3.22a.75.75 0 111.06 1.06L9.06 8l3.22 3.22a.75.75 0 11-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 01-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 010-1.06z"/>
+                        </svg>
+                      )}
+                      {stepStatus === 'skipped' && (
+                        <svg viewBox="0 0 16 16" fill="currentColor">
+                          <path d="M4 8a.5.5 0 01.5-.5h7a.5.5 0 010 1h-7A.5.5 0 014 8z"/>
                         </svg>
                       )}
                       {stepStatus === 'current' && <div className="jp-agent-execution-step-spinner" />}

@@ -184,8 +184,8 @@ export class AgentOrchestrator {
       console.log('[Orchestrator] Starting execution phase with', plan.steps.length, 'steps');
       let currentPlan = plan;
       let stepIndex = 0;
-      let replanAttempts = 0;
-      const MAX_REPLAN_ATTEMPTS = 3;
+      let currentStepReplanDepth = 0;  // 현재 step의 replan depth (step마다 독립적)
+      const MAX_REPLAN_DEPTH = 3;       // 각 step당 최대 3번 replan 가능 (A → A-1 → A-2 → A-3)
 
       while (stepIndex < currentPlan.steps.length) {
         const step = currentPlan.steps[stepIndex];
@@ -233,23 +233,35 @@ export class AgentOrchestrator {
 
         // 단계 실패 시 Adaptive Replanning 시도
         if (!stepResult.success) {
-          console.log('[Orchestrator] Step failed, attempting adaptive replanning');
+          console.log('[Orchestrator] Step failed, attempting adaptive replanning (depth:', currentStepReplanDepth, ')');
 
-          if (replanAttempts >= MAX_REPLAN_ATTEMPTS) {
+          // 현재 step의 replan depth가 최대치를 초과하면 남은 단계를 skipped로 처리
+          if (currentStepReplanDepth >= MAX_REPLAN_DEPTH) {
+            console.log('[Orchestrator] Max replan depth exceeded. Marking remaining steps as skipped.');
+
+            // 남은 단계들의 번호를 수집하여 skipped 목록에 추가
+            const skippedSteps: number[] = [];
+            for (let i = stepIndex + 1; i < currentPlan.steps.length; i++) {
+              skippedSteps.push(currentPlan.steps[i].stepNumber);
+            }
+
             onProgress({
               phase: 'failed',
-              message: `최대 재계획 시도 횟수(${MAX_REPLAN_ATTEMPTS})를 초과했습니다.`,
-              failedStep: step.stepNumber,  // 실패한 step UI에 표시
+              message: `Step ${step.stepNumber}: 최대 재시도 횟수(${MAX_REPLAN_DEPTH}번)를 초과했습니다. 남은 ${skippedSteps.length}개 단계를 건너뜁니다.`,
+              failedStep: step.stepNumber,
+              skippedSteps,  // 건너뛴 step 목록 UI에 전달
             });
+
             return {
               success: false,
               plan: currentPlan,
               executedSteps,
               createdCells,
               modifiedCells,
-              error: `Step ${step.stepNumber} 실패: ${stepResult.error}`,
+              error: `Step ${step.stepNumber} 실패: 최대 재시도 횟수 초과 (${stepResult.error})`,
               totalAttempts: this.countTotalAttempts(executedSteps),
               executionTime: Date.now() - startTime,
+              skippedSteps,  // 결과에도 skipped 단계 포함
             };
           }
 
@@ -297,6 +309,32 @@ export class AgentOrchestrator {
             console.log('[Orchestrator] Replan decision:', replanResponse.decision);
             console.log('[Orchestrator] Replan reasoning:', replanResponse.reasoning);
 
+            // ★ Backend 응답 상세 로그 (디버깅용)
+            console.log('[Orchestrator] Error type:', errorName);
+            console.log('[Orchestrator] Changes structure:', {
+              has_refined_code: !!replanResponse.changes.refined_code,
+              has_new_steps: !!replanResponse.changes.new_steps,
+              new_steps_count: replanResponse.changes.new_steps?.length || 0,
+              has_replacement: !!replanResponse.changes.replacement,
+              has_new_plan: !!replanResponse.changes.new_plan,
+            });
+
+            // ModuleNotFoundError 상세 로그
+            if (errorName === 'ModuleNotFoundError') {
+              const missingPkg = this.extractMissingPackage(executionError.message);
+              console.log('[Orchestrator] Missing package detected:', missingPkg);
+              console.log('[Orchestrator] Expected: insert_steps with pip install, Got:', replanResponse.decision);
+            }
+
+            // ★ 재시도 코드 변경 여부 확인용 로그
+            if (replanResponse.changes.refined_code) {
+              const originalCell = currentPlan.steps[stepIndex].toolCalls.find(tc => tc.tool === 'jupyter_cell');
+              const originalCode = originalCell && 'code' in originalCell.parameters ? originalCell.parameters.code : '';
+              console.log('[Orchestrator] Original code length:', originalCode.length);
+              console.log('[Orchestrator] Refined code length:', replanResponse.changes.refined_code.length);
+              console.log('[Orchestrator] Refined code preview:', replanResponse.changes.refined_code.substring(0, 100));
+            }
+
             // ★ 결정 결과를 UI에 즉시 반영 (에러 분석 → 결정 완료)
             const decisionLabel = this.getReplanDecisionLabel(replanResponse.decision);
             // ModuleNotFoundError일 때 패키지명 추출
@@ -322,12 +360,13 @@ export class AgentOrchestrator {
             const failedCellIndex = stepResult.toolResults.find(r => r.cellIndex !== undefined)?.cellIndex;
             console.log('[Orchestrator] Failed cell index for reuse:', failedCellIndex);
 
-            // Replan 결과에 따른 계획 수정 (실패한 셀 인덱스 전달)
+            // Replan 결과에 따른 계획 수정 (depth 정보 전달)
             currentPlan = this.applyReplanChanges(
               currentPlan,
               stepIndex,
               replanResponse,
-              failedCellIndex
+              failedCellIndex,
+              currentStepReplanDepth  // depth 정보 전달
             );
 
             // ★ 업데이트된 계획을 UI에 반영 (plan item list에 새 스텝 표시)
@@ -339,8 +378,11 @@ export class AgentOrchestrator {
               totalSteps: currentPlan.totalSteps,
             });
 
-            replanAttempts++;
-            // stepIndex는 그대로 유지 (수정된 현재 단계를 다시 실행)
+            // depth 증가 (A → A-1 → A-2 → A-3)
+            currentStepReplanDepth++;
+            // ★ stepIndex 증가: 새로 삽입된 재시도 단계(A-1, A-2 등)를 실행하기 위해
+            // applyReplanChanges가 현재 단계 다음에 재시도 단계를 삽입하므로, stepIndex++로 이동
+            stepIndex++;
             continue;
           } catch (replanError: any) {
             console.error('[Orchestrator] Replan failed:', replanError);
@@ -363,7 +405,7 @@ export class AgentOrchestrator {
 
         // 성공한 단계 기록
         executedSteps.push(stepResult);
-        replanAttempts = 0; // 성공 시 재계획 시도 횟수 리셋
+        currentStepReplanDepth = 0; // 성공 시 재시도 깊이 리셋 (다음 단계는 새로운 깊이 추적)
 
         // ★ 성공한 Step에서 정의된 변수 추적 (cross-step validation용)
         this.trackVariablesFromStep(step);
@@ -1190,19 +1232,27 @@ export class AgentOrchestrator {
     plan: ExecutionPlan,
     currentStepIndex: number,
     replanResponse: AutoAgentReplanResponse,
-    failedCellIndex?: number  // 이제 사용하지 않음 (API 호환성 유지)
+    failedCellIndex?: number,  // 이제 사용하지 않음 (API 호환성 유지)
+    currentStepReplanDepth: number = 0  // NEW: 현재 단계의 재시도 깊이
   ): ExecutionPlan {
     const { decision, changes } = replanResponse;
     const steps = [...plan.steps];
     const currentStep = steps[currentStepIndex];
 
-    console.log('[Orchestrator] Applying replan changes:', decision, '(always append new cells)');
+    console.log('[Orchestrator] Applying replan changes:', decision, 'depth:', currentStepReplanDepth);
 
     switch (decision) {
       case 'refine':
-        // 현재 단계의 코드만 수정 - 기존 셀 수정 (MODIFY 작업)
+        // ★ 계층적 재시도: 실패한 단계는 유지하고, 재시도 단계를 그 아래에 추가
         if (changes.refined_code) {
-          const newToolCalls = currentStep.toolCalls.map(tc => {
+          // 1) 실패한 단계는 그대로 유지 (이미 실패 표시됨)
+
+          // 2) 재시도 단계 생성
+          const retryStepNumber = currentStep.replanDepth !== undefined
+            ? `${currentStep.stepNumber}-${currentStepReplanDepth + 1}`
+            : `${currentStep.stepNumber}-${currentStepReplanDepth + 1}`;
+
+          const retryToolCalls = currentStep.toolCalls.map(tc => {
             if (tc.tool === 'jupyter_cell') {
               const params = tc.parameters as JupyterCellParams;
               return {
@@ -1210,21 +1260,26 @@ export class AgentOrchestrator {
                 parameters: {
                   ...params,
                   code: changes.refined_code!,
-                  // ★ cellIndex 보존: 기존 셀 또는 실패한 셀을 수정
-                  cellIndex: params.cellIndex ?? failedCellIndex,
-                  operation: 'MODIFY' as CellOperation,
+                  operation: 'CREATE' as CellOperation,  // 새 셀 생성
                 },
               };
             }
             return tc;
           });
-          steps[currentStepIndex] = {
+
+          const retryStep: PlanStep = {
             ...currentStep,
-            toolCalls: newToolCalls,
-            wasReplanned: true,  // Replan으로 수정됨 표시
-            cellOperation: 'MODIFY',
-            targetCellIndex: failedCellIndex,
+            stepNumber: currentStep.stepNumber,  // 나중에 재정렬됨
+            description: `[재시도 ${currentStepReplanDepth + 1}] ${currentStep.description}`,
+            toolCalls: retryToolCalls,
+            parentStepNumber: currentStep.stepNumber,  // 부모 단계 번호
+            replanDepth: currentStepReplanDepth + 1,    // 재시도 깊이
+            isNew: true,                                 // 새로 추가된 스텝
+            cellOperation: 'CREATE',                     // 새 셀 생성
           };
+
+          // 3) 현재 단계 다음에 재시도 단계 삽입
+          steps.splice(currentStepIndex + 1, 0, retryStep);
         }
         break;
 
@@ -1235,9 +1290,16 @@ export class AgentOrchestrator {
           const newSteps = changes.new_steps.map((newStep, idx) => ({
             ...newStep,
             stepNumber: currentStep.stepNumber + idx * 0.1, // 임시 번호
+            parentStepNumber: currentStep.stepNumber,  // 실패한 단계가 부모
+            replanDepth: currentStepReplanDepth + 1,    // 재시도 깊이
+            description: `[재시도 ${currentStepReplanDepth + 1}] ${newStep.description}`,
             isNew: true, // Replan으로 새로 추가된 스텝 표시
             cellOperation: 'CREATE' as CellOperation,  // 새 셀 생성
           }));
+
+          console.log('[Orchestrator] Inserting', newSteps.length, 'new steps with replanDepth:',
+            currentStepReplanDepth + 1,
+            'Descriptions:', newSteps.map(s => s.description));
 
           steps.splice(currentStepIndex, 0, ...newSteps);
           // 단계 번호 재정렬
@@ -1248,15 +1310,22 @@ export class AgentOrchestrator {
         break;
 
       case 'replace_step':
-        // 현재 단계를 완전히 교체 - 새 셀 생성
+        // ★ 계층적 재시도: 실패한 단계는 유지하고, 대체 접근법을 재시도 단계로 추가
         if (changes.replacement) {
+          // 1) 실패한 단계는 그대로 유지 (이미 실패 표시됨)
+
+          // 2) 대체 재시도 단계 생성
           const replacementStep: PlanStep = {
             ...changes.replacement,
-            stepNumber: currentStep.stepNumber,
+            stepNumber: currentStep.stepNumber,  // 나중에 재정렬됨
+            description: `[재시도 ${currentStepReplanDepth + 1}] ${changes.replacement.description || currentStep.description}`,
             toolCalls: changes.replacement.toolCalls || [],
-            isReplaced: true,  // 교체된 스텝 표시
-            cellOperation: 'CREATE' as CellOperation,  // 새 셀 생성
+            parentStepNumber: currentStep.stepNumber,  // 부모 단계 번호
+            replanDepth: currentStepReplanDepth + 1,    // 재시도 깊이
+            isNew: true,                                 // 새로 추가된 스텝
+            cellOperation: 'CREATE' as CellOperation,    // 새 셀 생성
           };
+
           // cellIndex 속성 명시적 제거 (새 셀 생성)
           replacementStep.toolCalls.forEach(tc => {
             if (tc.tool === 'jupyter_cell' && tc.parameters) {
@@ -1264,7 +1333,9 @@ export class AgentOrchestrator {
               (tc.parameters as JupyterCellParams).operation = 'CREATE';
             }
           });
-          steps[currentStepIndex] = replacementStep;
+
+          // 3) 현재 단계 다음에 재시도 단계 삽입
+          steps.splice(currentStepIndex + 1, 0, replacementStep);
         }
         break;
 

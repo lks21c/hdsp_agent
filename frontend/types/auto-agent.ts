@@ -99,6 +99,8 @@ export interface PlanStep {
   isReplaced?: boolean;       // 완전히 교체된 스텝인지 여부
   cellOperation?: CellOperation;  // 이 스텝의 셀 작업 유형 (UI 표시용)
   targetCellIndex?: number;   // 대상 셀 인덱스 (UI 표시용)
+  parentStepNumber?: number;  // 이 step이 replan된 원본 step 번호 (A-1의 경우 A의 stepNumber)
+  replanDepth?: number;       // Replan 깊이 (0: 원본, 1: A-1, 2: A-2, ...)
 }
 
 export interface StepResult {
@@ -139,6 +141,7 @@ export interface AgentStatus {
   attempt?: number;
   error?: ExecutionError;
   failedStep?: number;  // 실패한 step number (UI에 빨간 X 표시용)
+  skippedSteps?: number[];  // 건너뛴 step numbers (최대 재시도 초과 시)
   // Validation & Reflection 상태
   validationStatus?: 'checking' | 'passed' | 'warning' | 'failed';
   reflectionStatus?: 'analyzing' | 'passed' | 'adjusting';
@@ -171,6 +174,7 @@ export interface AutoAgentResult {
   executedSteps: StepResult[];
   createdCells: number[];    // 생성된 셀 인덱스들
   modifiedCells: number[];   // 수정된 셀 인덱스들
+  skippedSteps?: number[];   // 건너뛴 단계들 (최대 재시도 초과 시)
   finalAnswer?: string;
   error?: string;
   totalAttempts: number;

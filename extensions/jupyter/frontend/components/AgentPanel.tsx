@@ -439,6 +439,13 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
         request,
         notebook,
         (newStatus: AgentStatus) => {
+          console.log('[AgentPanel] handleProgress called:', {
+            phase: newStatus.phase,
+            currentStep: newStatus.currentStep,
+            failedStep: newStatus.failedStep,
+            message: newStatus.message
+          });
+
           // 실시간 상태 업데이트
           setMessages(prev =>
             prev.map(msg =>
@@ -450,8 +457,9 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
                     completedSteps: newStatus.currentStep && newStatus.currentStep > 1
                       ? Array.from({ length: newStatus.currentStep - 1 }, (_, i) => i + 1)
                       : msg.completedSteps,
-                    failedSteps: newStatus.phase === 'failed' && newStatus.currentStep
-                      ? [...msg.failedSteps, newStatus.currentStep]
+                    // 🔴 FIX: failedStep 필드를 직접 확인 (phase === 'failed'가 아니라!)
+                    failedSteps: newStatus.failedStep && !msg.failedSteps.includes(newStatus.failedStep)
+                      ? [...msg.failedSteps, newStatus.failedStep]
                       : msg.failedSteps,
                   }
                 : msg

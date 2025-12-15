@@ -530,6 +530,13 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
   }, [executionSpeed]);
 
   const handleProgress = useCallback((newStatus: AgentStatus) => {
+    console.log('[AutoAgentPanel] handleProgress called:', {
+      phase: newStatus.phase,
+      currentStep: newStatus.currentStep,
+      failedStep: newStatus.failedStep,
+      message: newStatus.message
+    });
+
     setStatus(newStatus);
     if (newStatus.plan) {
       setPlan(newStatus.plan);
@@ -539,18 +546,19 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
       }
     }
     if (newStatus.phase === 'executing' && newStatus.currentStep && newStatus.currentStep > 1) {
-      setCompletedSteps(Array.from({ length: newStatus.currentStep - 1 }, (_, i) => i + 1));
+      const newCompleted = Array.from({ length: newStatus.currentStep - 1 }, (_, i) => i + 1);
+      console.log('[AutoAgentPanel] Setting completedSteps:', newCompleted);
+      setCompletedSteps(newCompleted);
     }
     // 실패한 step 처리 (failedStep 필드 우선 사용)
     if (newStatus.failedStep) {
       console.log('[AutoAgentPanel] failedStep detected:', newStatus.failedStep);
       setFailedSteps(prev => {
-        if (!prev.includes(newStatus.failedStep!)) {
-          console.log('[AutoAgentPanel] Adding to failedSteps:', newStatus.failedStep);
-          return [...prev, newStatus.failedStep!];
-        }
-        console.log('[AutoAgentPanel] failedStep already in list');
-        return prev;
+        const newFailedSteps = prev.includes(newStatus.failedStep!)
+          ? prev
+          : [...prev, newStatus.failedStep!];
+        console.log('[AutoAgentPanel] failedSteps updated:', prev, '->', newFailedSteps);
+        return newFailedSteps;
       });
     }
   }, [originalStepCount]);
@@ -568,13 +576,22 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
 
     try {
       const taskResult = await orchestratorRef.current.executeTask(request.trim(), notebook, handleProgress);
+      console.log('[AutoAgentPanel] Task execution completed:', {
+        success: taskResult.success,
+        totalSteps: taskResult.plan?.totalSteps,
+        executedStepsCount: taskResult.executedSteps?.length
+      });
       setResult(taskResult);
       if (taskResult.success && taskResult.plan) {
+        console.log('[AutoAgentPanel] Task succeeded, marking all steps as completed');
         setCompletedSteps(taskResult.plan.steps.map(s => s.stepNumber));
         setStatus({ phase: 'completed', message: '작업 완료' });
+      } else {
+        console.log('[AutoAgentPanel] Task failed, NOT marking steps as completed');
       }
       onComplete?.(taskResult);
     } catch (error: any) {
+      console.error('[AutoAgentPanel] Task execution error:', error);
       setStatus({ phase: 'failed', message: error.message || 'Execution failed' });
     } finally {
       setIsRunning(false);

@@ -487,9 +487,21 @@ print(json.dumps(result))
    */
   private async createCodeCell(code: string, insertAfter?: number): Promise<number> {
     const notebookContent = this.notebook.content;
+
+    console.log('[ToolExecutor] createCodeCell debug:', {
+      hasNotebook: !!this.notebook,
+      hasContent: !!notebookContent,
+      hasModel: !!notebookContent?.model,
+      contentType: typeof notebookContent,
+      modelType: typeof notebookContent?.model,
+      contentKeys: notebookContent ? Object.keys(notebookContent).slice(0, 10) : []
+    });
+
     const model = notebookContent.model;
 
     if (!model) {
+      console.error('[ToolExecutor] Notebook model is null/undefined!');
+      console.error('[ToolExecutor] notebookContent:', notebookContent);
       throw new Error('Notebook model not available');
     }
 
