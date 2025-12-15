@@ -20,6 +20,8 @@ import {
   handleRateLimitError,
   isRateLimitError,
   resetKeyRotation,
+  getValidGeminiKeys,
+  getCurrentKeyIndex,
   LLMConfig
 } from './ApiKeyManager';
 
@@ -364,13 +366,73 @@ export class ApiService {
 
   /**
    * Generate execution plan for auto-agent task
+   *
+   * NOTE (Financial Security Compliance):
+   * - API key rotation is handled by frontend (not server)
+   * - Server receives ONLY ONE key per request
+   * - On 429 rate limit, frontend rotates key and retries with next key
    */
-  async generateExecutionPlan(request: AutoAgentPlanRequest): Promise<AutoAgentPlanResponse> {
+  async generateExecutionPlan(
+    request: AutoAgentPlanRequest,
+    onKeyRotation?: (keyIndex: number, totalKeys: number) => void
+  ): Promise<AutoAgentPlanResponse> {
     console.log('[ApiService] generateExecutionPlan request:', request);
 
+    const MAX_RETRIES = 10;
+    let currentConfig = request.llmConfig as LLMConfig | undefined;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      // Build request with single key for this attempt
+      const requestToSend = currentConfig
+        ? { ...request, llmConfig: buildSingleKeyConfig(currentConfig) }
+        : request;
+
+      try {
+        const result = await this.generateExecutionPlanInternal(requestToSend);
+        // Success - reset key rotation state
+        resetKeyRotation();
+        return result;
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        lastError = error instanceof Error ? error : new Error(errorMsg);
+
+        // Check if rate limit error and we have config to rotate
+        if (isRateLimitError(errorMsg) && currentConfig) {
+          console.log(`[ApiService] Rate limit on attempt ${attempt + 1}, trying next key...`);
+
+          // Try to rotate to next key
+          const rotatedConfig = handleRateLimitError(currentConfig);
+
+          if (rotatedConfig) {
+            // Notify UI about key rotation
+            const keys = getValidGeminiKeys(currentConfig);
+            if (onKeyRotation) {
+              onKeyRotation(getCurrentKeyIndex(), keys.length);
+            }
+            continue; // Try next key
+          } else {
+            // All keys exhausted
+            throw new Error('모든 API 키가 Rate Limit 상태입니다. 잠시 후 다시 시도해주세요.');
+          }
+        }
+
+        // Not a rate limit error, throw immediately
+        throw error;
+      }
+    }
+
+    throw lastError || new Error('Maximum retry attempts exceeded');
+  }
+
+  /**
+   * Internal plan generation (without retry logic)
+   */
+  private async generateExecutionPlanInternal(request: AutoAgentPlanRequest): Promise<AutoAgentPlanResponse> {
     const response = await fetch(`${this.baseUrl}/auto-agent/plan`, {
       method: 'POST',
       headers: this.getHeaders(),
+      credentials: 'include',
       body: JSON.stringify(request)
     });
 
@@ -386,7 +448,7 @@ export class ApiService {
       let errorMessage = '계획 생성 실패';
       try {
         const errorJson = JSON.parse(errorText);
-        errorMessage = errorJson.error || errorJson.message || errorMessage;
+        errorMessage = errorJson.detail || errorJson.error || errorJson.message || errorMessage;
       } catch (e) {
         errorMessage = errorText || errorMessage;
       }
