@@ -14,6 +14,7 @@ import os
 # Nexus URL 설정 (보안을 위해 외부 파일에서 읽기)
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def _get_pip_index_option() -> str:
     """
     pip install 시 사용할 index-url 옵션 반환
@@ -24,15 +25,18 @@ def _get_pip_index_option() -> str:
 
     try:
         if os.path.exists(nexus_url_path):
-            with open(nexus_url_path, 'r') as f:
+            with open(nexus_url_path, "r") as f:
                 url = f.read().strip()
                 if url:
                     return f"--index-url {url}"
     except Exception as e:
-        print(f"[AutoAgent] Warning: Failed to load nexus URL from {nexus_url_path}: {e}")
+        print(
+            f"[AutoAgent] Warning: Failed to load nexus URL from {nexus_url_path}: {e}"
+        )
 
     # 파일이 없거나 읽기 실패 시: 일반 pip install (로컬 환경)
     return ""
+
 
 PIP_INDEX_OPTION = _get_pip_index_option()
 
@@ -40,7 +44,7 @@ PIP_INDEX_OPTION = _get_pip_index_option()
 # 실행 계획 생성 프롬프트
 # ═══════════════════════════════════════════════════════════════════════════
 
-PLAN_GENERATION_PROMPT = '''Jupyter 노트북 Python 전문가. 단계별 실행 계획을 JSON으로 생성.
+PLAN_GENERATION_PROMPT = """Jupyter 노트북 Python 전문가. 단계별 실행 계획을 JSON으로 생성.
 
 ## 도구
 1. **jupyter_cell**: {{"code": "Python코드"}} - 노트북 끝에 새 셀 추가
@@ -79,14 +83,14 @@ plt.rcParams['axes.unicode_minus'] = False
 ```json
 {{"reasoning":"이유","plan":{{"totalSteps":N,"steps":[{{"stepNumber":1,"description":"설명","toolCalls":[{{"tool":"jupyter_cell","parameters":{{"code":"코드"}}}}],"dependencies":[]}}]}}}}
 ```
-JSON만 출력.'''
+JSON만 출력."""
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 코드 생성 프롬프트 (단일 셀)
 # ═══════════════════════════════════════════════════════════════════════════
 
-CODE_GENERATION_PROMPT = '''당신은 Jupyter 노트북을 위한 Python 코드 전문가입니다.
+CODE_GENERATION_PROMPT = """당신은 Jupyter 노트북을 위한 Python 코드 전문가입니다.
 
 ## 요청
 
@@ -121,14 +125,14 @@ plt.rcParams['axes.unicode_minus'] = False
 
 ## 출력
 
-Python 코드만 출력하세요. 마크다운이나 설명 없이.'''
+Python 코드만 출력하세요. 마크다운이나 설명 없이."""
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 에러 수정 프롬프트 (Self-Healing)
 # ═══════════════════════════════════════════════════════════════════════════
 
-ERROR_REFINEMENT_PROMPT = '''다음 코드가 오류로 실패했습니다. 수정된 코드를 제공하세요.
+ERROR_REFINEMENT_PROMPT = """다음 코드가 오류로 실패했습니다. 수정된 코드를 제공하세요.
 
 ## 원래 코드
 
@@ -205,14 +209,14 @@ ERROR_REFINEMENT_PROMPT = '''다음 코드가 오류로 실패했습니다. 수�
 }}
 ```
 
-JSON만 출력하세요.'''
+JSON만 출력하세요."""
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Adaptive Replanning 프롬프트 (계획 수정)
 # ═══════════════════════════════════════════════════════════════════════════
 
-ADAPTIVE_REPLAN_PROMPT = '''에러가 발생했습니다. 출력과 에러를 분석하여 계획을 수정하거나 새로운 접근법을 제시하세요.
+ADAPTIVE_REPLAN_PROMPT = """에러가 발생했습니다. 출력과 에러를 분석하여 계획을 수정하거나 새로운 접근법을 제시하세요.
 
 ## 원래 요청
 
@@ -528,14 +532,14 @@ cross_tab = pd.crosstab(sample['Sex'], sample['Survived'])
 }}
 ```
 
-위 형식으로만 응답하세요. 다른 텍스트는 절대 포함하지 마세요!'''
+위 형식으로만 응답하세요. 다른 텍스트는 절대 포함하지 마세요!"""
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 구조화된 계획 생성 프롬프트 (Enhanced Planning with Checkpoints)
 # ═══════════════════════════════════════════════════════════════════════════
 
-STRUCTURED_PLAN_PROMPT = '''당신은 Jupyter 노트북을 위한 Python 코드 전문가입니다.
+STRUCTURED_PLAN_PROMPT = """당신은 Jupyter 노트북을 위한 Python 코드 전문가입니다.
 사용자의 요청을 체계적으로 분석하고, 검증 가능한 단계별 실행 계획을 생성하세요.
 
 ## 분석 프레임워크
@@ -717,14 +721,14 @@ else:
 }}
 ```
 
-JSON만 출력하세요. 다른 텍스트 없이.'''
+JSON만 출력하세요. 다른 텍스트 없이."""
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Reflection 프롬프트 (실행 결과 분석 및 적응적 조정)
 # ═══════════════════════════════════════════════════════════════════════════
 
-REFLECTION_PROMPT = '''실행 결과를 분석하고 다음 단계에 대한 조정을 제안하세요.
+REFLECTION_PROMPT = """실행 결과를 분석하고 다음 단계에 대한 조정을 제안하세요.
 
 ## 실행된 단계
 
@@ -797,14 +801,14 @@ REFLECTION_PROMPT = '''실행 결과를 분석하고 다음 단계에 대한 조
 }}
 ```
 
-JSON만 출력하세요.'''
+JSON만 출력하세요."""
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 최종 답변 생성 프롬프트
 # ═══════════════════════════════════════════════════════════════════════════
 
-FINAL_ANSWER_PROMPT = '''작업이 완료되었습니다. 결과를 요약해주세요.
+FINAL_ANSWER_PROMPT = """작업이 완료되었습니다. 결과를 요약해주세요.
 
 ## 원래 요청
 
@@ -828,12 +832,13 @@ FINAL_ANSWER_PROMPT = '''작업이 완료되었습니다. 결과를 요약해주
 
 ## 출력
 
-간결한 요약 텍스트 (200자 이내)'''
+간결한 요약 텍스트 (200자 이내)"""
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 유틸리티 함수
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def format_plan_prompt(
     request: str,
@@ -842,50 +847,74 @@ def format_plan_prompt(
     defined_variables: list,
     recent_cells: list,
     available_libraries: list = None,
-    detected_libraries: list = None  # LLM이 판단한 라이브러리 목록
+    detected_libraries: list = None,  # LibraryDetector로 감지된 라이브러리
+    rag_context: str = None,  # RAG 검색 결과 컨텍스트 (primary)
 ) -> str:
-    """실행 계획 생성 프롬프트 포맷팅 (LLM 기반 라이브러리 감지)"""
-    from ..knowledge.loader import get_knowledge_loader
+    """
+    실행 계획 생성 프롬프트 포맷팅
 
+    지식 주입 우선순위:
+    1. RAG 컨텍스트가 있으면 RAG 결과 사용 (시맨틱 검색)
+    2. RAG가 없으면 KnowledgeBase fallback (전체 API 가이드 로드)
+    """
     # 최근 셀 내용 포맷팅 (참고용으로만 표시) - 최대 5개 셀, 각 150자
     recent_cells_text = ""
     max_cells = min(5, len(recent_cells))  # 최대 5개 셀만
     for i, cell in enumerate(recent_cells[-max_cells:]):  # 마지막 5개만
-        cell_type = cell.get('type', 'code')
-        source = cell.get('source', '')[:150]  # 최대 150자
-        cell_index = cell.get('index', i)
-        recent_cells_text += f"\n[셀 {cell_index}]: {source[:100]}...\n" if len(source) > 100 else f"\n[셀 {cell_index}]: {source}\n"
-
-    # LLM이 판단한 라이브러리의 knowledge 로드 - 최대 1500자로 제한
-    knowledge_loader = get_knowledge_loader()
-    library_knowledge = ""
-    if detected_libraries:
-        library_knowledge = knowledge_loader.format_knowledge_section(detected_libraries)
-        if library_knowledge and len(library_knowledge) > 1500:
-            library_knowledge = library_knowledge[:1500] + "\n... (생략)"
-        if library_knowledge:
-            print(f"[KnowledgeBase] 라이브러리 지식 주입됨: {detected_libraries} ({len(library_knowledge)} chars)")
-
-    if not library_knowledge:
-        print(f"[KnowledgeBase] 주입할 라이브러리 지식 없음. detected={detected_libraries}")
+        cell_type = cell.get("type", "code")
+        source = cell.get("source", "")[:150]  # 최대 150자
+        cell_index = cell.get("index", i)
+        recent_cells_text += (
+            f"\n[셀 {cell_index}]: {source[:100]}...\n"
+            if len(source) > 100
+            else f"\n[셀 {cell_index}]: {source}\n"
+        )
 
     # 기본 프롬프트 생성
     base_prompt = PLAN_GENERATION_PROMPT.format(
         request=request,
         cell_count=cell_count,
-        imported_libraries=", ".join(imported_libraries) if imported_libraries else "없음",
+        imported_libraries=", ".join(imported_libraries)
+        if imported_libraries
+        else "없음",
         defined_variables=", ".join(defined_variables) if defined_variables else "없음",
         recent_cells=recent_cells_text if recent_cells_text else "없음",
-        available_libraries=", ".join(available_libraries) if available_libraries else "정보 없음"
+        available_libraries=", ".join(available_libraries)
+        if available_libraries
+        else "정보 없음",
     )
 
-    # 라이브러리 지식이 있으면 프롬프트에 추가
-    if library_knowledge:
-        # JSON 출력 형식 앞에 지식 삽입
+    # 지식 주입: RAG primary, KnowledgeBase fallback
+    if rag_context:
+        # RAG 결과가 있으면 RAG 사용 (시맨틱 검색 기반)
+        print(f"[RAG] 컨텍스트 주입됨: {len(rag_context)} chars")
         base_prompt = base_prompt.replace(
-            "## 출력 형식 (JSON)",
-            f"{library_knowledge}\n## 출력 형식 (JSON)"
+            "## JSON 출력", f"{rag_context}\n\n## JSON 출력"
         )
+    elif detected_libraries:
+        # RAG가 없으면 KnowledgeBase fallback (전체 API 가이드)
+        from ..knowledge.loader import get_knowledge_loader
+
+        knowledge_loader = get_knowledge_loader()
+        library_knowledge = knowledge_loader.format_knowledge_section(
+            detected_libraries
+        )
+
+        if library_knowledge:
+            if len(library_knowledge) > 2000:
+                library_knowledge = library_knowledge[:2000] + "\n... (생략)"
+            print(
+                f"[KnowledgeBase Fallback] 라이브러리 지식 주입됨: {detected_libraries} ({len(library_knowledge)} chars)"
+            )
+            base_prompt = base_prompt.replace(
+                "## JSON 출력", f"{library_knowledge}\n\n## JSON 출력"
+            )
+        else:
+            print(
+                f"[KnowledgeBase] 주입할 라이브러리 지식 없음. detected={detected_libraries}"
+            )
+    else:
+        print("[Knowledge] RAG 컨텍스트 없음, 감지된 라이브러리 없음")
 
     return base_prompt
 
@@ -898,7 +927,7 @@ def format_refine_prompt(
     attempt: int,
     max_attempts: int,
     available_libraries: list,
-    defined_variables: list
+    defined_variables: list,
 ) -> str:
     """에러 수정 프롬프트 포맷팅"""
     return ERROR_REFINEMENT_PROMPT.format(
@@ -908,31 +937,32 @@ def format_refine_prompt(
         traceback=traceback,
         attempt=attempt,
         max_attempts=max_attempts,
-        available_libraries=", ".join(available_libraries) if available_libraries else "pandas, numpy, matplotlib",
-        defined_variables=", ".join(defined_variables) if defined_variables else "없음"
+        available_libraries=", ".join(available_libraries)
+        if available_libraries
+        else "pandas, numpy, matplotlib",
+        defined_variables=", ".join(defined_variables) if defined_variables else "없음",
     )
 
 
 def format_final_answer_prompt(
-    original_request: str,
-    executed_steps: list,
-    outputs: list
+    original_request: str, executed_steps: list, outputs: list
 ) -> str:
     """최종 답변 프롬프트 포맷팅"""
-    steps_text = "\n".join([
-        f"- Step {s.get('stepNumber', i+1)}: {s.get('description', '완료')}"
-        for i, s in enumerate(executed_steps)
-    ])
+    steps_text = "\n".join(
+        [
+            f"- Step {s.get('stepNumber', i+1)}: {s.get('description', '완료')}"
+            for i, s in enumerate(executed_steps)
+        ]
+    )
 
-    outputs_text = "\n".join([
-        f"[출력 {i+1}]: {str(o)[:200]}"
-        for i, o in enumerate(outputs)
-    ])
+    outputs_text = "\n".join(
+        [f"[출력 {i+1}]: {str(o)[:200]}" for i, o in enumerate(outputs)]
+    )
 
     return FINAL_ANSWER_PROMPT.format(
         original_request=original_request,
         executed_steps=steps_text if steps_text else "없음",
-        outputs=outputs_text if outputs_text else "없음"
+        outputs=outputs_text if outputs_text else "없음",
     )
 
 
@@ -942,63 +972,67 @@ def format_replan_prompt(
     failed_step: dict,
     error_info: dict,
     execution_output: str = "",
-    available_libraries: list = None
+    available_libraries: list = None,
 ) -> str:
     """Adaptive Replanning 프롬프트 포맷팅"""
     # 실행된 단계 텍스트 (코드 포함)
     executed_text_parts = []
     if executed_steps:
         for i, s in enumerate(executed_steps):
-            step_num = s.get('stepNumber', i+1)
-            step_desc = s.get('description', '완료')
+            step_num = s.get("stepNumber", i + 1)
+            step_desc = s.get("description", "완료")
             executed_text_parts.append(f"- Step {step_num}: {step_desc} ✅")
 
             # 이 스텝에서 실행한 코드 추가
-            tool_calls = s.get('toolCalls', [])
+            tool_calls = s.get("toolCalls", [])
             for tc in tool_calls:
-                if tc.get('tool') == 'jupyter_cell':
-                    code = tc.get('parameters', {}).get('code', '')
+                if tc.get("tool") == "jupyter_cell":
+                    code = tc.get("parameters", {}).get("code", "")
                     if code:
                         # 코드를 간략하게 표시 (처음 3줄 또는 전체)
-                        code_lines = code.split('\n')
+                        code_lines = code.split("\n")
                         if len(code_lines) > 5:
-                            code_preview = '\n'.join(code_lines[:5]) + '\n  ...(생략)'
+                            code_preview = "\n".join(code_lines[:5]) + "\n  ...(생략)"
                         else:
                             code_preview = code
-                        executed_text_parts.append(f"  코드:\n    {code_preview.replace(chr(10), chr(10) + '    ')}")
+                        executed_text_parts.append(
+                            f"  코드:\n    {code_preview.replace(chr(10), chr(10) + '    ')}"
+                        )
 
     executed_text = "\n".join(executed_text_parts) if executed_text_parts else "없음"
 
     # 실패한 코드 추출
     failed_code = ""
-    if failed_step.get('toolCalls'):
-        for tc in failed_step['toolCalls']:
-            if tc.get('tool') == 'jupyter_cell':
-                failed_code = tc.get('parameters', {}).get('code', '')
+    if failed_step.get("toolCalls"):
+        for tc in failed_step["toolCalls"]:
+            if tc.get("tool") == "jupyter_cell":
+                failed_code = tc.get("parameters", {}).get("code", "")
                 break
 
     # traceback 처리
-    traceback_data = error_info.get('traceback', [])
+    traceback_data = error_info.get("traceback", [])
     if isinstance(traceback_data, list):
-        traceback_str = '\n'.join(traceback_data)
+        traceback_str = "\n".join(traceback_data)
     else:
-        traceback_str = str(traceback_data) if traceback_data else ''
+        traceback_str = str(traceback_data) if traceback_data else ""
 
     # errorName (Python 예외 이름)이 있으면 우선 사용, 없으면 type 필드 사용
     # 예: "ModuleNotFoundError", "ImportError", "TypeError" 등
-    error_type = error_info.get('errorName') or error_info.get('type', 'runtime')
+    error_type = error_info.get("errorName") or error_info.get("type", "runtime")
 
     return ADAPTIVE_REPLAN_PROMPT.format(
         original_request=original_request,
         executed_steps=executed_text,
-        failed_step_number=failed_step.get('stepNumber', '?'),
-        failed_step_description=failed_step.get('description', ''),
+        failed_step_number=failed_step.get("stepNumber", "?"),
+        failed_step_description=failed_step.get("description", ""),
         failed_code=failed_code,
         error_type=error_type,  # Python 예외 이름 (ModuleNotFoundError 등)
-        error_message=error_info.get('message', 'Unknown error'),
+        error_message=error_info.get("message", "Unknown error"),
         traceback=traceback_str,
         execution_output=execution_output if execution_output else "없음",
-        available_libraries=", ".join(available_libraries) if available_libraries else "정보 없음"
+        available_libraries=", ".join(available_libraries)
+        if available_libraries
+        else "정보 없음",
     )
 
 
@@ -1007,21 +1041,25 @@ def format_structured_plan_prompt(
     cell_count: int,
     imported_libraries: list,
     defined_variables: list,
-    recent_cells: list
+    recent_cells: list,
 ) -> str:
     """구조화된 계획 생성 프롬프트 포맷팅 (Enhanced Planning)"""
     recent_cells_text = ""
     for i, cell in enumerate(recent_cells):
-        cell_type = cell.get('type', 'code')
-        source = cell.get('source', '')[:300]
-        recent_cells_text += f"\n[셀 {cell.get('index', i)}] ({cell_type}):\n```\n{source}\n```\n"
+        cell_type = cell.get("type", "code")
+        source = cell.get("source", "")[:300]
+        recent_cells_text += (
+            f"\n[셀 {cell.get('index', i)}] ({cell_type}):\n```\n{source}\n```\n"
+        )
 
     return STRUCTURED_PLAN_PROMPT.format(
         request=request,
         cell_count=cell_count,
-        imported_libraries=", ".join(imported_libraries) if imported_libraries else "없음",
+        imported_libraries=", ".join(imported_libraries)
+        if imported_libraries
+        else "없음",
         defined_variables=", ".join(defined_variables) if defined_variables else "없음",
-        recent_cells=recent_cells_text if recent_cells_text else "없음"
+        recent_cells=recent_cells_text if recent_cells_text else "없음",
     )
 
 
@@ -1034,17 +1072,27 @@ def format_reflection_prompt(
     error_message: str,
     expected_outcome: str,
     validation_criteria: list,
-    remaining_steps: list
+    remaining_steps: list,
 ) -> str:
     """Reflection 프롬프트 포맷팅 (실행 결과 분석)"""
     # 검증 기준 텍스트
-    criteria_text = "\n".join([f"- {c}" for c in validation_criteria]) if validation_criteria else "없음"
+    criteria_text = (
+        "\n".join([f"- {c}" for c in validation_criteria])
+        if validation_criteria
+        else "없음"
+    )
 
     # 남은 단계 텍스트
-    remaining_text = "\n".join([
-        f"- Step {s.get('stepNumber', i+1)}: {s.get('description', '')}"
-        for i, s in enumerate(remaining_steps)
-    ]) if remaining_steps else "없음"
+    remaining_text = (
+        "\n".join(
+            [
+                f"- Step {s.get('stepNumber', i+1)}: {s.get('description', '')}"
+                for i, s in enumerate(remaining_steps)
+            ]
+        )
+        if remaining_steps
+        else "없음"
+    )
 
     return REFLECTION_PROMPT.format(
         step_number=step_number,
@@ -1055,7 +1103,7 @@ def format_reflection_prompt(
         error_message=error_message if error_message else "없음",
         expected_outcome=expected_outcome if expected_outcome else "성공적 실행",
         validation_criteria=criteria_text,
-        remaining_steps=remaining_text
+        remaining_steps=remaining_text,
     )
 
 
@@ -1066,5 +1114,9 @@ def format_reflection_prompt(
 # 모든 프롬프트에서 {PIP_INDEX_OPTION}을 실제 값으로 치환
 # - 로컬 환경: 빈 문자열 → `!pip install --timeout 180 패키지명`
 # - 내부망: "--index-url <url>" → `!pip install --index-url <url> --timeout 180 패키지명`
-PLAN_GENERATION_PROMPT = PLAN_GENERATION_PROMPT.replace("{PIP_INDEX_OPTION}", PIP_INDEX_OPTION)
-ADAPTIVE_REPLAN_PROMPT = ADAPTIVE_REPLAN_PROMPT.replace("{PIP_INDEX_OPTION}", PIP_INDEX_OPTION)
+PLAN_GENERATION_PROMPT = PLAN_GENERATION_PROMPT.replace(
+    "{PIP_INDEX_OPTION}", PIP_INDEX_OPTION
+)
+ADAPTIVE_REPLAN_PROMPT = ADAPTIVE_REPLAN_PROMPT.replace(
+    "{PIP_INDEX_OPTION}", PIP_INDEX_OPTION
+)
