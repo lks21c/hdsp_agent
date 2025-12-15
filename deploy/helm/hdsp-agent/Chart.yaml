@@ -1,0 +1,24 @@
+apiVersion: v2
+name: hdsp-agent
+description: HDSP Agent Server with Local RAG System - AI-powered code assistance for JupyterLab
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+
+keywords:
+  - jupyterlab
+  - ai
+  - llm
+  - rag
+  - code-assistant
+  - qdrant
+
+home: https://github.com/lks21c/hdsp_agent
+
+maintainers:
+  - name: HDSP Team
+    email: your.email@example.com
+
+annotations:
+  category: AI/ML
+  licenses: MIT

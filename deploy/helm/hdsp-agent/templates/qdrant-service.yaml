@@ -1,0 +1,25 @@
+{{- if .Values.qdrant.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "hdsp-agent.qdrant.serviceName" . }}
+  labels:
+    {{- include "hdsp-agent.qdrant.labels" . | nindent 4 }}
+  {{- with .Values.qdrant.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.qdrant.service.type }}
+  ports:
+    - port: {{ .Values.qdrant.service.httpPort }}
+      targetPort: http
+      protocol: TCP
+      name: http
+    - port: {{ .Values.qdrant.service.grpcPort }}
+      targetPort: grpc
+      protocol: TCP
+      name: grpc
+  selector:
+    {{- include "hdsp-agent.qdrant.selectorLabels" . | nindent 4 }}
+{{- end }}

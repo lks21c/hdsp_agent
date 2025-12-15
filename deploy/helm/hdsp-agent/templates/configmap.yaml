@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "hdsp-agent.fullname" . }}-config
+  labels:
+    {{- include "hdsp-agent.labels" . | nindent 4 }}
+data:
+  # RAG System Configuration
+  {{- if .Values.rag.enabled }}
+  RAG_TOP_K: {{ .Values.rag.search.topK | quote }}
+  RAG_SCORE_THRESHOLD: {{ .Values.rag.search.scoreThreshold | quote }}
+  RAG_USE_HYBRID_SEARCH: {{ .Values.rag.search.useHybridSearch | quote }}
+  RAG_HYBRID_ALPHA: {{ .Values.rag.search.hybridAlpha | quote }}
+  # Chunking Configuration
+  CHUNK_SIZE: {{ .Values.rag.chunking.chunkSize | quote }}
+  CHUNK_OVERLAP: {{ .Values.rag.chunking.chunkOverlap | quote }}
+  SPLIT_BY_HEADER: {{ .Values.rag.chunking.splitByHeader | quote }}
+  # Embedding Configuration
+  EMBEDDING_BATCH_SIZE: {{ .Values.rag.embedding.batchSize | quote }}
+  {{- end }}
+  # Qdrant Collection Configuration
+  {{- if .Values.qdrant.enabled }}
+  QDRANT_COLLECTION_NAME: {{ .Values.qdrant.config.collection.name | quote }}
+  QDRANT_VECTOR_SIZE: {{ .Values.qdrant.config.collection.vectorSize | quote }}
+  QDRANT_DISTANCE: {{ .Values.qdrant.config.collection.distance | quote }}
+  {{- end }}

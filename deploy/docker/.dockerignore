@@ -1,0 +1,52 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv
+venv/
+ENV/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Testing
+tests/
+ui-tests/
+*.ipynb
+coverage.xml
+htmlcov/
+
+# Development files
+.env
+.env.local
+*.log
+*.tmp
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Other
+.taskmaster/
+.claude/
+.serena/
+claudedocs/
+issues/
+*.zip
+*.csv
+*.parquet

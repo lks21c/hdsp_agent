@@ -1,0 +1,17 @@
+{{- if and .Values.qdrant.enabled .Values.qdrant.persistence.enabled (not .Values.qdrant.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "hdsp-agent.fullname" . }}-qdrant
+  labels:
+    {{- include "hdsp-agent.qdrant.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.qdrant.persistence.accessMode }}
+  {{- if .Values.qdrant.persistence.storageClass }}
+  storageClassName: {{ .Values.qdrant.persistence.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.qdrant.persistence.size }}
+{{- end }}

@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "hdsp-agent.agentServer.serviceName" . }}
+  labels:
+    {{- include "hdsp-agent.agentServer.labels" . | nindent 4 }}
+  {{- with .Values.agentServer.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.agentServer.service.type }}
+  ports:
+    - port: {{ .Values.agentServer.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "hdsp-agent.agentServer.selectorLabels" . | nindent 4 }}
