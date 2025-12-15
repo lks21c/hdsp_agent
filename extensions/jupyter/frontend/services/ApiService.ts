@@ -96,48 +96,133 @@ export class ApiService {
     };
   }
 
-  /**
-   * Execute cell action (explain, fix, custom)
-   */
-  async cellAction(request: ICellActionRequest): Promise<ICellResponse> {
-    const response = await fetch(`${this.baseUrl}/cell/action`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      credentials: 'include', // ✅ 핵심 수정: 쿠키를 같이 보냄
-      body: JSON.stringify(request)
-    });
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Global Rate Limit Handling with Key Rotation
+  // ═══════════════════════════════════════════════════════════════════════════
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: 'API request failed' }));
-      throw new Error(error.message || 'API request failed');
+  /**
+   * Fetch wrapper with automatic API key rotation on rate limit (429)
+   *
+   * NOTE (Financial Security Compliance):
+   * - API key rotation is handled by frontend (not server)
+   * - Server receives ONLY ONE key per request
+   * - On 429 rate limit, frontend rotates key and retries with next key
+   */
+  private async fetchWithKeyRotation<T>(
+    url: string,
+    request: { llmConfig?: any; [key: string]: any },
+    options?: {
+      onKeyRotation?: (keyIndex: number, totalKeys: number) => void;
+      defaultErrorMessage?: string;
+    }
+  ): Promise<T> {
+    const MAX_RETRIES = 10;
+    const originalConfig = request.llmConfig as LLMConfig | undefined;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      // Build request with single key for this attempt
+      const requestToSend = originalConfig
+        ? { ...request, llmConfig: buildSingleKeyConfig(originalConfig) }
+        : request;
+
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: this.getHeaders(),
+          credentials: 'include',
+          body: JSON.stringify(requestToSend)
+        });
+
+        if (response.ok) {
+          // Success - reset key rotation state
+          resetKeyRotation();
+          return response.json();
+        }
+
+        // Handle error response
+        const errorText = await response.text();
+
+        // Check if rate limit error
+        if (isRateLimitError(errorText) && originalConfig) {
+          console.log(`[ApiService] Rate limit on attempt ${attempt + 1}, rotating key...`);
+
+          // Try to rotate to next key
+          const rotatedConfig = handleRateLimitError(originalConfig);
+
+          if (rotatedConfig) {
+            // Notify UI about key rotation
+            const keys = getValidGeminiKeys(originalConfig);
+            if (options?.onKeyRotation) {
+              options.onKeyRotation(getCurrentKeyIndex(), keys.length);
+            }
+            continue; // Try next key
+          } else {
+            // All keys exhausted
+            throw new Error('모든 API 키가 Rate Limit 상태입니다. 잠시 후 다시 시도해주세요.');
+          }
+        }
+
+        // Not a rate limit error - parse and throw
+        let errorMessage = options?.defaultErrorMessage || 'API 요청 실패';
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.detail || errorJson.error || errorJson.message || errorMessage;
+        } catch (e) {
+          errorMessage = errorText || errorMessage;
+        }
+
+        throw new Error(errorMessage);
+
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        lastError = error instanceof Error ? error : new Error(errorMsg);
+
+        // If it's a rate limit error from the catch block, check rotation
+        if (isRateLimitError(errorMsg) && originalConfig) {
+          const rotatedConfig = handleRateLimitError(originalConfig);
+          if (rotatedConfig) {
+            const keys = getValidGeminiKeys(originalConfig);
+            if (options?.onKeyRotation) {
+              options.onKeyRotation(getCurrentKeyIndex(), keys.length);
+            }
+            continue;
+          }
+          throw new Error('모든 API 키가 Rate Limit 상태입니다. 잠시 후 다시 시도해주세요.');
+        }
+
+        // Not a rate limit error, throw immediately
+        throw error;
+      }
     }
 
-    return response.json();
+    throw lastError || new Error('Maximum retry attempts exceeded');
   }
 
   /**
-   * Send chat message
+   * Execute cell action (explain, fix, custom)
+   * Uses global rate limit handling with key rotation
+   */
+  async cellAction(request: ICellActionRequest): Promise<ICellResponse> {
+    console.log('[ApiService] cellAction request:', request);
+    return this.fetchWithKeyRotation<ICellResponse>(
+      `${this.baseUrl}/cell/action`,
+      request,
+      { defaultErrorMessage: '셀 액션 실패' }
+    );
+  }
+
+  /**
+   * Send chat message (non-streaming)
+   * Uses global rate limit handling with key rotation
    */
   async sendMessage(request: IChatRequest): Promise<IChatResponse> {
-    const response = await fetch(`${this.baseUrl}/chat/message`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      credentials: 'include', // ✅ 핵심 수정: 쿠키를 같이 보냄
-      body: JSON.stringify(request)
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({
-        message: `Failed to send message (${response.status})`,
-        error: `HTTP ${response.status}: ${response.statusText}`
-      }));
-      console.error('Chat API error:', error);
-      console.error('Response status:', response.status);
-      console.error('Request:', request);
-      throw new Error(error.message || error.error || `Failed to send message (${response.status})`);
-    }
-
-    return response.json();
+    console.log('[ApiService] sendMessage request');
+    return this.fetchWithKeyRotation<IChatResponse>(
+      `${this.baseUrl}/chat/message`,
+      request,
+      { defaultErrorMessage: '메시지 전송 실패' }
+    );
   }
 
   /**
@@ -361,292 +446,93 @@ export class ApiService {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // Auto-Agent API Methods
+  // Auto-Agent API Methods (All use global rate limit handling)
   // ═══════════════════════════════════════════════════════════════════════════
 
   /**
    * Generate execution plan for auto-agent task
-   *
-   * NOTE (Financial Security Compliance):
-   * - API key rotation is handled by frontend (not server)
-   * - Server receives ONLY ONE key per request
-   * - On 429 rate limit, frontend rotates key and retries with next key
    */
   async generateExecutionPlan(
     request: AutoAgentPlanRequest,
     onKeyRotation?: (keyIndex: number, totalKeys: number) => void
   ): Promise<AutoAgentPlanResponse> {
     console.log('[ApiService] generateExecutionPlan request:', request);
-
-    const MAX_RETRIES = 10;
-    let currentConfig = request.llmConfig as LLMConfig | undefined;
-    let lastError: Error | null = null;
-
-    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      // Build request with single key for this attempt
-      const requestToSend = currentConfig
-        ? { ...request, llmConfig: buildSingleKeyConfig(currentConfig) }
-        : request;
-
-      try {
-        const result = await this.generateExecutionPlanInternal(requestToSend);
-        // Success - reset key rotation state
-        resetKeyRotation();
-        return result;
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        lastError = error instanceof Error ? error : new Error(errorMsg);
-
-        // Check if rate limit error and we have config to rotate
-        if (isRateLimitError(errorMsg) && currentConfig) {
-          console.log(`[ApiService] Rate limit on attempt ${attempt + 1}, trying next key...`);
-
-          // Try to rotate to next key
-          const rotatedConfig = handleRateLimitError(currentConfig);
-
-          if (rotatedConfig) {
-            // Notify UI about key rotation
-            const keys = getValidGeminiKeys(currentConfig);
-            if (onKeyRotation) {
-              onKeyRotation(getCurrentKeyIndex(), keys.length);
-            }
-            continue; // Try next key
-          } else {
-            // All keys exhausted
-            throw new Error('모든 API 키가 Rate Limit 상태입니다. 잠시 후 다시 시도해주세요.');
-          }
-        }
-
-        // Not a rate limit error, throw immediately
-        throw error;
-      }
-    }
-
-    throw lastError || new Error('Maximum retry attempts exceeded');
-  }
-
-  /**
-   * Internal plan generation (without retry logic)
-   */
-  private async generateExecutionPlanInternal(request: AutoAgentPlanRequest): Promise<AutoAgentPlanResponse> {
-    const response = await fetch(`${this.baseUrl}/auto-agent/plan`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      credentials: 'include',
-      body: JSON.stringify(request)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[ApiService] Plan API Error:', {
-        status: response.status,
-        statusText: response.statusText,
-        body: errorText,
-        url: `${this.baseUrl}/auto-agent/plan`
-      });
-
-      let errorMessage = '계획 생성 실패';
-      try {
-        const errorJson = JSON.parse(errorText);
-        errorMessage = errorJson.detail || errorJson.error || errorJson.message || errorMessage;
-      } catch (e) {
-        errorMessage = errorText || errorMessage;
-      }
-
-      throw new Error(errorMessage);
-    }
-
-    const result = await response.json();
-    console.log('[ApiService] Plan API Success:', result);
-    return result;
+    return this.fetchWithKeyRotation<AutoAgentPlanResponse>(
+      `${this.baseUrl}/auto-agent/plan`,
+      request,
+      { onKeyRotation, defaultErrorMessage: '계획 생성 실패' }
+    );
   }
 
   /**
    * Refine step code after error (Self-Healing)
    */
-  async refineStepCode(request: AutoAgentRefineRequest): Promise<AutoAgentRefineResponse> {
+  async refineStepCode(
+    request: AutoAgentRefineRequest,
+    onKeyRotation?: (keyIndex: number, totalKeys: number) => void
+  ): Promise<AutoAgentRefineResponse> {
     console.log('[ApiService] refineStepCode request:', request);
-
-    const response = await fetch(`${this.baseUrl}/auto-agent/refine`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify(request)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[ApiService] Refine API Error:', {
-        status: response.status,
-        statusText: response.statusText,
-        body: errorText,
-        url: `${this.baseUrl}/auto-agent/refine`
-      });
-
-      let errorMessage = '코드 수정 실패';
-      try {
-        const errorJson = JSON.parse(errorText);
-        errorMessage = errorJson.error || errorJson.message || errorMessage;
-      } catch (e) {
-        errorMessage = errorText || errorMessage;
-      }
-
-      throw new Error(errorMessage);
-    }
-
-    const result = await response.json();
-    console.log('[ApiService] Refine API Success:', result);
-    return result;
+    return this.fetchWithKeyRotation<AutoAgentRefineResponse>(
+      `${this.baseUrl}/auto-agent/refine`,
+      request,
+      { onKeyRotation, defaultErrorMessage: '코드 수정 실패' }
+    );
   }
 
   /**
    * Adaptive Replanning - 에러 분석 후 계획 재수립
    */
-  async replanExecution(request: AutoAgentReplanRequest): Promise<AutoAgentReplanResponse> {
+  async replanExecution(
+    request: AutoAgentReplanRequest,
+    onKeyRotation?: (keyIndex: number, totalKeys: number) => void
+  ): Promise<AutoAgentReplanResponse> {
     console.log('[ApiService] replanExecution request:', request);
-
-    const response = await fetch(`${this.baseUrl}/auto-agent/replan`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify(request)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[ApiService] Replan API Error:', {
-        status: response.status,
-        statusText: response.statusText,
-        body: errorText,
-        url: `${this.baseUrl}/auto-agent/replan`
-      });
-
-      let errorMessage = '계획 재수립 실패';
-      try {
-        const errorJson = JSON.parse(errorText);
-        errorMessage = errorJson.error || errorJson.message || errorMessage;
-      } catch (e) {
-        errorMessage = errorText || errorMessage;
-      }
-
-      throw new Error(errorMessage);
-    }
-
-    const result = await response.json();
-    console.log('[ApiService] Replan API Success:', result);
-    return result;
+    return this.fetchWithKeyRotation<AutoAgentReplanResponse>(
+      `${this.baseUrl}/auto-agent/replan`,
+      request,
+      { onKeyRotation, defaultErrorMessage: '계획 재수립 실패' }
+    );
   }
 
   /**
    * Validate code before execution - 사전 코드 품질 검증 (Pyflakes/AST 기반)
+   * Note: This is a local validation, no LLM call, but uses wrapper for consistency
    */
   async validateCode(request: AutoAgentValidateRequest): Promise<AutoAgentValidateResponse> {
     console.log('[ApiService] validateCode request:', request);
-
-    const response = await fetch(`${this.baseUrl}/auto-agent/validate`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      credentials: 'include',
-      body: JSON.stringify(request)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[ApiService] Validate API Error:', {
-        status: response.status,
-        statusText: response.statusText,
-        body: errorText,
-        url: `${this.baseUrl}/auto-agent/validate`
-      });
-
-      let errorMessage = '코드 검증 실패';
-      try {
-        const errorJson = JSON.parse(errorText);
-        errorMessage = errorJson.error || errorJson.message || errorMessage;
-      } catch (e) {
-        errorMessage = errorText || errorMessage;
-      }
-
-      throw new Error(errorMessage);
-    }
-
-    const result = await response.json();
-    console.log('[ApiService] Validate API Success:', result);
-    return result;
+    return this.fetchWithKeyRotation<AutoAgentValidateResponse>(
+      `${this.baseUrl}/auto-agent/validate`,
+      request,
+      { defaultErrorMessage: '코드 검증 실패' }
+    );
   }
 
   /**
    * Reflect on step execution - 실행 결과 분석 및 적응적 조정
    */
-  async reflectOnExecution(request: AutoAgentReflectRequest): Promise<AutoAgentReflectResponse> {
+  async reflectOnExecution(
+    request: AutoAgentReflectRequest,
+    onKeyRotation?: (keyIndex: number, totalKeys: number) => void
+  ): Promise<AutoAgentReflectResponse> {
     console.log('[ApiService] reflectOnExecution request:', request);
-
-    const response = await fetch(`${this.baseUrl}/auto-agent/reflect`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      credentials: 'include',
-      body: JSON.stringify(request)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[ApiService] Reflect API Error:', {
-        status: response.status,
-        statusText: response.statusText,
-        body: errorText,
-        url: `${this.baseUrl}/auto-agent/reflect`
-      });
-
-      let errorMessage = 'Reflection 실패';
-      try {
-        const errorJson = JSON.parse(errorText);
-        errorMessage = errorJson.error || errorJson.message || errorMessage;
-      } catch (e) {
-        errorMessage = errorText || errorMessage;
-      }
-
-      throw new Error(errorMessage);
-    }
-
-    const result = await response.json();
-    console.log('[ApiService] Reflect API Success:', result);
-    return result;
+    return this.fetchWithKeyRotation<AutoAgentReflectResponse>(
+      `${this.baseUrl}/auto-agent/reflect`,
+      request,
+      { onKeyRotation, defaultErrorMessage: 'Reflection 실패' }
+    );
   }
 
   /**
    * Verify state after step execution - 상태 검증 (Phase 1)
+   * Note: This is a local verification, no LLM call, but uses wrapper for consistency
    */
   async verifyState(request: AutoAgentVerifyStateRequest): Promise<AutoAgentVerifyStateResponse> {
     console.log('[ApiService] verifyState request:', request);
-
-    const response = await fetch(`${this.baseUrl}/auto-agent/verify-state`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      credentials: 'include',
-      body: JSON.stringify(request)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[ApiService] Verify State API Error:', {
-        status: response.status,
-        statusText: response.statusText,
-        body: errorText,
-        url: `${this.baseUrl}/auto-agent/verify-state`
-      });
-
-      let errorMessage = '상태 검증 실패';
-      try {
-        const errorJson = JSON.parse(errorText);
-        errorMessage = errorJson.error || errorJson.message || errorMessage;
-      } catch (e) {
-        errorMessage = errorText || errorMessage;
-      }
-
-      throw new Error(errorMessage);
-    }
-
-    const result = await response.json();
-    console.log('[ApiService] Verify State API Success:', result);
-    return result;
+    return this.fetchWithKeyRotation<AutoAgentVerifyStateResponse>(
+      `${this.baseUrl}/auto-agent/verify-state`,
+      request,
+      { defaultErrorMessage: '상태 검증 실패' }
+    );
   }
 
   /**
@@ -731,38 +617,15 @@ export class ApiService {
   /**
    * Python 파일 에러 수정/분석/설명 요청
    */
-  async fileAction(request: IFileFixRequest): Promise<IFileFixResponse> {
+  async fileAction(
+    request: IFileFixRequest,
+    onKeyRotation?: (keyIndex: number, totalKeys: number) => void
+  ): Promise<IFileFixResponse> {
     console.log('[ApiService] fileAction request:', request);
-
-    const response = await fetch(`${this.baseUrl}/file/action`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      credentials: 'include',
-      body: JSON.stringify(request)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[ApiService] File Action API Error:', {
-        status: response.status,
-        statusText: response.statusText,
-        body: errorText,
-        url: `${this.baseUrl}/file/action`
-      });
-
-      let errorMessage = '파일 액션 실패';
-      try {
-        const errorJson = JSON.parse(errorText);
-        errorMessage = errorJson.error || errorJson.message || errorMessage;
-      } catch (e) {
-        errorMessage = errorText || errorMessage;
-      }
-
-      throw new Error(errorMessage);
-    }
-
-    const result = await response.json();
-    console.log('[ApiService] File Action API Success:', result);
-    return result;
+    return this.fetchWithKeyRotation<IFileFixResponse>(
+      `${this.baseUrl}/file/action`,
+      request,
+      { onKeyRotation, defaultErrorMessage: '파일 액션 실패' }
+    );
   }
 }
