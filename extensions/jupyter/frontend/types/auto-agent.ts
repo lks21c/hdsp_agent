@@ -9,7 +9,10 @@ import { ILLMConfig } from './index';
 // Tool Definitions (HF Jupyter Agent 패턴)
 // ═══════════════════════════════════════════════════════════════════════════
 
-export type ToolName = 'jupyter_cell' | 'markdown' | 'final_answer';
+export type ToolName =
+  | 'jupyter_cell' | 'markdown' | 'final_answer'
+  | 'read_file' | 'write_file' | 'list_files'
+  | 'execute_command' | 'search_files';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Cell Operation Types (Notebook Refactoring Support)
@@ -26,7 +29,9 @@ export type CellOperation = 'CREATE' | 'MODIFY' | 'INSERT_AFTER' | 'INSERT_BEFOR
 
 export interface ToolCall {
   tool: ToolName;
-  parameters: JupyterCellParams | MarkdownParams | FinalAnswerParams;
+  parameters: JupyterCellParams | MarkdownParams | FinalAnswerParams
+    | ReadFileParams | WriteFileParams | ListFilesParams
+    | ExecuteCommandParams | SearchFilesParams;
 }
 
 // jupyter_cell 도구 파라미터
@@ -48,6 +53,44 @@ export interface MarkdownParams {
 export interface FinalAnswerParams {
   answer: string;
   summary?: string;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Extended Tool Parameter Types (파일/터미널 작업)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// read_file 도구 파라미터
+export interface ReadFileParams {
+  path: string;
+  encoding?: string;   // 기본: 'utf-8'
+  maxLines?: number;   // 대용량 파일 읽기 방지 (기본: 1000)
+}
+
+// write_file 도구 파라미터
+export interface WriteFileParams {
+  path: string;
+  content: string;
+  overwrite?: boolean; // 기본: false (기존 파일 덮어쓰기 방지)
+}
+
+// list_files 도구 파라미터
+export interface ListFilesParams {
+  path: string;
+  recursive?: boolean; // 기본: false
+  pattern?: string;    // glob 패턴 (예: "*.py")
+}
+
+// execute_command 도구 파라미터
+export interface ExecuteCommandParams {
+  command: string;
+  timeout?: number;    // ms (기본: 30000)
+}
+
+// search_files 도구 파라미터
+export interface SearchFilesParams {
+  pattern: string;     // 검색 패턴 (regex 지원)
+  path?: string;       // 검색 시작 경로 (기본: 현재 디렉토리)
+  maxResults?: number; // 최대 결과 수 (기본: 100)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

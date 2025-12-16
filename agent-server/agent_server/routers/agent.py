@@ -355,13 +355,18 @@ async def replan(request: ReplanRequest) -> Dict[str, Any]:
     """
     Determine how to handle a failed step.
 
-    Uses deterministic error classification to decide whether to
-    refine, insert steps, replace step, or replan remaining.
+    Uses deterministic error classification first.
+    LLM fallback is triggered when:
+    1. Same error fails 2+ times (previousAttempts >= 2)
+    2. Unknown error type not in pattern mapping
+    3. Complex error (2+ exceptions in traceback)
     """
-    logger.info(f"Replan request for step {request.currentStepIndex}")
+    logger.info(
+        f"Replan request for step {request.currentStepIndex} "
+        f"(attempts: {request.previousAttempts}, useLlmFallback: {request.useLlmFallback})"
+    )
 
     try:
-        # Use error classifier (deterministic, no LLM call)
         classifier = get_error_classifier()
 
         traceback_data = request.error.traceback or []
@@ -371,18 +376,39 @@ async def replan(request: ReplanRequest) -> Dict[str, Any]:
             else str(traceback_data)
         )
 
-        analysis = classifier.classify(
+        # Check if LLM fallback should be used
+        should_use_llm, fallback_reason = classifier.should_use_llm_fallback(
             error_type=request.error.type,
-            error_message=request.error.message,
             traceback=traceback_str,
-            code="",  # Could extract from current step
+            previous_attempts=request.previousAttempts,
         )
+
+        if should_use_llm and request.useLlmFallback:
+            logger.info(f"LLM fallback triggered: {fallback_reason}")
+            # For now, still use pattern matching but log the fallback trigger
+            # TODO: Enable LLM fallback when LLM client is configured
+            analysis = classifier.classify(
+                error_type=request.error.type,
+                error_message=request.error.message,
+                traceback=traceback_str,
+            )
+            # Mark that LLM fallback was triggered but not used (no client)
+            analysis.reasoning += f" (LLM fallback 조건 충족: {fallback_reason})"
+        else:
+            # Use deterministic error classification
+            analysis = classifier.classify(
+                error_type=request.error.type,
+                error_message=request.error.message,
+                traceback=traceback_str,
+            )
 
         return {
             "decision": analysis.decision.value,
             "analysis": analysis.to_dict()["analysis"],
             "reasoning": analysis.reasoning,
             "changes": analysis.changes,
+            "usedLlm": analysis.used_llm,
+            "confidence": analysis.confidence,
         }
 
     except Exception as e:

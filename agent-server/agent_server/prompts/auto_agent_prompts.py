@@ -6,6 +6,11 @@ Tool Calling 구조:
 - jupyter_cell: 코드 셀 생성/수정/실행
 - markdown: 마크다운 셀 생성/수정
 - final_answer: 작업 완료 신호
+- read_file: 파일 읽기 (상대 경로만)
+- write_file: 파일 쓰기 (승인 필요)
+- list_files: 디렉토리 조회
+- execute_command: 셸 명령 실행 (위험 명령만 승인)
+- search_files: 파일 내용 검색
 """
 
 import os
@@ -47,9 +52,17 @@ PIP_INDEX_OPTION = _get_pip_index_option()
 PLAN_GENERATION_PROMPT = """Jupyter 노트북 Python 전문가. 단계별 실행 계획을 JSON으로 생성.
 
 ## 도구
+### 기본 도구 (셀 작업)
 1. **jupyter_cell**: {{"code": "Python코드"}} - 노트북 끝에 새 셀 추가
 2. **markdown**: {{"content": "마크다운"}} - 설명 셀 추가
 3. **final_answer**: {{"answer": "완료메시지"}} - 작업 완료
+
+### 확장 도구 (파일/터미널)
+4. **read_file**: {{"path": "상대경로"}} - 파일 읽기 (절대경로/.. 금지)
+5. **write_file**: {{"path": "상대경로", "content": "내용"}} - 파일 쓰기 (승인 필요)
+6. **list_files**: {{"path": ".", "recursive": false, "pattern": "*.py"}} - 디렉토리 조회
+7. **execute_command**: {{"command": "pip list"}} - 셸 명령 (위험 명령만 승인)
+8. **search_files**: {{"pattern": "def func", "path": "src"}} - 파일 내용 검색
 
 ## 🚨 핵심 원칙 (CRITICAL!)
 1. ⛔ **기존 셀 수정 금지! 항상 새 셀을 노트북 끝에 추가**
@@ -566,6 +579,7 @@ STRUCTURED_PLAN_PROMPT = """당신은 Jupyter 노트북을 위한 Python 코드 
 
 ## 사용 가능한 도구
 
+### 기본 도구 (셀 작업)
 1. **jupyter_cell**: Python 코드 셀 생성 (노트북 끝에 추가)
    - parameters: {{"code": "Python 코드"}}
    - **항상 새 셀을 노트북 끝에 추가합니다**
@@ -575,6 +589,22 @@ STRUCTURED_PLAN_PROMPT = """당신은 Jupyter 노트북을 위한 Python 코드 
 
 3. **final_answer**: 작업 완료 및 최종 답변
    - parameters: {{"answer": "최종 답변 텍스트", "summary": "작업 요약(선택)"}}
+
+### 확장 도구 (파일/터미널)
+4. **read_file**: 파일 읽기 (절대경로/.. 금지)
+   - parameters: {{"path": "상대경로"}}
+
+5. **write_file**: 파일 쓰기 (승인 필요)
+   - parameters: {{"path": "상대경로", "content": "내용"}}
+
+6. **list_files**: 디렉토리 조회
+   - parameters: {{"path": ".", "recursive": false, "pattern": "*.py"}}
+
+7. **execute_command**: 셸 명령 (위험 명령만 승인)
+   - parameters: {{"command": "pip list"}}
+
+8. **search_files**: 파일 내용 검색
+   - parameters: {{"pattern": "def func", "path": "src"}}
 
 ## 🔴 핵심 원칙: 항상 새 셀을 아래에 추가!
 
@@ -861,7 +891,6 @@ def format_plan_prompt(
     recent_cells_text = ""
     max_cells = min(5, len(recent_cells))  # 최대 5개 셀만
     for i, cell in enumerate(recent_cells[-max_cells:]):  # 마지막 5개만
-        cell_type = cell.get("type", "code")
         source = cell.get("source", "")[:150]  # 최대 150자
         cell_index = cell.get("index", i)
         recent_cells_text += (
@@ -950,13 +979,13 @@ def format_final_answer_prompt(
     """최종 답변 프롬프트 포맷팅"""
     steps_text = "\n".join(
         [
-            f"- Step {s.get('stepNumber', i+1)}: {s.get('description', '완료')}"
+            f"- Step {s.get('stepNumber', i + 1)}: {s.get('description', '완료')}"
             for i, s in enumerate(executed_steps)
         ]
     )
 
     outputs_text = "\n".join(
-        [f"[출력 {i+1}]: {str(o)[:200]}" for i, o in enumerate(outputs)]
+        [f"[출력 {i + 1}]: {str(o)[:200]}" for i, o in enumerate(outputs)]
     )
 
     return FINAL_ANSWER_PROMPT.format(
@@ -1086,7 +1115,7 @@ def format_reflection_prompt(
     remaining_text = (
         "\n".join(
             [
-                f"- Step {s.get('stepNumber', i+1)}: {s.get('description', '')}"
+                f"- Step {s.get('stepNumber', i + 1)}: {s.get('description', '')}"
                 for i, s in enumerate(remaining_steps)
             ]
         )
@@ -1104,6 +1133,115 @@ def format_reflection_prompt(
         expected_outcome=expected_outcome if expected_outcome else "성공적 실행",
         validation_criteria=criteria_text,
         remaining_steps=remaining_text,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# LLM Fallback 에러 분석 프롬프트 (패턴 매칭 실패 시 사용)
+# ═══════════════════════════════════════════════════════════════════════════
+
+ERROR_ANALYSIS_PROMPT = """에러를 분석하고 복구 전략을 결정하세요.
+
+## 에러 정보
+
+- 오류 유형: {error_type}
+- 오류 메시지: {error_message}
+- 트레이스백:
+```
+{traceback}
+```
+
+## 이전 시도 횟수: {previous_attempts}
+
+## 이전 코드 (있는 경우)
+{previous_codes}
+
+## 복구 전략 선택지
+
+1. **refine**: 코드 수정으로 해결 가능한 에러
+   - SyntaxError, TypeError, ValueError, KeyError 등 단순 코드 버그
+
+2. **insert_steps**: 선행 작업이 필요한 경우
+   - 패키지 설치가 필요한 경우 (ModuleNotFoundError)
+   - 데이터 전처리가 필요한 경우
+
+3. **replace_step**: 완전히 다른 접근법이 필요한 경우
+   - 현재 방법이 근본적으로 작동하지 않는 경우
+   - 대안적 라이브러리/알고리즘이 필요한 경우
+
+4. **replan_remaining**: 남은 모든 단계를 재계획해야 하는 경우
+   - 시스템 레벨 문제 (dlopen 에러 등)
+   - 전체 접근법 변경이 필요한 경우
+
+## 분석 지침
+
+1. 에러의 근본 원인을 파악하세요
+2. 이전 시도 횟수를 고려하세요 (2회 이상 실패 시 다른 전략 고려)
+3. 에러 메시지와 트레이스백을 면밀히 분석하세요
+4. 가장 효율적인 복구 전략을 선택하세요
+
+## 출력 형식 (JSON)
+
+```json
+{{
+  "analysis": {{
+    "root_cause": "에러의 근본 원인 (1-2문장)",
+    "is_approach_problem": true/false,
+    "missing_prerequisites": ["누락된 선행 작업들"],
+    "complexity": "simple | moderate | complex"
+  }},
+  "decision": "refine | insert_steps | replace_step | replan_remaining",
+  "reasoning": "결정 이유 (1-2문장)",
+  "confidence": 0.0-1.0,
+  "changes": {{
+    // decision이 "refine"인 경우:
+    "refined_code": null,
+
+    // decision이 "insert_steps"인 경우:
+    "new_steps": [
+      {{
+        "description": "단계 설명",
+        "toolCalls": [{{"tool": "jupyter_cell", "parameters": {{"code": "코드"}}}}]
+      }}
+    ],
+
+    // decision이 "replace_step"인 경우:
+    "replacement": {{
+      "description": "새 단계 설명",
+      "toolCalls": [{{"tool": "jupyter_cell", "parameters": {{"code": "코드"}}}}]
+    }},
+
+    // decision이 "replan_remaining"인 경우:
+    "new_plan": []
+  }}
+}}
+```
+
+JSON만 출력하세요."""
+
+
+def format_error_analysis_prompt(
+    error_type: str,
+    error_message: str,
+    traceback: str,
+    previous_attempts: int = 0,
+    previous_codes: list = None,
+) -> str:
+    """LLM Fallback 에러 분석 프롬프트 포맷팅"""
+    previous_codes = previous_codes or []
+    codes_text = ""
+    if previous_codes:
+        for i, code in enumerate(previous_codes[-3:], 1):  # 최근 3개만
+            codes_text += f"\n### 시도 {i}:\n```python\n{code[:500]}\n```\n"
+    else:
+        codes_text = "없음"
+
+    return ERROR_ANALYSIS_PROMPT.format(
+        error_type=error_type,
+        error_message=error_message[:500] if error_message else "없음",
+        traceback=traceback[:1000] if traceback else "없음",
+        previous_attempts=previous_attempts,
+        previous_codes=codes_text,
     )
 
 

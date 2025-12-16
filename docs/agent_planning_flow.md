@@ -210,6 +210,115 @@ Python 코드 셀을 생성, 수정, 삽입합니다.
 }
 ```
 
+### read_file
+
+파일 내용을 읽습니다. 작업 디렉토리 내 파일만 접근 가능합니다.
+
+| 파라미터 | 설명 | 기본값 |
+|----------|------|--------|
+| `path` | 파일 경로 (상대 경로) | 필수 |
+| `encoding` | 파일 인코딩 | `utf-8` |
+| `maxLines` | 최대 읽을 라인 수 | 없음 (전체) |
+
+```json
+{
+  "tool": "read_file",
+  "parameters": {
+    "path": "data/config.json",
+    "maxLines": 100
+  }
+}
+```
+
+### write_file
+
+파일에 내용을 씁니다. **항상 사용자 승인이 필요합니다.**
+
+| 파라미터 | 설명 | 기본값 |
+|----------|------|--------|
+| `path` | 파일 경로 (상대 경로) | 필수 |
+| `content` | 작성할 내용 | 필수 |
+| `overwrite` | 기존 파일 덮어쓰기 | `false` |
+
+```json
+{
+  "tool": "write_file",
+  "parameters": {
+    "path": "output/result.csv",
+    "content": "col1,col2\n1,2",
+    "overwrite": true
+  }
+}
+```
+
+### list_files
+
+디렉토리의 파일 목록을 조회합니다.
+
+| 파라미터 | 설명 | 기본값 |
+|----------|------|--------|
+| `path` | 디렉토리 경로 | `.` (현재) |
+| `recursive` | 재귀적 탐색 | `false` |
+| `pattern` | 파일 패턴 (glob) | `*` |
+
+```json
+{
+  "tool": "list_files",
+  "parameters": {
+    "path": "data",
+    "recursive": true,
+    "pattern": "*.csv"
+  }
+}
+```
+
+### execute_command
+
+셸 명령을 실행합니다. **위험한 명령은 사용자 승인이 필요합니다.**
+
+| 파라미터 | 설명 | 기본값 |
+|----------|------|--------|
+| `command` | 실행할 명령 | 필수 |
+| `timeout` | 타임아웃 (초) | `30` |
+
+```json
+{
+  "tool": "execute_command",
+  "parameters": {
+    "command": "pip install pandas",
+    "timeout": 60
+  }
+}
+```
+
+**위험 명령 패턴 (승인 필요):**
+- `rm`, `rm -rf`, `rmdir`
+- `sudo`, `su`
+- `chmod 777`, `chown`
+- `> /dev`, `mkfs`, `dd`
+- `curl | sh`, `wget | sh`
+
+### search_files
+
+파일 내용을 검색합니다.
+
+| 파라미터 | 설명 | 기본값 |
+|----------|------|--------|
+| `pattern` | 검색 패턴 (정규식) | 필수 |
+| `path` | 검색 시작 경로 | `.` |
+| `maxResults` | 최대 결과 수 | `50` |
+
+```json
+{
+  "tool": "search_files",
+  "parameters": {
+    "pattern": "import pandas",
+    "path": "src",
+    "maxResults": 20
+  }
+}
+```
+
 ---
 
 ## 결정론적 서브시스템
@@ -238,6 +347,63 @@ class ReplanDecision(Enum):
 | `ModuleNotFoundError`, `ImportError` | INSERT_STEPS (import 추가) |
 | `NameError` (미정의 변수) | REPLAN_REMAINING |
 | `PermissionError`, `OSError` | ABORT |
+
+#### LLM Fallback 메커니즘
+
+패턴 매칭만으로 해결이 어려운 복잡한 에러의 경우, LLM 기반 분석으로 폴백합니다.
+
+**LLM Fallback 트리거 조건:**
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         에러 발생                                        │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  조건 #1: 동일 에러로 2회 이상 실패?                                       │
+│  (previousAttempts >= 2)                                                │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                    ┌───────────────┴───────────────┐
+                    │ Yes                           │ No
+                    ▼                               ▼
+            ┌──────────────┐            ┌─────────────────────────────────┐
+            │  LLM Fallback │            │  조건 #2: 미지의 에러 타입?        │
+            └──────────────┘            │  (패턴 매핑에 없음)                │
+                                        └─────────────────────────────────┘
+                                                    │
+                                    ┌───────────────┴───────────────┐
+                                    │ Yes                           │ No
+                                    ▼                               ▼
+                            ┌──────────────┐        ┌─────────────────────────────────┐
+                            │  LLM Fallback │        │  조건 #3: 복잡한 트레이스백?       │
+                            └──────────────┘        │  (2개 이상 Exception 포함)        │
+                                                    └─────────────────────────────────┘
+                                                                │
+                                                ┌───────────────┴───────────────┐
+                                                │ Yes                           │ No
+                                                ▼                               ▼
+                                        ┌──────────────┐            ┌──────────────┐
+                                        │  LLM Fallback │            │  패턴 매칭    │
+                                        └──────────────┘            └──────────────┘
+```
+
+**API 응답 확장:**
+```python
+class ReplanResponse:
+    decision: str       # refine/insert_steps/replace_step/replan_remaining
+    analysis: Dict      # 분석 상세 정보
+    reasoning: str      # 결정 이유
+    changes: Dict       # 제안된 변경사항
+    usedLlm: bool       # LLM 폴백 사용 여부 (NEW)
+    confidence: float   # 분석 신뢰도 0.0~1.0 (NEW)
+```
+
+**신뢰도 점수:**
+- `1.0`: 패턴 매칭 (결정론적)
+- `0.8~0.95`: LLM 분석 (높은 신뢰도)
+- `0.3~0.7`: LLM 분석 (낮은 신뢰도, 파싱 실패 등)
 
 ### StateVerifier
 
@@ -323,6 +489,52 @@ detected = detector.detect(
 | F401 | unused_import | 미사용 import | WARNING |
 | S102 | security | `exec()` 사용 감지 | WARNING |
 | E9xx | syntax | 런타임 에러 | ERROR |
+
+### Ruff 자동 수정 (--fix)
+
+코드 검증 시 Ruff의 자동 수정 기능을 활용하여 LLM 토큰을 절약합니다.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         코드 검증 요청                                    │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  Pass 1: ruff check --fix                                               │
+│  - 자동 수정 가능한 이슈 자동 처리                                         │
+│  - F401 (미사용 import), W (스타일) 등 자동 수정                           │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  Pass 2: ruff check (검증 전용)                                          │
+│  - 자동 수정 불가능한 이슈만 반환                                           │
+│  - F821 (미정의 변수), S (보안) 등                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                    ┌───────────────┴───────────────┐
+                    │                               │
+                    ▼                               ▼
+            ┌──────────────┐                ┌──────────────┐
+            │  이슈 없음    │                │  이슈 있음    │
+            │  (수정된 코드) │                │  (LLM에 전달) │
+            └──────────────┘                └──────────────┘
+```
+
+**API 응답 확장:**
+```python
+class ValidateResponse:
+    valid: bool                     # 검증 통과 여부
+    issues: List[ValidationIssue]   # 자동 수정 불가 이슈
+    fixedCode: Optional[str]        # 자동 수정된 코드 (NEW)
+    fixedCount: int                 # 자동 수정된 이슈 수 (NEW)
+```
+
+**효과:**
+- 스타일/포맷팅 이슈는 LLM 호출 없이 즉시 수정
+- LLM에 전달되는 이슈 수 감소 → 토큰 절약
+- 응답 속도 향상
 
 **코드 위치:** `agent-server/agent_server/core/code_validator.py`
 
@@ -482,10 +694,12 @@ private async fetchWithKeyRotation<T>(
 1. **Self-Healing**: 오류 발생 시 자동으로 코드 수정 시도
 2. **Context-Aware**: 노트북 상태를 지속적으로 추적
 3. **Knowledge-Enhanced**: 라이브러리별 전문 지식 동적 로딩
-4. **Fail-Fast Validation**: 실행 전 코드 품질 사전 검증
+4. **Fail-Fast Validation**: 실행 전 코드 품질 사전 검증 + Ruff 자동 수정
 5. **Adaptive Planning**: 상황에 따른 유연한 계획 수정
 6. **Deterministic Subsystems**: 에러 분류/상태 검증은 LLM 없이 처리
-7. **Rate Limit Resilience**: 자동 API 키 교체로 서비스 연속성 보장
+7. **LLM Fallback**: 패턴 매칭 실패 시 LLM 기반 에러 분석
+8. **Extended Toolset**: 파일/셸 작업 지원 (read_file, write_file, execute_command 등)
+9. **Rate Limit Resilience**: 자동 API 키 교체로 서비스 연속성 보장
 
 ---
 

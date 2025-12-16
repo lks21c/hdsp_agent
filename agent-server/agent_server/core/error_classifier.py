@@ -2,12 +2,18 @@
 Error Classifier - 결정론적 에러 분류 및 Replan 결정
 LLM 호출 없이 에러 타입 기반으로 refine/insert_steps/replace_step/replan_remaining 결정
 토큰 절약: ~1,000-2,000 토큰/세션
+
+LLM Fallback 조건:
+1. 동일 에러로 REFINE 2회 이상 실패
+2. 패턴 매핑에 없는 미지의 에러 타입
+3. 복잡한 에러 (트레이스백에 2개 이상 Exception)
 """
 
+import json
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 
 from agent_server.prompts.auto_agent_prompts import PIP_INDEX_OPTION
 
@@ -30,6 +36,8 @@ class ErrorAnalysis:
     reasoning: str
     missing_package: Optional[str] = None
     changes: Dict[str, Any] = field(default_factory=dict)
+    used_llm: bool = False  # LLM Fallback 사용 여부
+    confidence: float = 1.0  # 분석 신뢰도 (패턴 매칭=1.0, LLM=0.0~1.0)
 
     def to_dict(self) -> Dict[str, Any]:
         """API 응답용 딕셔너리 변환"""
@@ -45,6 +53,8 @@ class ErrorAnalysis:
             "decision": self.decision.value,
             "reasoning": self.reasoning,
             "changes": self.changes,
+            "usedLlm": self.used_llm,
+            "confidence": self.confidence,
         }
 
 
@@ -313,6 +323,196 @@ class ErrorClassifier:
         # 에러 메시지에서 핵심 부분만 추출 (150자 제한)
         msg_preview = error_msg[:150] if error_msg else ""
         return f"{base}: {msg_preview}"
+
+    # =========================================================================
+    # LLM Fallback 관련 메서드
+    # =========================================================================
+
+    def _count_exceptions_in_traceback(self, traceback: str) -> int:
+        """트레이스백에서 Exception 개수 카운트"""
+        if not traceback:
+            return 0
+        # 다양한 Exception 패턴 매칭
+        patterns = [
+            r"\b\w+Error\b",  # ValueError, TypeError 등
+            r"\b\w+Exception\b",  # CustomException 등
+            r"During handling of the above exception",  # 연쇄 예외
+        ]
+        count = 0
+        for pattern in patterns:
+            count += len(re.findall(pattern, traceback))
+        return count
+
+    def should_use_llm_fallback(
+        self,
+        error_type: str,
+        traceback: str = "",
+        previous_attempts: int = 0,
+    ) -> tuple[bool, str]:
+        """
+        LLM Fallback 사용 여부 결정
+
+        Returns:
+            (should_use: bool, reason: str)
+        """
+        # 조건 1: 동일 에러로 REFINE 2회 이상 실패
+        if previous_attempts >= 2:
+            return True, f"동일 에러 {previous_attempts}회 실패 후 LLM 분석 필요"
+
+        # 조건 2: 패턴 매핑에 없는 미지의 에러 타입
+        error_type_normalized = self._normalize_error_type(error_type)
+        if error_type_normalized not in self.ERROR_DECISION_MAP:
+            return True, f"미지의 에러 타입: {error_type_normalized}"
+
+        # 조건 3: 복잡한 에러 (트레이스백에 2개 이상 Exception)
+        exception_count = self._count_exceptions_in_traceback(traceback)
+        if exception_count >= 2:
+            return True, f"복잡한 에러 (트레이스백에 {exception_count}개 Exception)"
+
+        return False, ""
+
+    async def classify_with_fallback(
+        self,
+        error_type: str,
+        error_message: str,
+        traceback: str = "",
+        installed_packages: List[str] = None,
+        previous_attempts: int = 0,
+        previous_codes: List[str] = None,
+        llm_client=None,
+        model: str = "gpt-4o-mini",
+    ) -> ErrorAnalysis:
+        """
+        패턴 매칭 우선, 조건 충족 시 LLM Fallback
+
+        Args:
+            error_type: 에러 타입
+            error_message: 에러 메시지
+            traceback: 스택 트레이스
+            installed_packages: 설치된 패키지 목록
+            previous_attempts: 이전 시도 횟수
+            previous_codes: 이전에 시도한 코드들
+            llm_client: LLM 클라이언트 (AsyncOpenAI 호환)
+            model: 사용할 모델명
+
+        Returns:
+            ErrorAnalysis: 에러 분석 결과
+        """
+        # Step 1: LLM Fallback 필요 여부 확인
+        should_use_llm, fallback_reason = self.should_use_llm_fallback(
+            error_type, traceback, previous_attempts
+        )
+
+        # Step 2: 패턴 매칭 우선 시도
+        if not should_use_llm:
+            return self.classify(
+                error_type, error_message, traceback, installed_packages
+            )
+
+        # Step 3: LLM Fallback
+        if llm_client is None:
+            # LLM 클라이언트 없으면 패턴 매칭으로 폴백
+            print(
+                f"[ErrorClassifier] LLM 클라이언트 없음, 패턴 매칭 사용: {fallback_reason}"
+            )
+            return self.classify(
+                error_type, error_message, traceback, installed_packages
+            )
+
+        print(f"[ErrorClassifier] LLM Fallback 사용: {fallback_reason}")
+        return await self._classify_with_llm(
+            error_type=error_type,
+            error_message=error_message,
+            traceback=traceback,
+            previous_attempts=previous_attempts,
+            previous_codes=previous_codes or [],
+            llm_client=llm_client,
+            model=model,
+        )
+
+    async def _classify_with_llm(
+        self,
+        error_type: str,
+        error_message: str,
+        traceback: str,
+        previous_attempts: int,
+        previous_codes: List[str],
+        llm_client,
+        model: str,
+    ) -> ErrorAnalysis:
+        """LLM을 사용한 에러 분석"""
+        from agent_server.prompts.auto_agent_prompts import format_error_analysis_prompt
+
+        prompt = format_error_analysis_prompt(
+            error_type=error_type,
+            error_message=error_message,
+            traceback=traceback,
+            previous_attempts=previous_attempts,
+            previous_codes=previous_codes,
+        )
+
+        try:
+            response = await llm_client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3,
+                max_tokens=2000,
+            )
+
+            content = response.choices[0].message.content
+            return self._parse_llm_response(content)
+
+        except Exception as e:
+            print(f"[ErrorClassifier] LLM 호출 실패: {e}")
+            # LLM 실패 시 패턴 매칭으로 폴백
+            result = self.classify(error_type, error_message, traceback, [])
+            result.reasoning += f" (LLM 실패로 패턴 매칭 사용: {str(e)[:50]})"
+            return result
+
+    def _parse_llm_response(self, content: str) -> ErrorAnalysis:
+        """LLM 응답 파싱"""
+        try:
+            # JSON 블록 추출
+            json_match = re.search(r"```json\s*([\s\S]*?)\s*```", content)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                json_str = content
+
+            data = json.loads(json_str)
+
+            # decision 파싱
+            decision_str = data.get("decision", "refine")
+            decision_map = {
+                "refine": ReplanDecision.REFINE,
+                "insert_steps": ReplanDecision.INSERT_STEPS,
+                "replace_step": ReplanDecision.REPLACE_STEP,
+                "replan_remaining": ReplanDecision.REPLAN_REMAINING,
+            }
+            decision = decision_map.get(decision_str, ReplanDecision.REFINE)
+
+            # confidence 추출
+            confidence = float(data.get("confidence", 0.8))
+
+            return ErrorAnalysis(
+                decision=decision,
+                root_cause=data.get("analysis", {}).get("root_cause", "LLM 분석 결과"),
+                reasoning=data.get("reasoning", "LLM 분석 기반 결정"),
+                changes=data.get("changes", {}),
+                used_llm=True,
+                confidence=confidence,
+            )
+
+        except (json.JSONDecodeError, KeyError, ValueError) as e:
+            print(f"[ErrorClassifier] LLM 응답 파싱 실패: {e}")
+            return ErrorAnalysis(
+                decision=ReplanDecision.REFINE,
+                root_cause="LLM 응답 파싱 실패",
+                reasoning=f"파싱 오류로 기본값(refine) 사용: {str(e)[:50]}",
+                changes={"refined_code": None},
+                used_llm=True,
+                confidence=0.3,
+            )
 
 
 # 싱글톤 인스턴스

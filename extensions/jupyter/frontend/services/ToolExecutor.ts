@@ -20,13 +20,19 @@ import {
   JupyterCellParams,
   MarkdownParams,
   FinalAnswerParams,
+  ReadFileParams,
+  WriteFileParams,
+  ListFilesParams,
+  ExecuteCommandParams,
+  SearchFilesParams,
   ExecutionResult,
   CellOperation,
   ToolExecutionContext,
   ApprovalCallback,
+  ApprovalRequest,
 } from '../types/auto-agent';
 
-import { ToolRegistry, BUILTIN_TOOL_DEFINITIONS } from './ToolRegistry';
+import { ToolRegistry, BUILTIN_TOOL_DEFINITIONS, DANGEROUS_COMMAND_PATTERNS } from './ToolRegistry';
 
 export class ToolExecutor {
   private notebook: NotebookPanel;
@@ -76,6 +82,65 @@ export class ToolExecutor {
         ...finalAnswerDef,
         executor: async (params: FinalAnswerParams, _context: ToolExecutionContext) => {
           return this.executeFinalAnswer(params);
+        },
+      });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 확장 도구들 등록
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // read_file 도구 등록
+    const readFileDef = BUILTIN_TOOL_DEFINITIONS.find(t => t.name === 'read_file');
+    if (readFileDef && !this.registry.hasTool('read_file')) {
+      this.registry.register({
+        ...readFileDef,
+        executor: async (params: ReadFileParams, _context: ToolExecutionContext) => {
+          return this.executeReadFile(params);
+        },
+      });
+    }
+
+    // write_file 도구 등록
+    const writeFileDef = BUILTIN_TOOL_DEFINITIONS.find(t => t.name === 'write_file');
+    if (writeFileDef && !this.registry.hasTool('write_file')) {
+      this.registry.register({
+        ...writeFileDef,
+        executor: async (params: WriteFileParams, _context: ToolExecutionContext) => {
+          return this.executeWriteFile(params);
+        },
+      });
+    }
+
+    // list_files 도구 등록
+    const listFilesDef = BUILTIN_TOOL_DEFINITIONS.find(t => t.name === 'list_files');
+    if (listFilesDef && !this.registry.hasTool('list_files')) {
+      this.registry.register({
+        ...listFilesDef,
+        executor: async (params: ListFilesParams, _context: ToolExecutionContext) => {
+          return this.executeListFiles(params);
+        },
+      });
+    }
+
+    // execute_command 도구 등록 (조건부 승인)
+    const executeCommandDef = BUILTIN_TOOL_DEFINITIONS.find(t => t.name === 'execute_command');
+    if (executeCommandDef && !this.registry.hasTool('execute_command')) {
+      this.registry.register({
+        ...executeCommandDef,
+        executor: async (params: ExecuteCommandParams, context: ToolExecutionContext) => {
+          return this.executeCommand(params, context);
+        },
+      });
+    }
+
+    // search_files 도구 등록
+    const searchFilesDef = BUILTIN_TOOL_DEFINITIONS.find(t => t.name === 'search_files');
+    if (searchFilesDef && !this.registry.hasTool('search_files')) {
+      this.registry.register({
+        ...searchFilesDef,
+        executor: async (params: SearchFilesParams, _context: ToolExecutionContext) => {
+          return this.executeSearchFiles(params);
         },
       });
     }
@@ -343,6 +408,424 @@ export class ToolExecutor {
       success: true,
       output: params.answer,
     };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 확장 도구 실행기 (파일/터미널 작업)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Path Traversal 방지 검사
+   * 상대 경로만 허용, 절대 경로 및 .. 차단
+   */
+  private validatePath(path: string): { valid: boolean; error?: string } {
+    // 절대 경로 차단
+    if (path.startsWith('/') || path.startsWith('\\') || /^[A-Za-z]:/.test(path)) {
+      return { valid: false, error: 'Absolute paths are not allowed' };
+    }
+    // Path traversal 차단
+    if (path.includes('..')) {
+      return { valid: false, error: 'Path traversal (..) is not allowed' };
+    }
+    return { valid: true };
+  }
+
+  /**
+   * 위험 명령 여부 확인
+   */
+  private isDangerousCommand(command: string): boolean {
+    return DANGEROUS_COMMAND_PATTERNS.some(pattern => pattern.test(command));
+  }
+
+  /**
+   * read_file 도구: 파일 읽기
+   */
+  async executeReadFile(params: ReadFileParams): Promise<ToolResult> {
+    console.log('[ToolExecutor] executeReadFile:', params);
+
+    // 경로 검증
+    const pathCheck = this.validatePath(params.path);
+    if (!pathCheck.valid) {
+      return { success: false, error: pathCheck.error };
+    }
+
+    const encoding = params.encoding || 'utf-8';
+    const maxLines = params.maxLines || 1000;
+
+    // Python 코드로 파일 읽기 (커널에서 실행)
+    const pythonCode = `
+import json
+try:
+    with open(${JSON.stringify(params.path)}, 'r', encoding=${JSON.stringify(encoding)}) as f:
+        lines = f.readlines()[:${maxLines}]
+        content = ''.join(lines)
+        result = {'success': True, 'content': content, 'lineCount': len(lines), 'truncated': len(lines) >= ${maxLines}}
+except FileNotFoundError:
+    result = {'success': False, 'error': f'File not found: ${params.path}'}
+except PermissionError:
+    result = {'success': False, 'error': f'Permission denied: ${params.path}'}
+except Exception as e:
+    result = {'success': False, 'error': str(e)}
+print(json.dumps(result))
+`.trim();
+
+    try {
+      const execResult = await this.executeInKernel(pythonCode);
+      if (execResult.status === 'ok' && execResult.stdout) {
+        const parsed = JSON.parse(execResult.stdout.trim());
+        if (parsed.success) {
+          return {
+            success: true,
+            output: parsed.content,
+          };
+        } else {
+          return { success: false, error: parsed.error };
+        }
+      }
+      return { success: false, error: execResult.error?.evalue || 'Read failed' };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * write_file 도구: 파일 쓰기
+   */
+  async executeWriteFile(params: WriteFileParams): Promise<ToolResult> {
+    console.log('[ToolExecutor] executeWriteFile:', params.path);
+
+    // 경로 검증
+    const pathCheck = this.validatePath(params.path);
+    if (!pathCheck.valid) {
+      return { success: false, error: pathCheck.error };
+    }
+
+    const overwrite = params.overwrite ?? false;
+    const mode = overwrite ? 'w' : 'x';  // 'x'는 exclusive creation
+
+    // Python 코드로 파일 쓰기 (커널에서 실행)
+    const pythonCode = `
+import json
+import os
+try:
+    mode = ${JSON.stringify(mode)}
+    path = ${JSON.stringify(params.path)}
+    content = ${JSON.stringify(params.content)}
+
+    # 디렉토리가 없으면 생성
+    dir_path = os.path.dirname(path)
+    if dir_path:
+        os.makedirs(dir_path, exist_ok=True)
+
+    with open(path, mode, encoding='utf-8') as f:
+        f.write(content)
+    result = {'success': True, 'path': path, 'size': len(content)}
+except FileExistsError:
+    result = {'success': False, 'error': f'File already exists: {path}. Set overwrite=True to overwrite.'}
+except PermissionError:
+    result = {'success': False, 'error': f'Permission denied: {path}'}
+except Exception as e:
+    result = {'success': False, 'error': str(e)}
+print(json.dumps(result))
+`.trim();
+
+    try {
+      const execResult = await this.executeInKernel(pythonCode);
+      if (execResult.status === 'ok' && execResult.stdout) {
+        const parsed = JSON.parse(execResult.stdout.trim());
+        if (parsed.success) {
+          return {
+            success: true,
+            output: `Written ${parsed.size} bytes to ${parsed.path}`,
+          };
+        } else {
+          return { success: false, error: parsed.error };
+        }
+      }
+      return { success: false, error: execResult.error?.evalue || 'Write failed' };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * list_files 도구: 디렉토리 목록 조회
+   */
+  async executeListFiles(params: ListFilesParams): Promise<ToolResult> {
+    console.log('[ToolExecutor] executeListFiles:', params);
+
+    // 경로 검증
+    const pathCheck = this.validatePath(params.path);
+    if (!pathCheck.valid) {
+      return { success: false, error: pathCheck.error };
+    }
+
+    const recursive = params.recursive ?? false;
+    const pattern = params.pattern || '*';
+
+    // Python 코드로 파일 목록 조회
+    const pythonCode = `
+import json
+import os
+import glob as glob_module
+try:
+    path = ${JSON.stringify(params.path)}
+    pattern = ${JSON.stringify(pattern)}
+    recursive = ${recursive}
+
+    if recursive:
+        search_pattern = os.path.join(path, '**', pattern)
+        files = glob_module.glob(search_pattern, recursive=True)
+    else:
+        search_pattern = os.path.join(path, pattern)
+        files = glob_module.glob(search_pattern)
+
+    # 결과를 상대 경로로 변환
+    result_files = []
+    for f in files[:500]:  # 최대 500개
+        stat = os.stat(f)
+        result_files.append({
+            'path': f,
+            'isDir': os.path.isdir(f),
+            'size': stat.st_size if not os.path.isdir(f) else 0
+        })
+
+    result = {'success': True, 'files': result_files, 'count': len(result_files)}
+except FileNotFoundError:
+    result = {'success': False, 'error': f'Directory not found: {path}'}
+except PermissionError:
+    result = {'success': False, 'error': f'Permission denied: {path}'}
+except Exception as e:
+    result = {'success': False, 'error': str(e)}
+print(json.dumps(result))
+`.trim();
+
+    try {
+      const execResult = await this.executeInKernel(pythonCode);
+      if (execResult.status === 'ok' && execResult.stdout) {
+        const parsed = JSON.parse(execResult.stdout.trim());
+        if (parsed.success) {
+          // 파일 목록을 보기 좋게 포맷팅
+          const formatted = parsed.files.map((f: any) =>
+            `${f.isDir ? '📁' : '📄'} ${f.path}${f.isDir ? '/' : ` (${f.size} bytes)`}`
+          ).join('\n');
+          return {
+            success: true,
+            output: formatted || '(empty directory)',
+          };
+        } else {
+          return { success: false, error: parsed.error };
+        }
+      }
+      return { success: false, error: execResult.error?.evalue || 'List failed' };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * execute_command 도구: 셸 명령 실행 (조건부 승인)
+   */
+  async executeCommand(params: ExecuteCommandParams, context: ToolExecutionContext): Promise<ToolResult> {
+    console.log('[ToolExecutor] executeCommand:', params.command);
+
+    const timeout = params.timeout || 30000;
+
+    // 위험 명령 검사 및 조건부 승인 요청
+    if (this.isDangerousCommand(params.command)) {
+      console.log('[ToolExecutor] Dangerous command detected, requesting approval');
+
+      // 승인 요청
+      const request: ApprovalRequest = {
+        id: `execute_command-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        toolName: 'execute_command',
+        toolDefinition: this.registry.getTool('execute_command')!,
+        parameters: params,
+        stepNumber: context.stepNumber,
+        description: `🔴 위험 명령 실행 요청:\n\n\`${params.command}\`\n\n이 명령은 시스템에 영향을 줄 수 있습니다.`,
+        timestamp: Date.now(),
+      };
+
+      const approvalCallback = (this.registry as any).approvalCallback;
+      if (approvalCallback) {
+        const approvalResult = await approvalCallback(request);
+        if (!approvalResult.approved) {
+          return {
+            success: false,
+            error: `Command execution denied: ${approvalResult.reason || 'User rejected dangerous command'}`,
+          };
+        }
+      }
+    }
+
+    // Python subprocess로 명령 실행
+    const pythonCode = `
+import json
+import subprocess
+import sys
+try:
+    command = ${JSON.stringify(params.command)}
+    timeout_sec = ${timeout / 1000}
+
+    result = subprocess.run(
+        command,
+        shell=True,
+        capture_output=True,
+        text=True,
+        timeout=timeout_sec
+    )
+
+    output = {
+        'success': result.returncode == 0,
+        'stdout': result.stdout,
+        'stderr': result.stderr,
+        'returncode': result.returncode
+    }
+except subprocess.TimeoutExpired:
+    output = {'success': False, 'error': f'Command timed out after {timeout_sec}s'}
+except Exception as e:
+    output = {'success': False, 'error': str(e)}
+print(json.dumps(output))
+`.trim();
+
+    try {
+      const execResult = await this.executeInKernel(pythonCode);
+      if (execResult.status === 'ok' && execResult.stdout) {
+        const parsed = JSON.parse(execResult.stdout.trim());
+        if (parsed.success) {
+          return {
+            success: true,
+            output: parsed.stdout || '(no output)',
+          };
+        } else {
+          return {
+            success: false,
+            error: parsed.error || parsed.stderr || `Command failed with code ${parsed.returncode}`,
+          };
+        }
+      }
+      return { success: false, error: execResult.error?.evalue || 'Command execution failed' };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * search_files 도구: 파일 내용 검색
+   */
+  async executeSearchFiles(params: SearchFilesParams): Promise<ToolResult> {
+    console.log('[ToolExecutor] executeSearchFiles:', params);
+
+    const searchPath = params.path || '.';
+    const maxResults = params.maxResults || 100;
+
+    // 경로 검증
+    const pathCheck = this.validatePath(searchPath);
+    if (!pathCheck.valid) {
+      return { success: false, error: pathCheck.error };
+    }
+
+    // Python으로 grep 스타일 검색
+    const pythonCode = `
+import json
+import os
+import re
+try:
+    pattern = ${JSON.stringify(params.pattern)}
+    search_path = ${JSON.stringify(searchPath)}
+    max_results = ${maxResults}
+
+    regex = re.compile(pattern, re.IGNORECASE)
+    matches = []
+
+    for root, dirs, files in os.walk(search_path):
+        # 숨김 디렉토리 및 일반적인 제외 대상 스킵
+        dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ['node_modules', '__pycache__', '.git', 'venv', '.venv']]
+
+        for filename in files:
+            if len(matches) >= max_results:
+                break
+
+            # 바이너리 파일 스킵
+            if filename.endswith(('.pyc', '.pyo', '.so', '.dll', '.exe', '.bin', '.png', '.jpg', '.gif', '.pdf', '.zip')):
+                continue
+
+            filepath = os.path.join(root, filename)
+            try:
+                with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                    for line_num, line in enumerate(f, 1):
+                        if regex.search(line):
+                            matches.append({
+                                'file': filepath,
+                                'line': line_num,
+                                'content': line.strip()[:200]  # 최대 200자
+                            })
+                            if len(matches) >= max_results:
+                                break
+            except (IOError, OSError):
+                continue
+
+        if len(matches) >= max_results:
+            break
+
+    result = {'success': True, 'matches': matches, 'count': len(matches), 'truncated': len(matches) >= max_results}
+except re.error as e:
+    result = {'success': False, 'error': f'Invalid regex pattern: {e}'}
+except Exception as e:
+    result = {'success': False, 'error': str(e)}
+print(json.dumps(result))
+`.trim();
+
+    try {
+      const execResult = await this.executeInKernel(pythonCode);
+      if (execResult.status === 'ok' && execResult.stdout) {
+        const parsed = JSON.parse(execResult.stdout.trim());
+        if (parsed.success) {
+          // 결과를 보기 좋게 포맷팅
+          const formatted = parsed.matches.map((m: any) =>
+            `${m.file}:${m.line}: ${m.content}`
+          ).join('\n');
+          return {
+            success: true,
+            output: formatted || '(no matches found)',
+          };
+        } else {
+          return { success: false, error: parsed.error };
+        }
+      }
+      return { success: false, error: execResult.error?.evalue || 'Search failed' };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * 커널에서 임시 코드 실행 (결과 캡처용)
+   * 셀을 생성하지 않고 직접 커널에서 실행
+   */
+  private async executeInKernel(code: string): Promise<ExecutionResult> {
+    const model = this.notebook.content.model;
+    if (!model) {
+      throw new Error('Notebook model is not available');
+    }
+
+    const startTime = Date.now();
+    const tempCellIndex = model.cells.length;
+
+    // 임시 코드 셀 생성
+    model.sharedModel.insertCell(tempCellIndex, {
+      cell_type: 'code',
+      source: code,
+    });
+
+    try {
+      // 실행 및 결과 캡처
+      const result = await this.executeCellAndCapture(tempCellIndex);
+      return result;
+    } finally {
+      // 임시 셀 삭제 (성공/실패 관계없이)
+      model.sharedModel.deleteCell(tempCellIndex);
+    }
   }
 
   /**
