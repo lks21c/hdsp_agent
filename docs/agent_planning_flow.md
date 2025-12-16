@@ -10,37 +10,37 @@ HDSP Agent는 HuggingFace Jupyter Agent에서 영감을 받은 **Plan-and-Execut
 HDSP Agent는 **Agent Server 분리 아키텍처**를 채택하며, 두 가지 통신 경로 [A], [B]를 사용합니다:
 
 ```mermaid
-flowchart TB
-    subgraph JupyterLab["🖥️ JupyterLab Extension"]
-        subgraph Frontend["Frontend (TypeScript/React)"]
-            ApiService["ApiService<br/>(REST API 호출)"]
-            ToolExecutor["ToolExecutor<br/>(Jupyter API)"]
-            Orchestrator["AgentOrchestrator<br/>(상태 머신)"]
+flowchart LR
+    subgraph JupyterLab["JupyterLab Extension"]
+        subgraph Frontend["Frontend TS/React"]
+            ToolExecutor["ToolExecutor"]
+            ApiService["ApiService"]
+            Orchestrator["Orchestrator"]
         end
 
-        subgraph JupyterExt["jupyter_ext (Python - HTTP Proxy)"]
-            Proxy["/hdsp-agent/* → Agent Server 포워딩"]
+        subgraph JupyterExt["jupyter_ext Proxy"]
+            Proxy["/hdsp-agent/*"]
         end
 
         subgraph JupyterServer["Jupyter Server"]
-            SessionMgr["Session Manager"]
-            KernelMgr["Kernel Manager"]
-            ContentsAPI["Contents/Kernels API"]
+            SessionMgr["Session Mgr"]
+            KernelMgr["Kernel Mgr"]
+            ContentsAPI["Contents API"]
         end
 
-        Kernel["🐍 Kernel (IPython)<br/>코드 실행"]
+        Kernel["Kernel IPython"]
     end
 
-    subgraph AgentServer["🤖 Agent Server (FastAPI, Port 8000)"]
-        Router["routers/agent.py"]
-        LLM["LLMService<br/>(Gemini/OpenAI)"]
-        ErrorClass["ErrorClassifier<br/>(패턴+LLM)"]
-        StateVerify["StateVerifier<br/>(결정론적)"]
+    subgraph AgentServer["Agent Server :8000"]
+        Router["agent.py"]
+        LLM["LLMService"]
+        ErrorClass["ErrorClassifier"]
+        StateVerify["StateVerifier"]
     end
 
-    ApiService -->|"[A] REST API"| Proxy
-    Proxy -->|"[A] HTTP/REST"| Router
-    ToolExecutor -->|"[B] HTTP/REST"| JupyterServer
+    ApiService -->|"A"| Proxy
+    Proxy -->|"A"| Router
+    ToolExecutor -->|"B"| JupyterServer
     JupyterServer -->|"ZMQ"| Kernel
 
     style AgentServer fill:#e1f5fe,stroke:#01579b
@@ -48,6 +48,8 @@ flowchart TB
     style JupyterExt fill:#f3e5f5,stroke:#7b1fa2
     style JupyterServer fill:#e8f5e9,stroke:#2e7d32
 ```
+
+> **범례**: `A` = REST API (프록시 경유), `B` = Jupyter API (직접 호출)
 
 **통신 경로 (2가지):**
 - **A. REST API (프록시 경유)**: Frontend → jupyter_ext → Agent Server → LLM
