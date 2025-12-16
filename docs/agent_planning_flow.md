@@ -299,6 +299,46 @@ flowchart TD
 | S102 | security | `exec()` 사용 감지 | WARNING |
 | E9xx | syntax | 런타임 에러 | ERROR |
 
+### AST 분석
+
+Python 내장 `ast` 모듈로 코드를 파싱하여 의존성과 정의를 추출합니다.
+
+```mermaid
+flowchart LR
+    subgraph Parse["ast.parse()"]
+        Code["Python 코드"] --> Tree["AST 트리"]
+    end
+
+    subgraph Walk["ast.walk()"]
+        Tree --> Imports["Import 추출"]
+        Tree --> Defs["정의 추출"]
+        Tree --> Refs["참조 추출"]
+    end
+
+    subgraph Extract["추출 결과"]
+        Imports --> I1["import pandas"]
+        Imports --> I2["from os import path"]
+        Defs --> D1["함수/클래스/변수"]
+        Refs --> R1["사용된 이름들"]
+    end
+
+    style Parse fill:#e3f2fd,stroke:#1565c0
+    style Walk fill:#fff3e0,stroke:#ef6c00
+    style Extract fill:#e8f5e9,stroke:#2e7d32
+```
+
+**추출 항목:**
+
+| AST 노드 | 추출 대상 | 용도 |
+|----------|----------|------|
+| `ast.Import`, `ast.ImportFrom` | import 문 | 라이브러리 의존성 |
+| `ast.FunctionDef`, `ast.ClassDef` | 함수/클래스 정의 | 정의된 심볼 |
+| `ast.Assign`, `ast.AnnAssign` | 변수 할당 | 정의된 변수 |
+| `ast.Name` (Load ctx) | 이름 참조 | 사용된 심볼 |
+| `ast.Attribute` | 속성 접근 | 메서드/속성 사용 |
+
+**코드 위치:** `agent-server/agent_server/core/code_validator.py` (L253-330)
+
 ### Ruff 자동 수정 (--fix)
 
 코드 검증 시 Ruff의 자동 수정 기능을 활용하여 LLM 토큰을 절약합니다.
