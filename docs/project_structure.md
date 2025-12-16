@@ -23,18 +23,29 @@ HDSP Agent는 **모노레포 구조**로 관리되는 AI 기반 코드 어시스
 │  │  │   ApiService    │  │  ToolExecutor   │  │ AgentOrchestrator │                 │  │
 │  │  └────────┬────────┘  └────────┬────────┘  └───────────────────┘                 │  │
 │  │           │                    │                                                  │  │
-│  │           │ REST API           │ Jupyter Native API                               │  │
+│  │           │ REST API           │ HTTP/REST (Jupyter API)                          │  │
 │  │           ▼                    ▼                                                  │  │
 │  └───────────┼────────────────────┼──────────────────────────────────────────────────┘  │
 │              │                    │                                                     │
-│  ┌───────────▼────────────────────▼──────────────────────────────────────────────────┐  │
+│  ┌───────────▼────────────────────┼──────────────────────────────────────────────────┐  │
 │  │               jupyter_ext (Python Backend - HTTP Proxy)                           │  │
-│  │  • 비즈니스 로직 없음 (순수 프록시)                                                  │  │
 │  │  • /hdsp-agent/* → Agent Server로 포워딩                                           │  │
 │  │  • SSE 스트리밍 지원                                                               │  │
 │  └────────────────────────────────┬──────────────────────────────────────────────────┘  │
 │                                   │                                                     │
-└───────────────────────────────────┼─────────────────────────────────────────────────────┘
+│  ┌────────────────────────────────┼──────────────────────────────────────────────────┐  │
+│  │                    Jupyter Server ◄───────────────────────────────────────────────┘  │
+│  │  • Session Manager (세션/커널 관리)                                                  │
+│  │  • Kernel Manager (커널 생명주기)                                                    │
+│  │  • Contents API (/api/contents/*)                                                  │
+│  │  • Kernels API (/api/kernels/*)                                                    │
+│  └────────────────────────────────┬──────────────────────────────────────────────────┘  │
+│                                   │ ZMQ (커널 통신)                                      │
+│  ┌────────────────────────────────▼──────────────────────────────────────────────────┐  │
+│  │                        Kernel (IPython)                                            │  │
+│  │  └─ Python Interpreter (코드 실행)                                                  │  │
+│  └────────────────────────────────────────────────────────────────────────────────────┘  │
+└───────────────────────────────────┬─────────────────────────────────────────────────────┘
                                     │ HTTP/REST (Port 8000)
                                     ▼
                     ┌───────────────────────────────────┐
@@ -48,8 +59,9 @@ HDSP Agent는 **모노레포 구조**로 관리되는 AI 기반 코드 어시스
 ```
 
 **통신 경로:**
-- **REST API (프록시 경유)**: ApiService → jupyter_ext → Agent Server (계획 생성, 검증, 리플랜)
-- **Jupyter Native API (직접)**: ToolExecutor → Jupyter Server (셀 생성/실행, 커널 제어)
+- **A. REST API (프록시 경유)**: ApiService → jupyter_ext → Agent Server (계획 생성, 검증, 리플랜)
+- **B. Jupyter API (HTTP/REST)**: ToolExecutor → Jupyter Server → Kernel (셀 생성/실행)
+- **C. Agent Server**: jupyter_ext → Agent Server (LLM 호출)
 
 ---
 
@@ -185,6 +197,19 @@ AGENT_SERVER_TIMEOUT = int(os.environ.get("AGENT_SERVER_TIMEOUT", "120"))
 | `config.py` | Agent Server URL 및 타임아웃 설정 |
 | `__init__.py` | Jupyter Server 확장 등록 |
 
+### 프록시 레이어 사용 이유
+
+Frontend에서 Agent Server로 직접 요청하지 않고 프록시를 사용하는 이유:
+
+| 항목 | 직접 요청 시 문제 | 프록시 사용 시 이점 |
+|------|-----------------|------------------|
+| **CORS** | 프로덕션에서 크로스 도메인 문제 발생 | Same-origin으로 해결 |
+| **인증** | Jupyter 세션 쿠키 크로스 도메인 공유 불가 | 자동 CSRF/세션 검증 |
+| **보안** | Agent Server가 인터넷에 직접 노출 | 내부 네트워크에만 노출 가능 |
+| **모니터링** | 상태 확인 불가 | 헬스 체크 엔드포인트 제공 |
+| **SSE 스트리밍** | 복잡한 직접 구현 필요 | 프록시에서 자동 중계 |
+| **배포 유연성** | Agent Server URL 하드코딩 | 환경변수로 동적 설정 |
+
 ---
 
 ## Jupyter Extension 구조
@@ -290,7 +315,7 @@ ToolExecutor는 Agent Server를 거치지 않고 **Jupyter Native API를 직접 
 
 HDSP Agent는 두 가지 통신 경로를 사용합니다:
 - **A. REST API (프록시 경유)**: 계획 생성, 검증, 리플랜 등 AI 관련 요청
-- **B. Jupyter Native API (직접)**: 도구 실행 (셀 생성, 코드 실행 등)
+- **B. Jupyter API (HTTP/REST → ZMQ)**: 도구 실행 (셀 생성, 코드 실행 등)
 
 ### A. 계획 생성 흐름 (REST API 경유)
 
@@ -325,7 +350,7 @@ HDSP Agent는 두 가지 통신 경로를 사용합니다:
     계획 반환 → AgentOrchestrator.ts
 ```
 
-### B. 도구 실행 흐름 (직접 Jupyter API)
+### B. 도구 실행 흐름 (Jupyter API)
 
 ```
 AgentOrchestrator.executeStep()
@@ -336,9 +361,17 @@ AgentOrchestrator.executeStep()
 │  └─▶ 도구 유형에 따라 분기                                       │
 └───────────────────────────────────────────────────────────────┘
         │
-        ▼  (직접 Jupyter Native API 호출)
+        ▼  (HTTP/REST - Jupyter API)
 ┌───────────────────────────────────────────────────────────────┐
-│  Jupyter Server (커널 제어)                                     │
+│  Jupyter Server                                                │
+│  ├─▶ Contents API                    → 파일/노트북 조작         │
+│  ├─▶ Kernels API                     → 커널 관리               │
+│  └─▶ Sessions API                    → 세션 관리               │
+└───────────────────────────────────────────────────────────────┘
+        │
+        ▼  (ZMQ - 커널 통신)
+┌───────────────────────────────────────────────────────────────┐
+│  Kernel (IPython)                                              │
 │  ├─▶ model.sharedModel.insertCell()  → 셀 생성                 │
 │  ├─▶ NotebookActions.run()           → 셀 실행                 │
 │  ├─▶ cell.model.outputs              → 결과 캡처               │
