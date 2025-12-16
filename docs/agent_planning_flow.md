@@ -73,7 +73,7 @@ HDSP Agent는 **Agent Server 분리 아키텍처**를 채택하며, 두 가지 �
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  1. Knowledge Base 동적 로딩 (Local RAG)                                 │
+│  1. Knowledge Base 동적 로딩 (Local RAG)                     [LLM: ✗]    │
 │     - 요청에서 라이브러리 키워드 감지 (dask, polars, pyspark 등)            │
 │     - Qdrant 벡터 DB에서 유사 문서 검색 (multilingual-e5-small 임베딩)      │
 │     - 해당 라이브러리의 API 가이드 자동 로드                                │
@@ -81,15 +81,16 @@ HDSP Agent는 **Agent Server 분리 아키텍처**를 채택하며, 두 가지 �
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  2. Planning (계획 수립) - POST /agent/plan                              │
+│  2. Planning (계획 수립) - POST /agent/plan                  [LLM: ✓]    │
+│     ✦ PLAN_GENERATION_PROMPT                                            │
 │     - System Prompt + 사용자 요청 + 노트북 컨텍스트 + 라이브러리 지식        │
 │     - LLM이 실행 계획(steps) 생성                                         │
-│     - 각 step은 tool 호출 정의 포함                                       │
+│     - 각 step은 tool 호출 정의 포함 (실제 실행은 4단계에서)                  │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  3. Pre-Validation (사전 검증) - Ruff 기반                                │
+│  3. Pre-Validation (사전 검증) - Ruff 기반                   [LLM: ✗]    │
 │     ├─▶ Pass 1: ruff check --fix (자동 수정 가능 이슈 처리)                │
 │     │   - F401 (미사용 import), W (스타일) 등 자동 수정                    │
 │     │                                                                     │
@@ -100,11 +101,12 @@ HDSP Agent는 **Agent Server 분리 아키텍처**를 채택하며, 두 가지 �
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  4. Step-by-Step Execution (단계별 실행)                                  │
-│     - jupyter_cell: 셀 생성/수정/삽입 및 실행                              │
-│     - markdown: 마크다운 셀 생성                                          │
-│     - 확장 도구: read_file, write_file, git_operations 등                 │
-│     - final_answer: 최종 답변 제공                                        │
+│  4. Step-by-Step Execution (단계별 실행)                     [LLM: ✗]    │
+│     🔧 도구 실행 (ToolExecutor) ← 18개 도구는 여기서만 호출!               │
+│     ├─ jupyter_cell: 셀 생성/수정/삽입 및 실행                             │
+│     ├─ markdown: 마크다운 셀 생성                                         │
+│     ├─ 확장 도구: read_file, write_file, git_operations 등                │
+│     └─ final_answer: 최종 답변 제공                                       │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
                     ┌───────────────┴───────────────┐
@@ -116,23 +118,23 @@ HDSP Agent는 **Agent Server 분리 아키텍처**를 채택하며, 두 가지 �
                     │                               │
                     ▼                               ▼
 ┌───────────────────────────────┐   ┌─────────────────────────────────────┐
-│  5a. State Verification        │   │  5b. Error Classification            │
-│      (상태 검증)                │   │      (에러 분류)                      │
-│  - 결정론적 검증 (LLM 없음)     │   │  - 패턴 매칭 우선                      │
-│  - 신뢰도 점수 계산             │   │  - 필요시 LLM Fallback                │
+│  5a. State Verification        │   │  5b. Error Classification  [LLM: △] │
+│      (상태 검증)    [LLM: ✗]   │   │      (에러 분류)                      │
+│  - 결정론적 검증 (LLM 없음)     │   │  - 패턴 매칭 우선 (LLM 없음)           │
+│  - 신뢰도 점수 계산             │   │  - 필요시 ERROR_ANALYSIS_PROMPT       │
 └───────────────────────────────┘   └─────────────────────────────────────┘
                     │                               │
                     │                               ▼
                     │               ┌─────────────────────────────────────┐
-                    │               │  6. Adaptive Replanning             │
-                    │               │     (적응적 재계획)                   │
+                    │               │  6. Adaptive Replanning  [LLM: ✓]   │
+                    │               │     ✦ ADAPTIVE_REPLAN_PROMPT         │
                     │               │  - refine: 현재 step 코드 수정        │
                     │               │  - insert_steps: 새 step 삽입         │
                     │               │  - replace_step: step 교체            │
                     │               │  - replan_remaining: 전체 재계획      │
                     │               └─────────────────────────────────────┘
                     │                               │
-                    │                               │ (수정된 step 재실행)
+                    │                               │ (수정된 step → 4단계로)
                     │                               │
                     │               ┌───────────────┘
                     │               │
@@ -146,27 +148,33 @@ HDSP Agent는 **Agent Server 분리 아키텍처**를 채택하며, 두 가지 �
                     └─────────────────────────────────┘
 ```
 
+**범례**: `[LLM: ✓]` LLM 호출 필수 | `[LLM: △]` 조건부 LLM (패턴 매칭 실패 시) | `[LLM: ✗]` LLM 호출 없음
+**프롬프트**: `✦ PROMPT_NAME` - 해당 단계에서 사용되는 프롬프트 ([상세 보기](./agent_prompts.md))
+
 ---
 
 ## 📑 문서 목차
 
-### 본 문서 섹션
+### 본 문서 섹션 (흐름도 1~3단계 + 아키텍처)
 
-| # | 섹션 | 설명 |
-|---|------|------|
-| 1 | [Knowledge Base 동적 로딩](#knowledge-base-동적-로딩-local-rag) | Local RAG, Qdrant, 임베딩 모델 |
-| 2 | [API 엔드포인트](#api-엔드포인트) | Planning API, Chat API |
-| 3 | [Pre-Validation](#pre-validation-사전-검증) | Ruff 기반 코드 검증, 자동 수정 |
-| 4 | [데이터 흐름](#데이터-흐름) | A/B 경로별 상세 흐름 |
-| 5 | [핵심 파일 위치](#핵심-파일-위치) | 주요 코드 위치 |
-| 6 | [아키텍처 특징](#아키텍처-특징) | 시스템 설계 원칙 |
-| 7 | [참고 프로젝트](#참고-프로젝트) | 오픈소스 레퍼런스 |
+| # | 흐름도 단계 | 섹션 | 설명 |
+|---|------------|------|------|
+| 1 | 1단계 | [Knowledge Base 동적 로딩](#knowledge-base-동적-로딩-local-rag) | Local RAG, Qdrant, 임베딩 모델 |
+| 2 | 2단계 | [API 엔드포인트](#api-엔드포인트) | Planning API (/agent/plan) |
+| 3 | 3단계 | [Pre-Validation](#pre-validation-사전-검증) | Ruff 기반 코드 검증, 자동 수정 |
+| 4 | - | [데이터 흐름](#데이터-흐름) | A/B 경로별 상세 흐름 |
+| 5 | - | [핵심 파일 위치](#핵심-파일-위치) | 주요 코드 위치 |
+| 6 | - | [아키텍처 특징](#아키텍처-특징) | 시스템 설계 원칙 |
+| 7 | - | [참고 프로젝트](#참고-프로젝트) | 오픈소스 레퍼런스 |
 
-### 별도 문서
+### 별도 문서 (흐름도 4~6단계 + 설정)
 
-- **[도구 상세 (Tools)](./agent_tools.md)** - 내장/확장 도구 전체 목록 및 사용법, 위험 수준 요약
-- **[서브시스템 상세 (Subsystems)](./agent_subsystems.md)** - ErrorClassifier, StateVerifier, Frontend 상태 머신, Rate Limit 처리
-- **[프로젝트 설정 (Setup)](./project_setup.md)** - 프로젝트 구조, 빌드 및 실행, 테스트 전략
+| 흐름도 단계 | 문서 | 설명 |
+|------------|------|------|
+| 2, 6단계 | **[프롬프트 레퍼런스](./agent_prompts.md)** | 전체 LLM 프롬프트 발췌 및 호출 시점 |
+| 4단계 | **[도구 상세](./agent_tools.md)** | 18개 도구 목록, 위험 수준, 승인 정책 |
+| 5a, 5b, 6단계 | **[서브시스템 상세](./agent_subsystems.md)** | ErrorClassifier, StateVerifier, 상태 머신 |
+| - | **[프로젝트 설정](./project_setup.md)** | 빌드, 실행, 테스트 전략 |
 
 ---
 
