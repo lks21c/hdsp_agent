@@ -69,11 +69,11 @@ flowchart TD
 **프롬프트 호출 요약:**
 | 단계 | 프롬프트 | 조건 |
 |------|----------|------|
-| 2 | PLAN_GENERATION / STRUCTURED_PLAN | 항상 |
-| 5a | REFLECTION | 선택적 |
-| 5b | ERROR_ANALYSIS | 패턴 매칭 실패 시 |
-| 6 | ADAPTIVE_REPLAN / ERROR_REFINEMENT | 오류 발생 시 |
-| 완료 | FINAL_ANSWER | 선택적 |
+| 2 | [PLAN_GENERATION](#1-plan_generation_prompt) / [STRUCTURED_PLAN](#2-structured_plan_prompt) | 항상 |
+| 5a | [REFLECTION](#6-reflection_prompt) | 선택적 |
+| 5b | [ERROR_ANALYSIS](#7-error_analysis_prompt) | 패턴 매칭 실패 시 |
+| 6 | [ADAPTIVE_REPLAN](#5-adaptive_replan_prompt) / [ERROR_REFINEMENT](#4-error_refinement_prompt) | 오류 발생 시 |
+| 완료 | [FINAL_ANSWER](#8-final_answer_prompt) | 선택적 |
 
 ---
 
