@@ -327,6 +327,82 @@ export const BUILTIN_TOOL_DEFINITIONS: Omit<ToolDefinition, 'executor'>[] = [
     requiresApproval: false,  // 조건부 승인 (위험 명령만) - ToolExecutor에서 처리
     category: 'system',
   },
+  // ─────────────────────────────────────────────────────────────────────────
+  // 확장 도구 Phase 2 (패키지/린트/셀/노트북/폴더/삭제)
+  // ─────────────────────────────────────────────────────────────────────────
+  {
+    name: 'install_package',
+    description: 'pip 패키지 설치 (버전 지정 가능)',
+    riskLevel: 'high',
+    requiresApproval: true,  // 시스템 변경이므로 승인 필요
+    category: 'system',
+  },
+  {
+    name: 'lint_file',
+    description: 'Python 파일 린트 검사 및 자동 수정 (ruff/pylint/flake8)',
+    riskLevel: 'medium',
+    requiresApproval: false,  // 읽기 위주, fix 시에도 안전
+    category: 'file',
+  },
+  {
+    name: 'delete_cell',
+    description: 'Jupyter 노트북 셀 삭제',
+    riskLevel: 'medium',
+    requiresApproval: true,  // 셀 삭제는 되돌리기 어려움
+    category: 'cell',
+  },
+  {
+    name: 'get_cell_output',
+    description: '특정 셀의 실행 출력 조회',
+    riskLevel: 'low',
+    requiresApproval: false,  // 읽기 전용
+    category: 'cell',
+  },
+  {
+    name: 'create_notebook',
+    description: '새 Jupyter 노트북 파일 생성',
+    riskLevel: 'medium',
+    requiresApproval: false,  // 새 파일 생성은 비파괴적
+    category: 'file',
+  },
+  {
+    name: 'create_folder',
+    description: '새 폴더(디렉토리) 생성',
+    riskLevel: 'low',
+    requiresApproval: false,  // 비파괴적
+    category: 'file',
+  },
+  {
+    name: 'delete_file',
+    description: '파일 또는 폴더 삭제',
+    riskLevel: 'critical',
+    requiresApproval: true,  // 항상 승인 필요 (되돌리기 불가)
+    category: 'file',
+  },
+  // ─────────────────────────────────────────────────────────────────────────
+  // 확장 도구 Phase 3 (Git/Test/Refactor)
+  // ─────────────────────────────────────────────────────────────────────────
+  {
+    name: 'git_operations',
+    description: 'Git 버전 관리 작업 (status, diff, commit, push, pull 등)',
+    riskLevel: 'high',
+    requiresApproval: false,  // 조건부 승인 - push/commit만 승인 필요 (executor에서 처리)
+    category: 'system',
+  },
+  {
+    name: 'run_tests',
+    description: '테스트 실행 (pytest/unittest) 및 결과 파싱',
+    riskLevel: 'medium',
+    requiresApproval: false,  // 읽기 위주 작업
+    category: 'system',
+  },
+  {
+    name: 'refactor_code',
+    description: '코드 리팩토링 (변수/함수 리네임, 함수 추출)',
+    riskLevel: 'high',
+    requiresApproval: true,  // 코드 변경이므로 승인 필요
+    category: 'file',
+  },
 ];
 
 /**
