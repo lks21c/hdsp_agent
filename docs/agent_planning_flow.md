@@ -348,72 +348,62 @@ class ValidateResponse:
 ### A. 계획 생성 흐름 (REST API 경유)
 
 ```mermaid
-flowchart TD
-    subgraph Frontend["🖥️ Frontend (TypeScript)"]
-        Input["사용자 입력<br/>AutoAgentPanel.tsx"]
-        Context["컨텍스트 수집<br/>ContextManager.ts"]
-        Api["ApiService.ts<br/>POST /hdsp-agent/auto-agent/plan"]
+flowchart LR
+    subgraph Frontend["Frontend"]
+        Input["입력"] --> Context["컨텍스트"] --> Api["ApiService"]
     end
 
-    subgraph Proxy["🔀 jupyter_ext (Proxy)"]
-        Handler["handlers.py<br/>/hdsp-agent/* → Agent Server"]
+    subgraph Proxy["jupyter_ext"]
+        Handler["Proxy"]
     end
 
-    subgraph Server["🤖 Agent Server (FastAPI)"]
-        Router["routers/agent.py<br/>요청 파싱"]
-        RAG["rag/<br/>임베딩 + 벡터 검색"]
-        Knowledge["knowledge/loader.py<br/>라이브러리 지식 로드"]
-        LLM["core/llm_service.py<br/>LLM 호출"]
+    subgraph Server["Agent Server"]
+        Router["Router"] --> RAG["RAG"] --> Knowledge["Knowledge"] --> LLM["LLM"]
     end
 
-    Input --> Context --> Api
-    Api -->|"[A] REST"| Handler
-    Handler -->|"HTTP :8000"| Router
-    Router --> RAG --> Knowledge --> LLM
-    LLM -->|"계획 반환"| Return["AgentOrchestrator.ts"]
+    Api -->|"A"| Handler -->|":8000"| Router
+    LLM --> Return["Orchestrator"]
 
     style Frontend fill:#fff3e0,stroke:#e65100
     style Proxy fill:#f3e5f5,stroke:#7b1fa2
     style Server fill:#e1f5fe,stroke:#01579b
 ```
 
+> **상세**: 입력(AutoAgentPanel) → 컨텍스트(ContextManager) → API → Proxy(handlers.py) → Router(agent.py) → RAG(임베딩+검색) → Knowledge(loader.py) → LLM(llm_service.py) → 계획 반환
+
 ### B. 도구 실행 흐름 (Jupyter API)
 
 ```mermaid
-flowchart TD
-    subgraph Orchestrator["🎯 AgentOrchestrator"]
-        Execute["executeStep()"]
+flowchart LR
+    subgraph Orch["Orchestrator"]
+        Execute["executeStep"]
     end
 
-    subgraph ToolExec["🔧 ToolExecutor"]
-        Tool["executeTool()<br/>도구 유형에 따라 분기"]
+    subgraph ToolExec["ToolExecutor"]
+        Tool["executeTool"]
     end
 
-    subgraph JupyterServer["📓 Jupyter Server"]
-        Contents["Contents API<br/>파일/노트북 조작"]
-        Kernels["Kernels API<br/>커널 관리"]
-        Sessions["Sessions API<br/>세션 관리"]
+    subgraph JupyterServer["Jupyter Server"]
+        Contents["Contents"]
+        Kernels["Kernels"]
+        Sessions["Sessions"]
     end
 
-    subgraph Kernel["🐍 Kernel (IPython)"]
-        Insert["insertCell()<br/>셀 생성"]
-        Run["NotebookActions.run()<br/>셀 실행"]
-        Output["cell.model.outputs<br/>결과 캡처"]
+    subgraph Kernel["Kernel"]
+        Cell["셀 생성/실행/출력"]
     end
 
     Execute --> Tool
-    Tool -->|"[B] HTTP/REST"| Contents
-    Tool -->|"[B] HTTP/REST"| Kernels
-    Tool -->|"[B] HTTP/REST"| Sessions
-    Contents -->|"ZMQ"| Insert
-    Kernels -->|"ZMQ"| Run
-    Sessions -->|"ZMQ"| Output
+    Tool -->|"B"| Contents & Kernels & Sessions
+    Contents & Kernels & Sessions -->|"ZMQ"| Cell
 
-    style Orchestrator fill:#fff3e0,stroke:#e65100
+    style Orch fill:#fff3e0,stroke:#e65100
     style ToolExec fill:#c8e6c9,stroke:#2e7d32
     style JupyterServer fill:#e8f5e9,stroke:#2e7d32
     style Kernel fill:#fce4ec,stroke:#c2185b
 ```
+
+> **상세**: Orchestrator.executeStep() → ToolExecutor.executeTool() → Jupyter API (Contents/Kernels/Sessions) → ZMQ → Kernel (insertCell, run, outputs)
 
 ---
 
