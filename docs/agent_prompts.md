@@ -25,76 +25,55 @@
 
 ## 전체 흐름에서 프롬프트 호출 위치
 
+```mermaid
+flowchart TD
+    Start([🎯 사용자 요청])
+    Start --> RAG
+
+    RAG["<b>1. Knowledge Base (RAG)</b><br/>프롬프트 없음<br/>(벡터 검색만)"]
+    RAG --> Planning
+
+    Planning["<b>2. Planning</b><br/>✦ PLAN_GENERATION_PROMPT<br/>✦ STRUCTURED_PLAN_PROMPT"]
+    Planning --> Validation
+
+    Validation["<b>3. Pre-Validation</b><br/>프롬프트 없음<br/>(Ruff 검증)"]
+    Validation --> Execution
+
+    Execution["<b>4. Step-by-Step Execution</b><br/>프롬프트 없음<br/>🔧 18개 도구 호출"]
+
+    Execution --> Success
+    Execution --> Error
+
+    Success{{"✅ 성공"}}
+    Error{{"❌ 실패"}}
+
+    Success --> StateVerify["<b>5a. State Verification</b><br/>프롬프트 없음 (결정론적)<br/><i>(선택) ✦ REFLECTION_PROMPT</i>"]
+    Error --> ErrorClass["<b>5b. Error Classification</b><br/>패턴 매칭 우선<br/><i>(필요시) ✦ ERROR_ANALYSIS_PROMPT</i>"]
+
+    ErrorClass --> Replan["<b>6. Adaptive Replanning</b><br/>✦ ADAPTIVE_REPLAN_PROMPT<br/>또는 ✦ ERROR_REFINEMENT_PROMPT"]
+
+    Replan -->|"수정된 step"| Execution
+    StateVerify --> NextStep{{"다음 Step?"}}
+    NextStep -->|"있음"| Execution
+    NextStep -->|"완료"| End
+
+    End(["🏁 완료<br/><i>(선택) ✦ FINAL_ANSWER_PROMPT</i>"])
+
+    %% Styling - LLM 호출 단계는 파란색
+    style Planning fill:#bbdefb,stroke:#1565c0
+    style Replan fill:#bbdefb,stroke:#1565c0
+    style ErrorClass fill:#fff9c4,stroke:#f9a825
+    style StateVerify fill:#e8f5e9,stroke:#2e7d32
 ```
-사용자 요청
-     │
-     ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  1. Knowledge Base 동적 로딩 (RAG)                                   │
-│     - 프롬프트 호출 없음 (벡터 검색만)                                 │
-└─────────────────────────────────────────────────────────────────────┘
-     │
-     ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  2. Planning                                                         │
-│     ✦ PLAN_GENERATION_PROMPT 또는 STRUCTURED_PLAN_PROMPT             │
-│     - RAG 컨텍스트 + 노트북 상태 + 사용자 요청 → LLM → 실행 계획        │
-└─────────────────────────────────────────────────────────────────────┘
-     │
-     ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  3. Pre-Validation (Ruff)                                            │
-│     - 프롬프트 호출 없음 (결정론적 코드 검증)                           │
-└─────────────────────────────────────────────────────────────────────┘
-     │
-     ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  4. Step-by-Step Execution                                           │
-│     - 🔧 도구 실행 (ToolExecutor) ← 여기서 18개 도구 호출!             │
-│     - 프롬프트 호출 없음 (계획된 코드 실행만)                           │
-└─────────────────────────────────────────────────────────────────────┘
-     │
-     ├─── 성공 ───┐
-     │            ▼
-     │    ┌───────────────────────────────────────────────────────────┐
-     │    │  5a. State Verification                                    │
-     │    │      - 프롬프트 호출 없음 (결정론적 검증)                    │
-     │    │                                                            │
-     │    │  (선택) REFLECTION_PROMPT                                  │
-     │    │      - 실행 결과 분석 및 조정 제안                           │
-     │    └───────────────────────────────────────────────────────────┘
-     │
-     └─── 실패 ───┐
-                  ▼
-          ┌───────────────────────────────────────────────────────────┐
-          │  5b. Error Classification                                  │
-          │      - 패턴 매칭 우선 (프롬프트 없음)                        │
-          │      - 필요시 ERROR_ANALYSIS_PROMPT (LLM Fallback)          │
-          └───────────────────────────────────────────────────────────┘
-                  │
-                  ▼
-          ┌───────────────────────────────────────────────────────────┐
-          │  6. Adaptive Replanning                                    │
-          │     ✦ ADAPTIVE_REPLAN_PROMPT                               │
-          │     - 에러 정보 + 실행 이력 → LLM → 복구 전략               │
-          │                                                            │
-          │     또는 (단순 수정 시)                                     │
-          │     ✦ ERROR_REFINEMENT_PROMPT                              │
-          │     - 원래 코드 + 에러 → LLM → 수정된 코드                   │
-          └───────────────────────────────────────────────────────────┘
-                  │
-                  ▼
-          ┌───────────────────────────────────────────────────────────┐
-          │  7. 재실행 → 4. Step-by-Step Execution으로 돌아감           │
-          └───────────────────────────────────────────────────────────┘
-     │
-     ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  완료                                                                │
-│  ✦ FINAL_ANSWER_PROMPT (선택)                                        │
-│  - 실행 결과 요약 생성                                                │
-└─────────────────────────────────────────────────────────────────────┘
-```
+
+**프롬프트 호출 요약:**
+| 단계 | 프롬프트 | 조건 |
+|------|----------|------|
+| 2 | PLAN_GENERATION / STRUCTURED_PLAN | 항상 |
+| 5a | REFLECTION | 선택적 |
+| 5b | ERROR_ANALYSIS | 패턴 매칭 실패 시 |
+| 6 | ADAPTIVE_REPLAN / ERROR_REFINEMENT | 오류 발생 시 |
+| 완료 | FINAL_ANSWER | 선택적 |
 
 ---
 
