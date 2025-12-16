@@ -62,6 +62,7 @@ export interface ChatPanelHandle {
   setLlmPrompt: (prompt: string) => void;
   setCurrentCellId: (cellId: string) => void;
   setCurrentCellIndex: (cellIndex: number) => void;
+  setInputMode: (mode: 'chat' | 'agent') => void;
 }
 
 // Agent 명령어 감지 함수
@@ -275,6 +276,10 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
     setCurrentCellIndex: (cellIndex: number) => {
       console.log('[AgentPanel] setCurrentCellIndex called with:', cellIndex);
       currentCellIndexRef.current = cellIndex;
+    },
+    setInputMode: (mode: 'chat' | 'agent') => {
+      console.log('[AgentPanel] setInputMode called with:', mode);
+      setInputMode(mode);
     }
   }));
 
@@ -2234,6 +2239,11 @@ export class AgentPanelWidget extends ReactWidget {
       return;
     }
 
+    // E, F, ? 버튼 클릭 시 항상 일반 대화(chat) 모드로 전환
+    if (this.chatPanelRef.current.setInputMode) {
+      this.chatPanelRef.current.setInputMode('chat');
+    }
+
     // Store cell index for code application (preferred method)
     if (cellIndex !== undefined && this.chatPanelRef.current.setCurrentCellIndex) {
       this.chatPanelRef.current.setCurrentCellIndex(cellIndex);
@@ -2272,6 +2282,11 @@ export class AgentPanelWidget extends ReactWidget {
       console.error('[AgentPanel] ChatPanel ref not available');
       onComplete();
       return;
+    }
+
+    // 저장 시 검수도 항상 일반 대화(chat) 모드로 전환
+    if (this.chatPanelRef.current.setInputMode) {
+      this.chatPanelRef.current.setInputMode('chat');
     }
 
     // Create summary of notebook
