@@ -399,7 +399,23 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mergedConfig = { ...DEFAULT_AUTO_AGENT_CONFIG, ...config, executionSpeed };
 
-  const notebook = propNotebook || (notebookTracker?.currentWidget as NotebookPanel | null);
+  // Use app.shell.currentWidget for reliable active tab detection
+  const getCurrentNotebook = (): NotebookPanel | null => {
+    if (propNotebook) return propNotebook;
+
+    const app = (window as any).jupyterapp;
+    if (app?.shell?.currentWidget) {
+      const currentWidget = app.shell.currentWidget;
+      if ('content' in currentWidget && currentWidget.content?.model) {
+        return currentWidget as NotebookPanel;
+      }
+    }
+
+    return notebookTracker?.currentWidget as NotebookPanel | null;
+  };
+
+  // Initial notebook for render check (propNotebook takes priority)
+  const notebook = propNotebook || getCurrentNotebook();
   const sessionContext = propSessionContext || (notebook?.sessionContext as ISessionContext | null);
   const apiService = propApiService || new ApiService();
 
@@ -503,13 +519,17 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
   }, [handleRollbackToCheckpoint]);
 
   useEffect(() => {
-    if (notebook && sessionContext) {
-      orchestratorRef.current = new AgentOrchestrator(notebook, sessionContext, apiService, mergedConfig);
+    // Always get fresh notebook (not stale)
+    const nb = propNotebook || getCurrentNotebook();
+    const sc = propSessionContext || nb?.sessionContext;
+
+    if (nb && sc) {
+      orchestratorRef.current = new AgentOrchestrator(nb, sc, apiService, mergedConfig);
       // 승인 콜백 설정
       orchestratorRef.current.setApprovalCallback(handleApprovalRequest);
     }
     return () => { orchestratorRef.current = null; };
-  }, [notebook, sessionContext, apiService, handleApprovalRequest]);
+  }, [notebookTracker, propNotebook, propSessionContext, apiService, handleApprovalRequest]);
 
   // 일시정지 상태 폴링 (step-by-step 모드용)
   useEffect(() => {
@@ -556,7 +576,37 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
   }, [originalStepCount]);
 
   const handleExecute = useCallback(async () => {
-    if (!orchestratorRef.current || !notebook || !request.trim()) return;
+    // ★ Use app.shell.currentWidget for reliable active tab detection
+    const app = (window as any).jupyterapp;
+    let currentNotebook = null;
+
+    // Try to get notebook from shell.currentWidget (most reliable)
+    if (app?.shell?.currentWidget) {
+      const currentWidget = app.shell.currentWidget;
+      if ('content' in currentWidget && currentWidget.content?.model) {
+        currentNotebook = currentWidget;
+      }
+    }
+
+    // Fallback: get fresh notebook (not stale variable)
+    if (!currentNotebook) {
+      currentNotebook = propNotebook || getCurrentNotebook();
+    }
+
+    console.log('[AutoAgentPanel] shell.currentWidget:', app?.shell?.currentWidget?.context?.path);
+    console.log('[AutoAgentPanel] tracker.currentWidget:', notebookTracker?.currentWidget?.context?.path);
+    console.log('[AutoAgentPanel] Using notebook:', currentNotebook?.context?.path);
+
+    const currentSessionContext = currentNotebook?.sessionContext;
+
+    if (!currentNotebook || !currentSessionContext || !request.trim()) return;
+
+    // ★ 현재 활성화된 노트북으로 AgentOrchestrator 재생성
+    const mergedConfig = { ...DEFAULT_AUTO_AGENT_CONFIG, ...config };
+    const orchestrator = new AgentOrchestrator(currentNotebook, currentSessionContext, apiService || new ApiService(), mergedConfig);
+
+    // CRITICAL: Update orchestratorRef so other code (cancel/reset/nextStep) uses correct instance
+    orchestratorRef.current = orchestrator;
 
     setIsRunning(true);
     setResult(null);
@@ -567,7 +617,7 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
     setStatus({ phase: 'planning', message: 'Creating execution plan...' });
 
     try {
-      const taskResult = await orchestratorRef.current.executeTask(request.trim(), notebook, handleProgress);
+      const taskResult = await orchestrator.executeTask(request.trim(), currentNotebook, handleProgress);
       setResult(taskResult);
       if (taskResult.success && taskResult.plan) {
         setCompletedSteps(taskResult.plan.steps.map(s => s.stepNumber));
@@ -579,7 +629,7 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
     } finally {
       setIsRunning(false);
     }
-  }, [notebook, request, handleProgress, onComplete]);
+  }, [propNotebook, notebookTracker, request, handleProgress, onComplete, config, propApiService]);
 
   const handleCancel = useCallback(() => {
     orchestratorRef.current?.cancel();

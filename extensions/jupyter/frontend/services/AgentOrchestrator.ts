@@ -99,6 +99,10 @@ export class AgentOrchestrator {
     apiService?: ApiService,
     config?: Partial<AutoAgentConfig>
   ) {
+    // 디버깅: 생성자에 전달된 노트북 로그
+    console.log('[Orchestrator] Constructor - notebook path:', notebook?.context?.path);
+    console.log('[Orchestrator] Constructor - notebook title:', notebook?.title?.label);
+
     this.notebook = notebook;
     this.apiService = apiService || new ApiService();
     this.toolExecutor = new ToolExecutor(notebook, sessionContext);
