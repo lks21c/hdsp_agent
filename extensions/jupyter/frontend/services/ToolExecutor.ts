@@ -33,8 +33,16 @@ export class ToolExecutor {
   private sessionContext: ISessionContext;
   private autoScrollEnabled: boolean = true;
   private registry: ToolRegistry;
+  private instanceId: string; // Debug: unique instance ID
 
   constructor(notebook: NotebookPanel, sessionContext: ISessionContext) {
+    // Generate unique instance ID for debugging
+    this.instanceId = `ToolExecutor-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    // 디버깅: 생성자에 전달된 노트북 로그
+    console.log(`[ToolExecutor ${this.instanceId}] Constructor - notebook path:`, notebook?.context?.path);
+    console.log(`[ToolExecutor ${this.instanceId}] Constructor - notebook title:`, notebook?.title?.label);
+
     this.notebook = notebook;
     this.sessionContext = sessionContext;
     this.registry = ToolRegistry.getInstance();
@@ -44,12 +52,42 @@ export class ToolExecutor {
   }
 
   /**
+   * 노트북 모델이 준비될 때까지 대기
+   * 사용자가 새로고침할 필요 없이 자동으로 모델을 기다림
+   */
+  private async ensureModelReady(): Promise<void> {
+    console.log(`[ToolExecutor ${this.instanceId}] ensureModelReady - notebook:`, this.notebook?.context?.path);
+    console.log(`[ToolExecutor ${this.instanceId}] ensureModelReady - this:`, this);
+    console.log(`[ToolExecutor ${this.instanceId}] ensureModelReady - content:`, this.notebook?.content ? 'exists' : 'null');
+    console.log(`[ToolExecutor ${this.instanceId}] ensureModelReady - model:`, this.notebook?.content?.model ? 'exists' : 'null');
+
+    if (!this.notebook.content.model) {
+      console.log('[ToolExecutor] Model not ready, waiting for context.ready...');
+      // 노트북 컨텍스트가 준비될 때까지 대기
+      await this.notebook.context.ready;
+      console.log('[ToolExecutor] context.ready completed');
+    }
+
+    if (!this.notebook.content.model) {
+      console.error('[ToolExecutor] Model still not available after context.ready!');
+      console.error('[ToolExecutor] notebook:', this.notebook);
+      console.error('[ToolExecutor] notebook.content:', this.notebook.content);
+      throw new Error('Notebook model not available after waiting for context ready');
+    }
+
+    console.log('[ToolExecutor] Model ready!');
+  }
+
+  /**
    * 빌트인 도구들을 레지스트리에 등록
    */
   private registerBuiltinTools(): void {
+    // CRITICAL: Always re-register tools to update 'this' binding for current ToolExecutor instance
+    // ToolRegistry is singleton, so we must overwrite executors to use the correct instance
+
     // jupyter_cell 도구 등록
     const jupyterCellDef = BUILTIN_TOOL_DEFINITIONS.find(t => t.name === 'jupyter_cell');
-    if (jupyterCellDef && !this.registry.hasTool('jupyter_cell')) {
+    if (jupyterCellDef) {
       this.registry.register({
         ...jupyterCellDef,
         executor: async (params: JupyterCellParams, context: ToolExecutionContext) => {
@@ -60,7 +98,7 @@ export class ToolExecutor {
 
     // markdown 도구 등록
     const markdownDef = BUILTIN_TOOL_DEFINITIONS.find(t => t.name === 'markdown');
-    if (markdownDef && !this.registry.hasTool('markdown')) {
+    if (markdownDef) {
       this.registry.register({
         ...markdownDef,
         executor: async (params: MarkdownParams, context: ToolExecutionContext) => {
@@ -71,7 +109,7 @@ export class ToolExecutor {
 
     // final_answer 도구 등록
     const finalAnswerDef = BUILTIN_TOOL_DEFINITIONS.find(t => t.name === 'final_answer');
-    if (finalAnswerDef && !this.registry.hasTool('final_answer')) {
+    if (finalAnswerDef) {
       this.registry.register({
         ...finalAnswerDef,
         executor: async (params: FinalAnswerParams, _context: ToolExecutionContext) => {
@@ -80,7 +118,7 @@ export class ToolExecutor {
       });
     }
 
-    console.log('[ToolExecutor] Built-in tools registered');
+    console.log(`[ToolExecutor ${this.instanceId}] Built-in tools registered (overwritten)`);
     this.registry.printStatus();
   }
 
@@ -486,6 +524,8 @@ print(json.dumps(result))
    * 코드 셀 생성 (항상 순차적으로 맨 끝에 추가)
    */
   private async createCodeCell(code: string, insertAfter?: number): Promise<number> {
+    await this.ensureModelReady();
+
     const notebookContent = this.notebook.content;
     const model = notebookContent.model;
 
@@ -536,6 +576,8 @@ print(json.dumps(result))
    * @param afterIndex - 이 셀 뒤에 삽입
    */
   private async insertCellAfter(code: string, afterIndex: number): Promise<number> {
+    await this.ensureModelReady();
+
     const model = this.notebook.content.model;
     if (!model) throw new Error('Notebook model not available');
 
@@ -561,6 +603,8 @@ print(json.dumps(result))
    * @param beforeIndex - 이 셀 앞에 삽입
    */
   private async insertCellBefore(code: string, beforeIndex: number): Promise<number> {
+    await this.ensureModelReady();
+
     const model = this.notebook.content.model;
     if (!model) throw new Error('Notebook model not available');
 
@@ -584,6 +628,8 @@ print(json.dumps(result))
    * 마크다운 셀 생성 (항상 순차적으로 맨 끝에 추가)
    */
   private async createMarkdownCell(content: string, insertAfter?: number): Promise<number> {
+    await this.ensureModelReady();
+
     const notebookContent = this.notebook.content;
     const model = notebookContent.model;
 

@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef, useCallback } from 'react';
 import { ReactWidget, LabIcon } from '@jupyterlab/ui-components';
+import { NotebookPanel } from '@jupyterlab/notebook';
 import { ApiService } from '../services/ApiService';
 import { IChatMessage, IFileFixRequest, IFixedFile } from '../types';
 import { SettingsPanel } from './SettingsPanel';
@@ -393,25 +394,48 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
     };
   }, [consoleTracker, lastConsoleError]);
 
-  // Initialize AgentOrchestrator when notebook is available
-  useEffect(() => {
-    const notebook = notebookTracker?.currentWidget;
-    const sessionContext = notebook?.sessionContext;
-
-    if (notebook && sessionContext) {
-      const config = { ...DEFAULT_AUTO_AGENT_CONFIG, executionSpeed };
-      orchestratorRef.current = new AgentOrchestrator(notebook, sessionContext, apiService, config);
-    }
-
-    return () => {
-      orchestratorRef.current = null;
-    };
-  }, [notebookTracker?.currentWidget, apiService, executionSpeed]);
+  // Remove lastActiveNotebook state - just use currentWidget directly
 
   // Agent 실행 핸들러
   const handleAgentExecution = useCallback(async (request: string) => {
-    const notebook = notebookTracker?.currentWidget;
-    if (!orchestratorRef.current || !notebook) {
+    // CRITICAL: Prevent concurrent agent executions
+    if (isAgentRunning) {
+      const errorMessage: IChatMessage = {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: '⚠️ 이전 작업이 아직 실행 중입니다. 완료될 때까지 기다려주세요.',
+        timestamp: Date.now(),
+      };
+      setMessages(prev => [...prev, errorMessage]);
+      return;
+    }
+
+    // IMPORTANT: Use app.shell.currentWidget for reliable active tab detection
+    const app = (window as any).jupyterapp;
+    let notebook = null;
+
+    // Try to get notebook from shell.currentWidget (most reliable)
+    if (app?.shell?.currentWidget) {
+      const currentWidget = app.shell.currentWidget;
+      if ('content' in currentWidget && currentWidget.content?.model) {
+        notebook = currentWidget;
+      }
+    }
+
+    // Fallback to notebookTracker
+    if (!notebook) {
+      notebook = notebookTracker?.currentWidget;
+    }
+
+    const sessionContext = notebook?.sessionContext;
+
+    // 디버깅: 현재 선택된 노트북 경로 로그
+    console.log('[AgentPanel] shell.currentWidget:', app?.shell?.currentWidget?.context?.path);
+    console.log('[AgentPanel] tracker.currentWidget:', notebookTracker?.currentWidget?.context?.path);
+    console.log('[AgentPanel] Using notebook:', notebook?.context?.path);
+    console.log('[AgentPanel] Notebook title:', notebook?.title?.label);
+
+    if (!notebook || !sessionContext) {
       // 노트북이 없으면 에러 메시지 표시
       const errorMessage: IChatMessage = {
         id: Date.now().toString(),
@@ -422,6 +446,10 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
       setMessages(prev => [...prev, errorMessage]);
       return;
     }
+
+    // ★ 현재 활성화된 노트북으로 AgentOrchestrator 재생성 (탭 전환 대응)
+    const config = { ...DEFAULT_AUTO_AGENT_CONFIG, executionSpeed };
+    const orchestrator = new AgentOrchestrator(notebook, sessionContext, apiService, config);
 
     // Agent 실행 메시지 생성
     const agentMessageId = `agent-${Date.now()}`;
@@ -445,7 +473,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
       // Get current llmConfig for the agent execution
       const currentLlmConfig = llmConfig || getLLMConfig() || getDefaultLLMConfig();
 
-      const result = await orchestratorRef.current.executeTask(
+      const result = await orchestrator.executeTask(
         request,
         notebook,
         (newStatus: AgentStatus) => {
@@ -1443,7 +1471,20 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
 
     // Agent 모드이면 Agent 실행
     if (inputMode === 'agent') {
-      const notebook = notebookTracker?.currentWidget;
+      // Use app.shell.currentWidget for reliable active tab detection
+      const app = (window as any).jupyterapp;
+      let notebook = null;
+
+      if (app?.shell?.currentWidget) {
+        const currentWidget = app.shell.currentWidget;
+        if ('content' in currentWidget && currentWidget.content?.model) {
+          notebook = currentWidget;
+        }
+      }
+
+      if (!notebook) {
+        notebook = notebookTracker?.currentWidget;
+      }
 
       // 노트북이 없는 경우
       if (!notebook) {
