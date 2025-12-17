@@ -12,15 +12,14 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, HTTPException
 
 from agent_server.core.config_manager import ConfigManager
+from agent_server.core.error_classifier import get_error_classifier
 from agent_server.core.llm_service import LLMService
-from agent_server.core.code_validator import CodeValidator
-from agent_server.core.error_classifier import get_error_classifier, ReplanDecision
+from agent_server.core.rag_manager import get_rag_manager
 from agent_server.core.state_verifier import get_state_verifier
 from agent_server.knowledge.loader import get_knowledge_base, get_library_detector
 from agent_server.prompts.auto_agent_prompts import (
     format_plan_prompt,
     format_refine_prompt,
-    format_replan_prompt,
 )
 from agent_server.schemas.agent import (
     PlanRequest,
@@ -29,10 +28,10 @@ from agent_server.schemas.agent import (
     RefineResponse,
     ReplanRequest,
     ReplanResponse,
-    VerifyStateRequest,
-    VerifyStateResponse,
     ReportExecutionRequest,
     ReportExecutionResponse,
+    VerifyStateRequest,
+    VerifyStateResponse,
 )
 
 router = APIRouter()
@@ -143,7 +142,9 @@ def _sanitize_tool_calls(data: Dict[str, Any]) -> Dict[str, Any]:
     return data
 
 
-def _detect_required_libraries(request: str, imported_libraries: List[str]) -> List[str]:
+def _detect_required_libraries(
+    request: str, imported_libraries: List[str]
+) -> List[str]:
     """
     Deterministic library detection (no LLM call).
     Detects libraries needed based on keywords and patterns.
@@ -194,6 +195,8 @@ async def generate_plan(request: PlanRequest) -> Dict[str, Any]:
 
     Takes a user request and notebook context, returns a structured plan
     with steps and tool calls.
+
+    RAG context is automatically injected if available.
     """
     logger.info(f"Plan request received: {request.request[:100]}...")
 
@@ -206,6 +209,23 @@ async def generate_plan(request: PlanRequest) -> Dict[str, Any]:
         detected_libraries = _detect_required_libraries(request.request, imported_libs)
         logger.info(f"Detected libraries: {detected_libraries}")
 
+        # Get RAG context if available (with library prioritization)
+        rag_context = None
+        try:
+            rag_manager = get_rag_manager()
+            if rag_manager.is_ready:
+                # Pass detected_libraries to prioritize relevant API guides
+                rag_context = await rag_manager.get_context_for_query(
+                    query=request.request, detected_libraries=detected_libraries
+                )
+                if rag_context:
+                    logger.info(
+                        f"RAG context injected: {len(rag_context)} chars (libs: {detected_libraries})"
+                    )
+        except Exception as e:
+            logger.warning(f"RAG context retrieval failed: {e}")
+            # Continue without RAG context
+
         # Build prompt
         prompt = format_plan_prompt(
             request=request.request,
@@ -215,6 +235,7 @@ async def generate_plan(request: PlanRequest) -> Dict[str, Any]:
             recent_cells=request.notebookContext.recentCells,
             available_libraries=_get_installed_packages(),
             detected_libraries=detected_libraries,
+            rag_context=rag_context,
         )
 
         # Call LLM with client-provided config
@@ -334,13 +355,18 @@ async def replan(request: ReplanRequest) -> Dict[str, Any]:
     """
     Determine how to handle a failed step.
 
-    Uses deterministic error classification to decide whether to
-    refine, insert steps, replace step, or replan remaining.
+    Uses deterministic error classification first.
+    LLM fallback is triggered when:
+    1. Same error fails 2+ times (previousAttempts >= 2)
+    2. Unknown error type not in pattern mapping
+    3. Complex error (2+ exceptions in traceback)
     """
-    logger.info(f"Replan request for step {request.currentStepIndex}")
+    logger.info(
+        f"Replan request for step {request.currentStepIndex} "
+        f"(attempts: {request.previousAttempts}, useLlmFallback: {request.useLlmFallback})"
+    )
 
     try:
-        # Use error classifier (deterministic, no LLM call)
         classifier = get_error_classifier()
 
         traceback_data = request.error.traceback or []
@@ -350,18 +376,39 @@ async def replan(request: ReplanRequest) -> Dict[str, Any]:
             else str(traceback_data)
         )
 
-        analysis = classifier.classify(
+        # Check if LLM fallback should be used
+        should_use_llm, fallback_reason = classifier.should_use_llm_fallback(
             error_type=request.error.type,
-            error_message=request.error.message,
             traceback=traceback_str,
-            code="",  # Could extract from current step
+            previous_attempts=request.previousAttempts,
         )
+
+        if should_use_llm and request.useLlmFallback:
+            logger.info(f"LLM fallback triggered: {fallback_reason}")
+            # For now, still use pattern matching but log the fallback trigger
+            # TODO: Enable LLM fallback when LLM client is configured
+            analysis = classifier.classify(
+                error_type=request.error.type,
+                error_message=request.error.message,
+                traceback=traceback_str,
+            )
+            # Mark that LLM fallback was triggered but not used (no client)
+            analysis.reasoning += f" (LLM fallback 조건 충족: {fallback_reason})"
+        else:
+            # Use deterministic error classification
+            analysis = classifier.classify(
+                error_type=request.error.type,
+                error_message=request.error.message,
+                traceback=traceback_str,
+            )
 
         return {
             "decision": analysis.decision.value,
             "analysis": analysis.to_dict()["analysis"],
             "reasoning": analysis.reasoning,
             "changes": analysis.changes,
+            "usedLlm": analysis.used_llm,
+            "confidence": analysis.confidence,
         }
 
     except Exception as e:

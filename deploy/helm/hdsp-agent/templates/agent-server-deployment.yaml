@@ -1,0 +1,125 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hdsp-agent.agentServer.serviceName" . }}
+  labels:
+    {{- include "hdsp-agent.agentServer.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.agentServer.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "hdsp-agent.agentServer.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.agentServer.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "hdsp-agent.agentServer.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "hdsp-agent.serviceAccountName" . }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: agent-server
+          image: "{{ .Values.agentServer.image.repository }}:{{ .Values.agentServer.image.tag }}"
+          imagePullPolicy: {{ .Values.agentServer.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          env:
+            # Basic configuration
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: LOG_LEVEL
+              value: {{ .Values.agentServer.env.LOG_LEVEL | quote }}
+            # LLM Provider configuration
+            - name: LLM_PROVIDER
+              value: {{ .Values.agentServer.env.LLM_PROVIDER | quote }}
+            # RAG configuration
+            {{- if .Values.rag.enabled }}
+            - name: HDSP_RAG_ENABLED
+              value: "true"
+            - name: HDSP_QDRANT_MODE
+              value: "server"
+            - name: HDSP_QDRANT_URL
+              value: "http://{{ include "hdsp-agent.qdrant.serviceName" . }}:{{ .Values.qdrant.service.httpPort }}"
+            - name: HDSP_EMBEDDING_MODEL
+              value: {{ .Values.rag.embedding.modelName | quote }}
+            - name: HDSP_EMBEDDING_DEVICE
+              value: {{ .Values.rag.embedding.device | quote }}
+            - name: HDSP_KNOWLEDGE_PATH
+              value: "/data/knowledge"
+            {{- else }}
+            - name: HDSP_RAG_ENABLED
+              value: "false"
+            {{- end }}
+            # HuggingFace cache
+            - name: HF_HOME
+              value: "/app/.cache/huggingface"
+            - name: TRANSFORMERS_CACHE
+              value: "/app/.cache/huggingface"
+          envFrom:
+            - secretRef:
+                name: {{ include "hdsp-agent.fullname" . }}-secrets
+            - configMapRef:
+                name: {{ include "hdsp-agent.fullname" . }}-config
+          {{- if .Values.agentServer.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.agentServer.livenessProbe.httpGet.path }}
+              port: {{ .Values.agentServer.livenessProbe.httpGet.port }}
+            initialDelaySeconds: {{ .Values.agentServer.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.agentServer.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.agentServer.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.agentServer.livenessProbe.failureThreshold }}
+          {{- end }}
+          {{- if .Values.agentServer.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.agentServer.readinessProbe.httpGet.path }}
+              port: {{ .Values.agentServer.readinessProbe.httpGet.port }}
+            initialDelaySeconds: {{ .Values.agentServer.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.agentServer.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.agentServer.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.agentServer.readinessProbe.failureThreshold }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.agentServer.resources | nindent 12 }}
+          volumeMounts:
+            - name: cache
+              mountPath: /app/.cache
+            {{- if and .Values.rag.enabled .Values.rag.knowledgeBase.persistence.enabled }}
+            - name: knowledge-data
+              mountPath: /data/knowledge
+            {{- end }}
+      volumes:
+        - name: cache
+          emptyDir: {}
+        {{- if and .Values.rag.enabled .Values.rag.knowledgeBase.persistence.enabled }}
+        - name: knowledge-data
+          persistentVolumeClaim:
+            claimName: {{ .Values.rag.knowledgeBase.persistence.existingClaim | default (printf "%s-knowledge" (include "hdsp-agent.fullname" .)) }}
+        {{- end }}
+      {{- with .Values.agentServer.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.agentServer.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.agentServer.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

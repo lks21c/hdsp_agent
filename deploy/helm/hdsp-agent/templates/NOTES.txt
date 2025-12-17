@@ -1,0 +1,44 @@
+🚀 HDSP Agent Server has been deployed!
+
+1. Get the application URL by running these commands:
+{{- if .Values.ingress.enabled }}
+{{- range $host := .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}
+{{- end }}
+{{- else if contains "NodePort" .Values.agentServer.service.type }}
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "hdsp-agent.agentServer.serviceName" . }})
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo http://$NODE_IP:$NODE_PORT
+{{- else if contains "LoadBalancer" .Values.agentServer.service.type }}
+  NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+        You can watch the status of by running 'kubectl get --namespace {{ .Release.Namespace }} svc -w {{ include "hdsp-agent.agentServer.serviceName" . }}'
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "hdsp-agent.agentServer.serviceName" . }} --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
+  echo http://$SERVICE_IP:{{ .Values.agentServer.service.port }}
+{{- else if contains "ClusterIP" .Values.agentServer.service.type }}
+  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "hdsp-agent.name" . }},app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=agent-server" -o jsonpath="{.items[0].metadata.name}")
+  export CONTAINER_PORT=$(kubectl get pod --namespace {{ .Release.Namespace }} $POD_NAME -o jsonpath="{.spec.containers[0].ports[0].containerPort}")
+  echo "Visit http://127.0.0.1:8080 to use your application"
+  kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 8080:$CONTAINER_PORT
+{{- end }}
+
+2. Check the health of the agent server:
+  curl http://<SERVICE_IP>:{{ .Values.agentServer.service.port }}/health
+
+{{- if .Values.qdrant.enabled }}
+
+3. Qdrant Vector Database:
+  - Internal URL: http://{{ include "hdsp-agent.qdrant.serviceName" . }}:{{ .Values.qdrant.service.httpPort }}
+  - gRPC Port: {{ .Values.qdrant.service.grpcPort }}
+
+  To access Qdrant dashboard locally:
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "hdsp-agent.qdrant.serviceName" . }} 6333:{{ .Values.qdrant.service.httpPort }}
+  Then visit: http://localhost:6333/dashboard
+{{- end }}
+
+{{- if .Values.rag.enabled }}
+
+4. RAG System Status:
+  curl http://<SERVICE_IP>:{{ .Values.agentServer.service.port }}/rag/status
+{{- end }}
+
+📖 Documentation: https://github.com/lks21c/hdsp_agent

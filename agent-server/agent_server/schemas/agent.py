@@ -8,7 +8,6 @@ from pydantic import BaseModel, Field
 
 from .common import ErrorInfo, LLMConfig, NotebookContext, ToolCall
 
-
 # ============ Plan Request/Response ============
 
 
@@ -88,6 +87,17 @@ class ReplanRequest(BaseModel):
     executionHistory: List[Dict[str, Any]] = Field(
         default_factory=list, description="History of executed steps"
     )
+    # LLM Fallback 관련 필드
+    previousAttempts: int = Field(
+        default=0, description="Number of previous attempts for the same error"
+    )
+    previousCodes: List[str] = Field(
+        default_factory=list, description="Previously attempted codes"
+    )
+    useLlmFallback: bool = Field(
+        default=True,
+        description="Whether to use LLM fallback when pattern matching fails",
+    )
 
 
 class ReplanResponse(BaseModel):
@@ -101,6 +111,13 @@ class ReplanResponse(BaseModel):
     changes: Dict[str, Any] = Field(
         default_factory=dict, description="Proposed changes"
     )
+    usedLlm: bool = Field(
+        default=False, description="Whether LLM fallback was used for error analysis"
+    )
+    confidence: float = Field(
+        default=1.0,
+        description="Analysis confidence (1.0 for pattern matching, 0.0-1.0 for LLM)",
+    )
 
 
 # ============ Reflect Request/Response ============
@@ -110,9 +127,7 @@ class ReflectRequest(BaseModel):
     """Request body for reflection on execution"""
 
     plan: ExecutionPlan = Field(description="Executed plan")
-    executionResults: List[Dict[str, Any]] = Field(
-        description="Results from each step"
-    )
+    executionResults: List[Dict[str, Any]] = Field(description="Results from each step")
     userGoal: str = Field(description="Original user goal")
 
 
@@ -147,9 +162,7 @@ class VerifyStateResponse(BaseModel):
     discrepancies: List[str] = Field(
         default_factory=list, description="List of discrepancies found"
     )
-    confidence: float = Field(
-        default=0.0, description="Confidence score (0.0-1.0)"
-    )
+    confidence: float = Field(default=0.0, description="Confidence score (0.0-1.0)")
 
 
 # ============ Report Execution ============
@@ -166,6 +179,4 @@ class ReportExecutionResponse(BaseModel):
     """Response body for execution report"""
 
     acknowledged: bool = Field(default=True)
-    nextAction: Optional[str] = Field(
-        default=None, description="Suggested next action"
-    )
+    nextAction: Optional[str] = Field(default=None, description="Suggested next action")

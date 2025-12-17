@@ -1,0 +1,220 @@
+# HDSP Agent Helm Chart Values
+# Override these values for your environment
+
+# ============================================================
+# Global Settings
+# ============================================================
+global:
+  # Namespace (optional, uses Release namespace by default)
+  namespace: ""
+  # Image pull secrets
+  imagePullSecrets: []
+
+# ============================================================
+# Agent Server Configuration
+# ============================================================
+agentServer:
+  # Replica count
+  replicaCount: 1
+
+  image:
+    repository: hdsp-agent-server
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 8000
+    annotations: {}
+
+  # Resource limits
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+
+  # Pod annotations
+  podAnnotations: {}
+
+  # Node selector
+  nodeSelector: {}
+
+  # Tolerations
+  tolerations: []
+
+  # Affinity rules
+  affinity: {}
+
+  # Liveness probe
+  livenessProbe:
+    enabled: true
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 60
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+
+  # Readiness probe
+  readinessProbe:
+    enabled: true
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  # Environment variables
+  env:
+    # LLM Provider (gemini, openai, vllm)
+    LLM_PROVIDER: "gemini"
+    # Log level
+    LOG_LEVEL: "INFO"
+
+  # Secrets (API keys) - provide via values override or external secrets
+  secrets:
+    # Set these in your values-override.yaml or via --set
+    geminiApiKey: ""
+    openaiApiKey: ""
+
+# ============================================================
+# Qdrant Vector Database Configuration
+# ============================================================
+qdrant:
+  # Enable/disable Qdrant deployment
+  enabled: true
+
+  # Replica count (Qdrant supports single node in OSS)
+  replicaCount: 1
+
+  image:
+    repository: qdrant/qdrant
+    tag: "v1.12.4"
+    pullPolicy: IfNotPresent
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    httpPort: 6333
+    grpcPort: 6334
+    annotations: {}
+
+  # Resource limits
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+
+  # Persistence
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 10Gi
+    # Existing PVC to use
+    existingClaim: ""
+
+  # Pod annotations
+  podAnnotations: {}
+
+  # Node selector
+  nodeSelector: {}
+
+  # Tolerations
+  tolerations: []
+
+  # Affinity rules
+  affinity: {}
+
+  # Qdrant configuration
+  config:
+    # Collection settings
+    collection:
+      name: "hdsp_knowledge"
+      vectorSize: 384
+      distance: "Cosine"
+    # Storage settings
+    storage:
+      # On-disk payload storage for memory efficiency
+      onDiskPayload: true
+
+# ============================================================
+# RAG System Configuration
+# ============================================================
+rag:
+  # Enable/disable RAG system
+  enabled: true
+
+  # Embedding model settings
+  embedding:
+    modelName: "intfloat/multilingual-e5-small"
+    device: "cpu"
+    batchSize: 32
+
+  # Chunking settings
+  chunking:
+    chunkSize: 512
+    chunkOverlap: 50
+    splitByHeader: true
+
+  # Search settings
+  search:
+    topK: 5
+    scoreThreshold: 0.5
+    useHybridSearch: true
+    hybridAlpha: 0.5
+
+  # Knowledge base persistence
+  knowledgeBase:
+    # Use ConfigMap for built-in knowledge
+    useBuiltIn: true
+    # PVC for custom knowledge files
+    persistence:
+      enabled: false
+      storageClass: ""
+      accessMode: ReadWriteOnce
+      size: 1Gi
+      existingClaim: ""
+
+# ============================================================
+# Ingress Configuration (Optional)
+# ============================================================
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: hdsp-agent.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: hdsp-agent-tls
+  #    hosts:
+  #      - hdsp-agent.local
+
+# ============================================================
+# ServiceAccount
+# ============================================================
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# ============================================================
+# NetworkPolicy (Optional)
+# ============================================================
+networkPolicy:
+  enabled: false

@@ -9,7 +9,16 @@ import { ILLMConfig } from './index';
 // Tool Definitions (HF Jupyter Agent 패턴)
 // ═══════════════════════════════════════════════════════════════════════════
 
-export type ToolName = 'jupyter_cell' | 'markdown' | 'final_answer';
+export type ToolName =
+  | 'jupyter_cell' | 'markdown' | 'final_answer'
+  | 'read_file' | 'write_file' | 'list_files'
+  | 'execute_command' | 'search_files'
+  // Extended tools (Phase 2)
+  | 'install_package' | 'lint_file'
+  | 'delete_cell' | 'get_cell_output' | 'create_notebook'
+  | 'create_folder' | 'delete_file'
+  // Extended tools (Phase 3)
+  | 'git_operations' | 'run_tests' | 'refactor_code';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Cell Operation Types (Notebook Refactoring Support)
@@ -26,7 +35,15 @@ export type CellOperation = 'CREATE' | 'MODIFY' | 'INSERT_AFTER' | 'INSERT_BEFOR
 
 export interface ToolCall {
   tool: ToolName;
-  parameters: JupyterCellParams | MarkdownParams | FinalAnswerParams;
+  parameters: JupyterCellParams | MarkdownParams | FinalAnswerParams
+    | ReadFileParams | WriteFileParams | ListFilesParams
+    | ExecuteCommandParams | SearchFilesParams
+    // Extended tools (Phase 2)
+    | InstallPackageParams | LintFileParams
+    | DeleteCellParams | GetCellOutputParams | CreateNotebookParams
+    | CreateFolderParams | DeleteFileParams
+    // Extended tools (Phase 3)
+    | GitOperationsParams | RunTestsParams | RefactorCodeParams;
 }
 
 // jupyter_cell 도구 파라미터
@@ -48,6 +65,135 @@ export interface MarkdownParams {
 export interface FinalAnswerParams {
   answer: string;
   summary?: string;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Extended Tool Parameter Types (파일/터미널 작업)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// read_file 도구 파라미터
+export interface ReadFileParams {
+  path: string;
+  encoding?: string;   // 기본: 'utf-8'
+  maxLines?: number;   // 대용량 파일 읽기 방지 (기본: 1000)
+}
+
+// write_file 도구 파라미터
+export interface WriteFileParams {
+  path: string;
+  content: string;
+  overwrite?: boolean; // 기본: false (기존 파일 덮어쓰기 방지)
+}
+
+// list_files 도구 파라미터
+export interface ListFilesParams {
+  path: string;
+  recursive?: boolean; // 기본: false
+  pattern?: string;    // glob 패턴 (예: "*.py")
+}
+
+// execute_command 도구 파라미터
+export interface ExecuteCommandParams {
+  command: string;
+  timeout?: number;    // ms (기본: 30000)
+}
+
+// search_files 도구 파라미터
+export interface SearchFilesParams {
+  pattern: string;     // 검색 패턴 (regex 지원)
+  path?: string;       // 검색 시작 경로 (기본: 현재 디렉토리)
+  maxResults?: number; // 최대 결과 수 (기본: 100)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Extended Tool Parameter Types (Phase 2: 추가 도구)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// install_package 도구 파라미터
+export interface InstallPackageParams {
+  package: string;     // 패키지 이름 (예: "pandas", "numpy>=1.21")
+  version?: string;    // 특정 버전 (예: "1.5.0")
+  extras?: string[];   // 추가 기능 (예: ["dev", "test"])
+  upgrade?: boolean;   // 기존 패키지 업그레이드 (기본: false)
+}
+
+// lint_file 도구 파라미터
+export interface LintFileParams {
+  path: string;        // 파일 경로
+  fix?: boolean;       // 자동 수정 여부 (기본: false)
+  tool?: 'ruff' | 'pylint' | 'flake8';  // 린트 도구 (기본: 'ruff')
+}
+
+// delete_cell 도구 파라미터
+export interface DeleteCellParams {
+  cellIndex: number;   // 삭제할 셀 인덱스 (0-based)
+}
+
+// get_cell_output 도구 파라미터
+export interface GetCellOutputParams {
+  cellIndex: number;   // 출력을 가져올 셀 인덱스 (0-based)
+  outputType?: 'text' | 'all';  // 출력 타입 (기본: 'text')
+}
+
+// create_notebook 도구 파라미터
+export interface CreateNotebookParams {
+  path: string;        // 노트북 파일 경로 (.ipynb)
+  cells?: Array<{      // 초기 셀들 (선택적)
+    type: 'code' | 'markdown';
+    source: string;
+  }>;
+  kernel?: string;     // 커널 이름 (기본: 'python3')
+}
+
+// create_folder 도구 파라미터
+export interface CreateFolderParams {
+  path: string;        // 생성할 폴더 경로
+  parents?: boolean;   // 중간 디렉토리 자동 생성 (기본: true)
+}
+
+// delete_file 도구 파라미터
+export interface DeleteFileParams {
+  path: string;        // 삭제할 파일/폴더 경로
+  recursive?: boolean; // 폴더 내용도 삭제 (기본: false)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Extended Tool Parameter Types (Phase 3: Git/Test/Refactor)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// git_operations 도구 파라미터
+export type GitOperation = 'status' | 'diff' | 'log' | 'add' | 'commit' | 'push' | 'pull' | 'branch' | 'checkout' | 'stash';
+
+export interface GitOperationsParams {
+  operation: GitOperation;  // Git 작업 유형
+  // 작업별 옵션
+  files?: string[];         // add/diff: 대상 파일들
+  message?: string;         // commit: 커밋 메시지
+  branch?: string;          // checkout/branch: 브랜치명
+  count?: number;           // log: 최근 N개 커밋 (기본: 10)
+  all?: boolean;            // add --all, push --all 등
+}
+
+// run_tests 도구 파라미터
+export interface RunTestsParams {
+  path?: string;            // 테스트 경로 (기본: 현재 디렉토리)
+  pattern?: string;         // 테스트 파일 패턴 (예: "test_*.py")
+  verbose?: boolean;        // 상세 출력 (기본: true)
+  coverage?: boolean;       // 커버리지 측정 (기본: false)
+  framework?: 'pytest' | 'unittest';  // 테스트 프레임워크 (기본: 'pytest')
+}
+
+// refactor_code 도구 파라미터
+export type RefactorOperation = 'rename_variable' | 'rename_function' | 'extract_function' | 'inline_variable';
+
+export interface RefactorCodeParams {
+  operation: RefactorOperation;  // 리팩토링 유형
+  path: string;                  // 대상 파일 경로
+  // 작업별 옵션
+  oldName?: string;              // rename: 기존 이름
+  newName?: string;              // rename/extract: 새 이름
+  lineStart?: number;            // extract: 시작 줄
+  lineEnd?: number;              // extract: 끝 줄
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -47,6 +47,7 @@ tsconfig.tsbuildinfo
 poetry.lock
 yarn.lock
 backend/
+extensions/jupyter/jupyter_ext/labextension/
 hdsp-agent-assets.zip
 
 # Deprecated directories (should not exist)

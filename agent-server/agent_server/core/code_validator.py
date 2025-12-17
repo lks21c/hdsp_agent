@@ -12,15 +12,14 @@ Ruff/Pyflakes/AST 기반 코드 품질 검증 서비스
 """
 
 import ast
+import os
 import re
-import sys
 import subprocess
 import tempfile
-import os
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional, Dict, Any
 from io import StringIO
+from typing import Any, Dict, List, Optional, Tuple
 
 
 class IssueSeverity(Enum):
@@ -94,6 +93,8 @@ class ValidationResult:
     has_errors: bool = False
     has_warnings: bool = False
     summary: str = ""
+    fixed_code: Optional[str] = None  # 자동 수정된 코드
+    fixed_count: int = 0               # 자동 수정된 이슈 수
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -102,7 +103,9 @@ class ValidationResult:
             "dependencies": self.dependencies.to_dict() if self.dependencies else None,
             "has_errors": self.has_errors,
             "has_warnings": self.has_warnings,
-            "summary": self.summary
+            "summary": self.summary,
+            "fixed_code": self.fixed_code,
+            "fixed_count": self.fixed_count
         }
 
 
@@ -501,31 +504,42 @@ class CodeValidator:
 
         return issues
 
-    def check_with_ruff(self, code: str) -> List[ValidationIssue]:
-        """Ruff 기반 고급 정적 분석 (700+ 규칙)
+    def check_with_ruff(self, code: str, auto_fix: bool = True) -> Tuple[str, List[ValidationIssue]]:
+        """Ruff 기반 고급 정적 분석 (700+ 규칙) + 자동 수정
+
+        Args:
+            code: 검사할 Python 코드
+            auto_fix: True면 자동 수정 가능한 이슈를 수정하고 수정된 코드 반환
+
+        Returns:
+            Tuple of (fixed_code, unfixable_issues)
+            - fixed_code: 자동 수정된 코드 (auto_fix=False면 원본 코드)
+            - unfixable_issues: 자동 수정 불가능한 이슈 목록
 
         Ruff 규칙 카테고리:
         - F: Pyflakes (미정의/미사용 변수)
         - E/W: pycodestyle (스타일)
         - C90: mccabe (복잡도)
-        - I: isort (import 정렬)
-        - N: pep8-naming (명명 규칙)
         - S: flake8-bandit (보안)
         - B: flake8-bugbear (버그 패턴)
         """
+        import json
         import shutil
         issues = []
+        fixed_code = code  # 기본값은 원본 코드
 
         # Ruff 실행 파일 찾기
         ruff_path = shutil.which('ruff')
         if not ruff_path:
-            # Ruff가 설치되지 않음 - 빈 리스트 반환
-            return issues
+            # Ruff가 설치되지 않음 - 원본 코드와 빈 리스트 반환
+            return fixed_code, issues
 
         # Jupyter magic command 전처리
         processed_code = self._preprocess_jupyter_code(code)
+        # 원본 코드의 magic command 위치 저장 (복원용)
+        magic_lines = self._extract_magic_lines(code)
 
-        # 임시 파일에 코드 저장 후 ruff 실행
+        temp_path = None
         try:
             with tempfile.NamedTemporaryFile(
                 mode='w',
@@ -536,13 +550,36 @@ class CodeValidator:
                 f.write(processed_code)
                 temp_path = f.name
 
-            # Ruff 실행 (JSON 출력)
+            # Pass 1: 자동 수정 (auto_fix=True인 경우)
+            if auto_fix:
+                subprocess.run(
+                    [
+                        ruff_path, 'check', temp_path,
+                        '--fix',
+                        '--select=F,E,W,C90,S,B',
+                        '--ignore=E501,W292',
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+
+                # 수정된 코드 읽기
+                with open(temp_path, 'r', encoding='utf-8') as f:
+                    fixed_processed_code = f.read()
+
+                # 수정이 있었는지 확인
+                if fixed_processed_code != processed_code:
+                    # Magic command 복원
+                    fixed_code = self._restore_magic_lines(fixed_processed_code, magic_lines)
+
+            # Pass 2: 남은 오류 확인 (수정 불가능한 것들)
             result = subprocess.run(
                 [
                     ruff_path, 'check', temp_path,
                     '--output-format=json',
-                    '--select=F,E,W,C90,S,B',  # 핵심 규칙만 선택
-                    '--ignore=E501,W292',      # 라인 길이, 파일 끝 개행 무시 (노트북 특성)
+                    '--select=F,E,W,C90,S,B',
+                    '--ignore=E501,W292',
                 ],
                 capture_output=True,
                 text=True,
@@ -550,7 +587,6 @@ class CodeValidator:
             )
 
             # JSON 결과 파싱
-            import json
             if result.stdout.strip():
                 ruff_issues = json.loads(result.stdout)
 
@@ -578,26 +614,62 @@ class CodeValidator:
                     ))
 
         except subprocess.TimeoutExpired:
-            # Ruff 타임아웃 - 무시하고 계속
+            # Ruff 타임아웃 - 원본 코드 반환
             pass
         except FileNotFoundError:
-            # Ruff가 설치되지 않음 - Pyflakes fallback 사용
+            # Ruff가 설치되지 않음
             pass
         except json.JSONDecodeError:
-            # JSON 파싱 오류 - 무시
+            # JSON 파싱 오류
             pass
         except Exception:
-            # 기타 오류 - 무시하고 계속
+            # 기타 오류
             pass
         finally:
             # 임시 파일 삭제
-            try:
-                if 'temp_path' in locals():
+            if temp_path:
+                try:
                     os.unlink(temp_path)
-            except Exception:
-                pass
+                except Exception:
+                    pass
 
-        return issues
+        return fixed_code, issues
+
+    def _extract_magic_lines(self, code: str) -> Dict[int, str]:
+        """원본 코드에서 Jupyter magic command 라인 추출
+
+        Returns:
+            Dict[line_number, original_line] - 0-indexed line numbers
+        """
+        magic_lines = {}
+        for i, line in enumerate(code.split('\n')):
+            stripped = line.lstrip()
+            if stripped.startswith('!') or stripped.startswith('%'):
+                magic_lines[i] = line
+        return magic_lines
+
+    def _restore_magic_lines(self, processed_code: str, magic_lines: Dict[int, str]) -> str:
+        """전처리된 코드에 원본 magic command 복원"""
+        if not magic_lines:
+            return processed_code
+
+        lines = processed_code.split('\n')
+        for line_num, original_line in magic_lines.items():
+            if line_num < len(lines):
+                lines[line_num] = original_line
+        return '\n'.join(lines)
+
+    def _count_fixes(self, original: str, fixed: str) -> int:
+        """수정된 라인 수 계산"""
+        original_lines = original.split('\n')
+        fixed_lines = fixed.split('\n')
+        count = 0
+        for i, (orig, fix) in enumerate(zip(original_lines, fixed_lines)):
+            if orig != fix:
+                count += 1
+        # 라인 수 차이도 고려
+        count += abs(len(original_lines) - len(fixed_lines))
+        return count
 
     def _categorize_ruff_rule(self, code: str) -> tuple:
         """Ruff 규칙 코드를 카테고리와 심각도로 변환"""
@@ -668,8 +740,8 @@ class CodeValidator:
         undefined_issues = self.check_undefined_names(code)
         all_issues.extend(undefined_issues)
 
-        # 4. Ruff 검사 (우선) - 더 포괄적이고 빠름
-        ruff_issues = self.check_with_ruff(code)
+        # 4. Ruff 검사 (우선) - 더 포괄적이고 빠름 + 자동 수정
+        fixed_code, ruff_issues = self.check_with_ruff(code)
 
         # Ruff 이슈 중 중복되지 않는 것만 추가
         existing_messages = {issue.message for issue in all_issues}
@@ -717,12 +789,28 @@ class CodeValidator:
         error_count = sum(1 for issue in all_issues if issue.severity == IssueSeverity.ERROR)
         warning_count = sum(1 for issue in all_issues if issue.severity == IssueSeverity.WARNING)
 
+        # 자동 수정 여부 확인
+        code_was_fixed = fixed_code != code
+        fixed_count = 0
+        if code_was_fixed:
+            # 수정 전후 라인 수 비교로 대략적인 수정 수 계산
+            orig_lines = code.split('\n')
+            fixed_lines = fixed_code.split('\n')
+            fixed_count = sum(1 for o, f in zip(orig_lines, fixed_lines) if o != f)
+            fixed_count += abs(len(orig_lines) - len(fixed_lines))
+
         if has_errors:
             summary = f"검증 실패: {error_count}개 오류, {warning_count}개 경고"
         elif has_warnings:
-            summary = f"검증 통과 (경고 {warning_count}개)"
+            if code_was_fixed:
+                summary = f"검증 통과 ({fixed_count}개 자동 수정, 경고 {warning_count}개)"
+            else:
+                summary = f"검증 통과 (경고 {warning_count}개)"
         else:
-            summary = "검증 통과"
+            if code_was_fixed:
+                summary = f"검증 통과 ({fixed_count}개 자동 수정)"
+            else:
+                summary = "검증 통과"
 
         return ValidationResult(
             is_valid=not has_errors,
@@ -730,7 +818,9 @@ class CodeValidator:
             dependencies=dependencies,
             has_errors=has_errors,
             has_warnings=has_warnings,
-            summary=summary
+            summary=summary,
+            fixed_code=fixed_code if code_was_fixed else None,
+            fixed_count=fixed_count
         )
 
     def quick_check(self, code: str) -> Dict[str, Any]:
@@ -747,7 +837,9 @@ class CodeValidator:
                 {"message": i.message, "line": i.line}
                 for i in result.issues if i.severity == IssueSeverity.WARNING
             ],
-            "summary": result.summary
+            "summary": result.summary,
+            "fixedCode": result.fixed_code,
+            "fixedCount": result.fixed_count
         }
 
 

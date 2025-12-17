@@ -10,8 +10,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from agent_server.routers import health, config, agent, chat
+from agent_server.routers import health, config, agent, chat, rag
 from agent_server.core.config_manager import ConfigManager
+from agent_server.core.rag_manager import get_rag_manager, reset_rag_manager
+from agent_server.schemas.rag import get_default_rag_config
 
 # Configure logging
 logging.basicConfig(
@@ -32,10 +34,33 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Failed to load configuration: {e}")
 
+    # Initialize RAG system
+    try:
+        rag_config = get_default_rag_config()
+        if rag_config.is_enabled():
+            rag_manager = get_rag_manager(rag_config)
+            await rag_manager.initialize()
+            logger.info("RAG system initialized successfully")
+        else:
+            logger.info("RAG system disabled by configuration")
+    except Exception as e:
+        logger.warning(f"Failed to initialize RAG system: {e}")
+        # Continue without RAG - graceful degradation
+
     yield
 
     # Shutdown
     logger.info("Shutting down HDSP Agent Server...")
+
+    # Shutdown RAG system
+    try:
+        rag_manager = get_rag_manager()
+        if rag_manager.is_ready:
+            await rag_manager.shutdown()
+            logger.info("RAG system shut down successfully")
+        reset_rag_manager()
+    except Exception as e:
+        logger.warning(f"Error during RAG shutdown: {e}")
 
 
 app = FastAPI(
@@ -59,6 +84,7 @@ app.include_router(health.router, tags=["Health"])
 app.include_router(config.router, prefix="/config", tags=["Configuration"])
 app.include_router(agent.router, prefix="/agent", tags=["Agent"])
 app.include_router(chat.router, prefix="/chat", tags=["Chat"])
+app.include_router(rag.router, prefix="/rag", tags=["RAG"])
 
 
 def run():

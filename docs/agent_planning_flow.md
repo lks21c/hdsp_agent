@@ -7,106 +7,232 @@ HDSP Agent는 HuggingFace Jupyter Agent에서 영감을 받은 **Plan-and-Execut
 
 ### 아키텍처 개요
 
-HDSP Agent는 **Agent Server 분리 아키텍처**를 채택합니다:
+HDSP Agent는 **Agent Server 분리 아키텍처**를 채택하며, 두 가지 통신 경로 [A], [B]를 사용합니다:
 
+```mermaid
+flowchart LR
+    subgraph JupyterLab["JupyterLab Extension"]
+        subgraph Frontend["Frontend TS/React"]
+            ToolExecutor["ToolExecutor"]
+            ApiService["ApiService"]
+            Orchestrator["Orchestrator"]
+        end
+
+        subgraph JupyterExt["jupyter_ext Proxy"]
+            Proxy["/hdsp-agent/*"]
+        end
+
+        subgraph JupyterServer["Jupyter Server"]
+            SessionMgr["Session Mgr"]
+            KernelMgr["Kernel Mgr"]
+            ContentsAPI["Contents API"]
+        end
+
+        Kernel["Kernel IPython"]
+    end
+
+    subgraph AgentServer["Agent Server :8000"]
+        Router["agent.py"]
+        LLM["LLMService"]
+        ErrorClass["ErrorClassifier"]
+        StateVerify["StateVerifier"]
+    end
+
+    ApiService -->|"A"| Proxy
+    Proxy -->|"A"| Router
+    ToolExecutor -->|"B"| JupyterServer
+    JupyterServer -->|"ZMQ"| Kernel
+
+    style AgentServer fill:#e1f5fe,stroke:#01579b
+    style Frontend fill:#fff3e0,stroke:#e65100
+    style JupyterExt fill:#f3e5f5,stroke:#7b1fa2
+    style JupyterServer fill:#e8f5e9,stroke:#2e7d32
 ```
-┌─────────────────────────────┐          HTTP/REST          ┌─────────────────────────────┐
-│     JupyterLab Extension    │  ◀────────────────────────▶ │       Agent Server          │
-│         (Frontend)          │                             │        (FastAPI)            │
-│                             │                             │                             │
-│  ┌───────────────────────┐  │                             │  ┌───────────────────────┐  │
-│  │     ApiService.ts     │──┼─────── /agent/plan ────────▶│  │   routers/agent.py    │  │
-│  │  (Rate Limit 처리)    │  │                             │  │   routers/chat.py     │  │
-│  └───────────────────────┘  │                             │  └───────────────────────┘  │
-│             │               │                             │             │               │
-│             ▼               │                             │             ▼               │
-│  ┌───────────────────────┐  │                             │  ┌───────────────────────┐  │
-│  │  AgentOrchestrator.ts │  │                             │  │     LLMService.py     │  │
-│  │   (상태 머신 관리)      │  │                             │  │   (Gemini/OpenAI)     │  │
-│  └───────────────────────┘  │                             │  └───────────────────────┘  │
-└─────────────────────────────┘                             └─────────────────────────────┘
-```
+
+> **범례**: `A` = REST API (프록시 경유), `B` = Jupyter API (직접 호출)
+
+**통신 경로 (2가지):**
+- **A. REST API (프록시 경유)**: Frontend → jupyter_ext → Agent Server → LLM
+  - 용도: 계획 생성, 코드 검증, 에러 분류, 리플랜
+  - 프록시 사용 이유: CORS 해결, Jupyter 세션 인증 자동 처리, Agent Server 내부망 격리
+- **B. Jupyter API (직접 호출)**: ToolExecutor → Jupyter Server → Kernel
+  - 용도: 셀 생성/실행, 파일 작업, 출력 캡처
+  - Agent Server를 거치지 않고 직접 Jupyter Native API 사용
 
 **설계 원칙:**
 - **클라이언트-서버 분리**: Frontend는 도구 실행만, Agent Server는 LLM 호출 담당
 - **API 키 보안**: 서버는 API 키를 저장하지 않음 (요청마다 클라이언트가 전송)
-- **결정론적 서브시스템**: 에러 분류/상태 검증은 LLM 없이 패턴 매칭으로 처리
+- **하이브리드 서브시스템**: 에러 분류는 패턴 매칭 우선, 필요시 LLM Fallback; 상태 검증은 결정론적
+- **순수 프록시**: jupyter_ext는 비즈니스 로직 없이 요청만 포워딩
 
 ---
 
 ## 전체 흐름도
 
+```mermaid
+flowchart TD
+    Start([🎯 사용자 요청])
+    Start --> RAG
+
+    RAG["<b>1. Knowledge Base 동적 로딩</b><br/>🔍 Local RAG (Qdrant + E5)<br/><code>[LLM: ✗]</code>"]
+    RAG --> Planning
+
+    Planning["<b>2. Planning (계획 수립)</b><br/>✦ PLAN_GENERATION_PROMPT<br/>POST /agent/plan<br/><code>[LLM: ✓]</code>"]
+    Planning --> Validation
+
+    Validation["<b>3. Pre-Validation</b><br/>🔧 Ruff --fix → Ruff check<br/><code>[LLM: ✗]</code>"]
+    Validation --> Execution
+
+    Execution["<b>4. Step-by-Step Execution</b><br/>🔧 ToolExecutor (18개 도구)<br/>⚠️ 도구는 여기서만 호출!<br/><code>[LLM: ✗]</code>"]
+
+    Execution --> Success
+    Execution --> Error
+
+    Success{{"✅ 성공"}}
+    Error{{"❌ 오류"}}
+
+    Success --> StateVerify["<b>5a. State Verification</b><br/>결정론적 검증<br/><code>[LLM: ✗]</code>"]
+    Error --> ErrorClass["<b>5b. Error Classification</b><br/>패턴 매칭 우선<br/>필요시 ERROR_ANALYSIS_PROMPT<br/><code>[LLM: △]</code>"]
+
+    ErrorClass --> Replan["<b>6. Adaptive Replanning</b><br/>✦ ADAPTIVE_REPLAN_PROMPT<br/>refine / insert / replace / replan<br/><code>[LLM: ✓]</code>"]
+
+    Replan -->|"수정된 step"| Execution
+    StateVerify --> NextStep{{"다음 Step?"}}
+    NextStep -->|"있음"| Execution
+    NextStep -->|"완료"| End([🏁 완료])
+
+    %% Styling
+    style Planning fill:#bbdefb,stroke:#1565c0
+    style Replan fill:#bbdefb,stroke:#1565c0
+    style ErrorClass fill:#fff9c4,stroke:#f9a825
+    style Execution fill:#c8e6c9,stroke:#2e7d32
+    style RAG fill:#f3e5f5,stroke:#7b1fa2
+    style Validation fill:#ffe0b2,stroke:#ef6c00
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         사용자 요청 (User Request)                        │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│  1. Knowledge Base 동적 로딩 (Mini RAG)                                  │
-│     - 요청에서 라이브러리 키워드 감지 (dask, polars, pyspark 등)            │
-│     - 해당 라이브러리의 API 가이드 자동 로드                                │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│  2. Planning (계획 수립) - POST /agent/plan                              │
-│     - System Prompt + 사용자 요청 + 노트북 컨텍스트 + 라이브러리 지식        │
-│     - LLM이 실행 계획(steps) 생성                                         │
-│     - 각 step은 tool 호출 정의 포함                                       │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│  3. Pre-Validation (사전 검증)                                           │
-│     - Ruff 기반 고속 정적 분석 (700+ 규칙, 보안/스타일/버그 패턴)            │
-│     - AST 파싱으로 구문 분석 및 의존성 추출                                 │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│  4. Step-by-Step Execution (단계별 실행)                                  │
-│     - jupyter_cell: 셀 생성/수정/삽입 및 실행                              │
-│     - markdown: 마크다운 셀 생성                                          │
-│     - final_answer: 최종 답변 제공                                        │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                    ┌───────────────┴───────────────┐
-                    │                               │
-                    ▼                               ▼
-            ┌──────────────┐                ┌──────────────┐
-            │   성공 (✓)    │                │   오류 (✗)    │
-            └──────────────┘                └──────────────┘
-                    │                               │
-                    ▼                               ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│  5. State Verification (상태 검증) - POST /agent/verify-state            │
-│     - 결정론적 검증 (LLM 호출 없음)                                        │
-│     - 신뢰도 점수 계산 (0.0 ~ 1.0)                                        │
-│     - 불일치 항목 식별                                                    │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                    ┌───────────────┴───────────────┐
-                    │                               │
-                    ▼                               ▼
-            ┌──────────────┐                ┌──────────────┐
-            │  계속 진행    │                │   재계획 필요  │
-            └──────────────┘                └──────────────┘
-                    │                               │
-                    ▼                               ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│  6. Adaptive Replanning (적응적 재계획) - POST /agent/replan             │
-│     - refine: 현재 step 수정 (POST /agent/refine)                        │
-│     - insert_steps: 새로운 step 삽입                                     │
-│     - replace_step: step 교체                                            │
-│     - replan_remaining: 나머지 전체 재계획                                 │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-                            ┌──────────────┐
-                            │   완료/실패   │
-                            └──────────────┘
+
+**범례:**
+| 표시 | 의미 | 색상 |
+|------|------|------|
+| `[LLM: ✓]` | LLM 호출 필수 | 🔵 파란색 |
+| `[LLM: △]` | 조건부 LLM (패턴 매칭 실패 시) | 🟡 노란색 |
+| `[LLM: ✗]` | LLM 호출 없음 (결정론적) | 기타 |
+| `✦ PROMPT_NAME` | 사용되는 프롬프트 | [상세 보기](./agent_prompts.md) |
+
+---
+
+## 📑 문서 목차
+
+### 본 문서 섹션 (흐름도 1~3단계 + 아키텍처)
+
+| # | 흐름도 단계 | 섹션 | 설명 |
+|---|------------|------|------|
+| 1 | 1단계 | [Knowledge Base 동적 로딩](#knowledge-base-동적-로딩-local-rag) | Local RAG, Qdrant, 임베딩 모델 |
+| 2 | 2단계 | [API 엔드포인트](#api-엔드포인트) | Planning API (/agent/plan) |
+| 3 | 3단계 | [Pre-Validation](#pre-validation-사전-검증) | Ruff 기반 코드 검증, 자동 수정 |
+| 4 | - | [데이터 흐름](#데이터-흐름) | A/B 경로별 상세 흐름 |
+| 5 | - | [핵심 파일 위치](#핵심-파일-위치) | 주요 코드 위치 |
+| 6 | - | [아키텍처 특징](#아키텍처-특징) | 시스템 설계 원칙 |
+| 7 | - | [참고 프로젝트](#참고-프로젝트) | 오픈소스 레퍼런스 |
+
+### 별도 문서 (흐름도 4~6단계 + 설정)
+
+| 흐름도 단계 | 문서 | 설명 |
+|------------|------|------|
+| 2, 6단계 | **[프롬프트 레퍼런스](./agent_prompts.md)** | 전체 LLM 프롬프트 발췌 및 호출 시점 |
+| 4단계 | **[도구 상세](./agent_tools.md)** | 18개 도구 목록, 위험 수준, 승인 정책 |
+| 5a, 5b, 6단계 | **[서브시스템 상세](./agent_subsystems.md)** | ErrorClassifier, StateVerifier, 상태 머신 |
+| - | **[프로젝트 설정](./project_setup.md)** | 빌드, 실행, 테스트 전략 |
+
+---
+
+## Knowledge Base 동적 로딩 (Local RAG)
+
+사용자 요청에서 특정 라이브러리 키워드를 감지하면, 해당 라이브러리의 API 가이드를 자동으로 로드합니다.
+
+### 아키텍처
+
+```mermaid
+flowchart TD
+    Request["📝 사용자 요청<br/><i>'dask로 대용량 CSV 병렬 처리해줘'</i>"]
+    Request --> Detect
+
+    Detect["<b>1. 키워드 감지</b><br/>LibraryDetector<br/>'dask' 키워드 매칭"]
+    Detect --> Embed
+
+    Embed["<b>2. 임베딩 생성</b><br/>multilingual-e5-small<br/>요청 텍스트 → 384차원 벡터<br/><i>CPU 로컬 inference</i>"]
+    Embed --> Search
+
+    Search["<b>3. 벡터 검색</b><br/>Qdrant<br/>코사인 유사도 기반<br/>Top-K 유사 문서 반환"]
+    Search --> Context
+
+    Context["<b>4. 컨텍스트 구성</b><br/>검색된 청크 + 라이브러리 가이드<br/>→ 플래닝 프롬프트에 주입"]
+
+    style Detect fill:#e3f2fd,stroke:#1565c0
+    style Embed fill:#fce4ec,stroke:#c2185b
+    style Search fill:#e8f5e9,stroke:#2e7d32
+    style Context fill:#fff3e0,stroke:#ef6c00
 ```
+
+### 구성 요소
+
+| 컴포넌트 | 기술 | 역할 |
+|----------|------|------|
+| **임베딩 모델** | `intfloat/multilingual-e5-small` | 텍스트 → 384차원 벡터 (한국어 지원) |
+| **벡터 DB** | Qdrant (Docker 또는 In-Memory) | 벡터 저장 및 유사도 검색 |
+| **문서 청킹** | LangChain RecursiveCharacterTextSplitter | 마크다운 문서 분할 (1000자, 200 overlap) |
+
+### 임베딩 모델 상세 스펙
+
+| 항목 | 값 |
+|------|-----|
+| **모델 크기** | ~470MB (float16), ~235MB (int8 양자화) |
+| **벡터 차원** | 384 |
+| **최대 시퀀스 길이** | 512 토큰 |
+| **언어 지원** | 100+ 언어 (한국어 포함) |
+
+### 권장 서버 스펙 (CPU 전용)
+
+| 항목 | 최소 | 권장 |
+|------|------|------|
+| **CPU** | 2 cores | 4+ cores |
+| **RAM** | 4GB | 8GB |
+| **디스크** | 2GB | 5GB |
+| **GPU** | 불필요 | 불필요 (CPU inference) |
+
+> 📝 **참고**: 임베딩 모델은 **GPU 없이 CPU에서 실행**됩니다. 초기 모델 로드에 약 5~10초 소요되며, 이후 요청당 50~200ms의 지연시간을 보입니다.
+
+### 지원 라이브러리
+
+| 트리거 키워드 | 로드되는 가이드 |
+|--------------|----------------|
+| `dask`, `dask.dataframe`, `dd.read` | `dask.md` |
+| `polars`, `pl.read` | `polars.md` |
+| `pyspark`, `spark` | `pyspark.md` |
+| `vaex` | `vaex.md` |
+| `modin` | `modin.md` |
+| `ray` | `ray.md` |
+
+### 예시: Dask 요청 처리
+
+```
+사용자: "dask로 대용량 CSV 파일을 병렬 처리해줘"
+         ↓
+1. "dask" 키워드 감지
+2. 요청 텍스트 임베딩 생성 (multilingual-e5-small)
+3. Qdrant에서 유사 문서 청크 검색
+4. dask.md 가이드 + 검색된 청크 결합
+5. 플래닝 프롬프트에 컨텍스트 주입
+6. LLM이 올바른 Dask 문법으로 계획 생성
+```
+
+### 코드 위치
+
+| 파일 | 역할 |
+|------|------|
+| `agent-server/agent_server/knowledge/loader.py` | 지식 로더 |
+| `agent-server/agent_server/rag/embedding_manager.py` | 임베딩 생성 |
+| `agent-server/agent_server/rag/qdrant_manager.py` | 벡터 DB 관리 |
+| `agent-server/agent_server/knowledge/libraries/*.md` | 라이브러리 가이드 |
 
 ---
 
@@ -118,7 +244,7 @@ HDSP Agent는 **Agent Server 분리 아키텍처**를 채택합니다:
 |------------|--------|------|----------|
 | `/agent/plan` | POST | 실행 계획 생성 | ✓ |
 | `/agent/refine` | POST | 코드 수정 (Self-Healing) | ✓ |
-| `/agent/replan` | POST | 적응적 재계획 결정 | ✗ (결정론적) |
+| `/agent/replan` | POST | 적응적 재계획 결정 | △ (패턴+LLM Fallback) |
 | `/agent/verify-state` | POST | 상태 검증 | ✗ (결정론적) |
 | `/agent/report-execution` | POST | 실행 결과 보고 | ✗ |
 
@@ -153,157 +279,6 @@ HDSP Agent는 **Agent Server 분리 아키텍처**를 채택합니다:
 
 ---
 
-## 내장 도구 (Built-in Tools)
-
-### jupyter_cell
-
-Python 코드 셀을 생성, 수정, 삽입합니다.
-
-| 액션 | 파라미터 | 설명 |
-|------|----------|------|
-| `CREATE` | `code` | 새 코드 셀 생성 및 실행 |
-| `MODIFY` | `code`, `cellId` | 기존 셀 내용 수정 |
-| `INSERT_AFTER` | `code`, `cellId` | 지정된 셀 뒤에 새 셀 삽입 |
-| `INSERT_BEFORE` | `code`, `cellId` | 지정된 셀 앞에 새 셀 삽입 |
-
-```json
-{
-  "tool": "jupyter_cell",
-  "parameters": {
-    "action": "CREATE",
-    "code": "import pandas as pd\ndf = pd.read_csv('data.csv')"
-  }
-}
-```
-
-### markdown
-
-마크다운 형식의 설명 셀을 생성합니다.
-
-| 파라미터 | 설명 |
-|----------|------|
-| `content` | 마크다운 텍스트 |
-
-```json
-{
-  "tool": "markdown",
-  "parameters": {
-    "content": "## 데이터 분석 결과\n분석이 완료되었습니다."
-  }
-}
-```
-
-### final_answer
-
-최종 답변을 제공합니다. 변수 치환을 지원합니다.
-
-| 파라미터 | 설명 |
-|----------|------|
-| `answer` | 최종 답변 텍스트 (`{{변수명}}` 형식으로 치환 가능) |
-
-```json
-{
-  "tool": "final_answer",
-  "parameters": {
-    "answer": "데이터 로드가 완료되었습니다. 총 {{row_count}}개의 행이 있습니다."
-  }
-}
-```
-
----
-
-## 결정론적 서브시스템
-
-LLM 호출 없이 패턴 매칭으로 처리되는 서브시스템입니다.
-
-### ErrorClassifier
-
-에러 유형을 패턴 기반으로 분류하여 재계획 결정을 내립니다.
-
-```python
-# agent-server/agent_server/core/error_classifier.py
-
-class ReplanDecision(Enum):
-    REFINE = "refine"           # 현재 step 코드만 수정
-    INSERT_STEPS = "insert_steps"  # 새 step 삽입
-    REPLACE_STEP = "replace_step"  # step 교체
-    REPLAN_REMAINING = "replan_remaining"  # 나머지 전체 재계획
-    ABORT = "abort"             # 중단
-```
-
-**분류 규칙 예시:**
-| 에러 패턴 | 결정 |
-|-----------|------|
-| `SyntaxError`, `IndentationError` | REFINE |
-| `ModuleNotFoundError`, `ImportError` | INSERT_STEPS (import 추가) |
-| `NameError` (미정의 변수) | REPLAN_REMAINING |
-| `PermissionError`, `OSError` | ABORT |
-
-### StateVerifier
-
-실행 결과의 상태를 검증하고 신뢰도 점수를 계산합니다.
-
-```python
-# agent-server/agent_server/core/state_verifier.py
-
-class VerificationResult:
-    verified: bool           # 검증 통과 여부
-    confidence: float        # 신뢰도 (0.0 ~ 1.0)
-    discrepancies: List[str] # 불일치 항목
-```
-
-**신뢰도 계산 기준:**
-- 출력 존재 여부
-- 예상 변수 정의 여부
-- 에러 발생 여부
-- 실행 시간 정상 범위 여부
-
-### LibraryDetector
-
-요청 텍스트에서 라이브러리 키워드를 감지합니다.
-
-```python
-# agent-server/agent_server/knowledge/loader.py
-
-# 키워드 스코어링으로 라이브러리 감지
-detected = detector.detect(
-    request="dask로 대용량 CSV 병렬 처리",
-    available_libraries=["dask", "polars", "pandas"],
-    imported_libraries=["pandas"]
-)
-# 결과: ["dask"]
-```
-
----
-
-## Knowledge Base 동적 로딩 (Mini RAG)
-
-사용자 요청에서 특정 라이브러리 키워드를 감지하면, 해당 라이브러리의 API 가이드를 자동으로 로드합니다.
-
-**지원 라이브러리:**
-| 트리거 키워드 | 로드되는 가이드 |
-|--------------|----------------|
-| `dask`, `dask.dataframe`, `dd.read` | `dask.md` |
-| `polars`, `pl.read` | `polars.md` |
-| `pyspark`, `spark` | `pyspark.md` |
-| `vaex` | `vaex.md` |
-| `modin` | `modin.md` |
-| `ray` | `ray.md` |
-
-**예시: Dask 요청 처리**
-```
-사용자: "dask로 대용량 CSV 파일을 병렬 처리해줘"
-         ↓
-1. "dask" 키워드 감지
-2. agent-server/agent_server/knowledge/libraries/dask.md 로드
-3. 플래닝 프롬프트에 Dask API 가이드 포함
-4. LLM이 올바른 Dask 문법으로 계획 생성
-```
-
-**코드 위치:** `agent-server/agent_server/knowledge/loader.py`
-
----
-
 ## Pre-Validation (사전 검증)
 
 실행 전 코드 품질 검사를 수행합니다.
@@ -324,126 +299,151 @@ detected = detector.detect(
 | S102 | security | `exec()` 사용 감지 | WARNING |
 | E9xx | syntax | 런타임 에러 | ERROR |
 
+### AST 분석
+
+Python 내장 `ast` 모듈로 코드를 파싱하여 의존성과 정의를 추출합니다.
+
+```mermaid
+flowchart LR
+    subgraph Parse["ast.parse()"]
+        Code["Python 코드"] --> Tree["AST 트리"]
+    end
+
+    subgraph Walk["ast.walk()"]
+        Tree --> Imports["Import 추출"]
+        Tree --> Defs["정의 추출"]
+        Tree --> Refs["참조 추출"]
+    end
+
+    subgraph Extract["추출 결과"]
+        Imports --> I1["import pandas"]
+        Imports --> I2["from os import path"]
+        Defs --> D1["함수/클래스/변수"]
+        Refs --> R1["사용된 이름들"]
+    end
+
+    style Parse fill:#e3f2fd,stroke:#1565c0
+    style Walk fill:#fff3e0,stroke:#ef6c00
+    style Extract fill:#e8f5e9,stroke:#2e7d32
+```
+
+**추출 항목:**
+
+| AST 노드 | 추출 대상 | 용도 |
+|----------|----------|------|
+| `ast.Import`, `ast.ImportFrom` | import 문 | 라이브러리 의존성 |
+| `ast.FunctionDef`, `ast.ClassDef` | 함수/클래스 정의 | 정의된 심볼 |
+| `ast.Assign`, `ast.AnnAssign` | 변수 할당 | 정의된 변수 |
+| `ast.Name` (Load ctx) | 이름 참조 | 사용된 심볼 |
+| `ast.Attribute` | 속성 접근 | 메서드/속성 사용 |
+
+**코드 위치:** `agent-server/agent_server/core/code_validator.py` (L253-330)
+
+### Ruff 자동 수정 (--fix)
+
+코드 검증 시 Ruff의 자동 수정 기능을 활용하여 LLM 토큰을 절약합니다.
+
+```mermaid
+flowchart TD
+    Request["🔍 코드 검증 요청"]
+    Request --> Pass1
+
+    Pass1["<b>Pass 1: ruff check --fix</b><br/>자동 수정 가능한 이슈 처리<br/>F401 (미사용 import), W (스타일)"]
+    Pass1 --> Pass2
+
+    Pass2["<b>Pass 2: ruff check</b><br/>자동 수정 불가 이슈만 반환<br/>F821 (미정의 변수), S (보안)"]
+
+    Pass2 --> NoIssue
+    Pass2 --> HasIssue
+
+    NoIssue{{"✅ 이슈 없음<br/>(수정된 코드 반환)"}}
+    HasIssue{{"⚠️ 이슈 있음<br/>(LLM에 전달)"}}
+
+    style Pass1 fill:#c8e6c9,stroke:#2e7d32
+    style Pass2 fill:#fff3e0,stroke:#ef6c00
+    style NoIssue fill:#e8f5e9,stroke:#2e7d32
+    style HasIssue fill:#ffebee,stroke:#c62828
+```
+
+**API 응답 확장:**
+```python
+class ValidateResponse:
+    valid: bool                     # 검증 통과 여부
+    issues: List[ValidationIssue]   # 자동 수정 불가 이슈
+    fixedCode: Optional[str]        # 자동 수정된 코드 (NEW)
+    fixedCount: int                 # 자동 수정된 이슈 수 (NEW)
+```
+
+**효과:**
+- 스타일/포맷팅 이슈는 LLM 호출 없이 즉시 수정
+- LLM에 전달되는 이슈 수 감소 → 토큰 절약
+- 응답 속도 향상
+
 **코드 위치:** `agent-server/agent_server/core/code_validator.py`
 
 ---
 
-## Frontend 상태 머신
+## 데이터 흐름
 
-```
-                                    ┌─────────────┐
-                                    │    idle     │
-                                    └──────┬──────┘
-                                           │ 사용자 요청
-                                           ▼
-                                    ┌─────────────┐
-                                    │  planning   │ ──── POST /agent/plan
-                                    └──────┬──────┘
-                                           │
-                                           ▼
-                                    ┌─────────────┐
-                                    │   planned   │
-                                    └──────┬──────┘
-                                           │
-                                           ▼
-                                    ┌─────────────┐
-                              ┌──── │  executing  │ ────┐
-                              │     └─────────────┘     │
-                              │ 성공                   오류 │
-                              ▼                         ▼
-                       ┌─────────────┐          ┌─────────────┐
-                       │ validating  │          │  reflecting │
-                       └──────┬──────┘          └──────┬──────┘
-                              │                        │
-                              ▼                        ▼
-                       ┌─────────────┐          ┌─────────────┐
-                       │  verifying  │          │ replanning  │
-                       └──────┬──────┘          └──────┬──────┘
-                              │                        │
-          ┌───────────────────┴────────────────────────┘
-          │
-          ▼
-    ┌───────────┐                               ┌──────────┐
-    │ completed │                               │  failed  │
-    └───────────┘                               └──────────┘
+### A. 계획 생성 흐름 (REST API 경유)
+
+```mermaid
+flowchart LR
+    subgraph Frontend["Frontend"]
+        Input["입력"] --> Context["컨텍스트"] --> Api["ApiService"]
+    end
+
+    subgraph Proxy["jupyter_ext"]
+        Handler["Proxy"]
+    end
+
+    subgraph Server["Agent Server"]
+        Router["Router"] --> RAG["RAG"] --> Knowledge["Knowledge"] --> LLM["LLM"]
+    end
+
+    Api -->|"A"| Handler -->|":8000"| Router
+    LLM --> Return["Orchestrator"]
+
+    style Frontend fill:#fff3e0,stroke:#e65100
+    style Proxy fill:#f3e5f5,stroke:#7b1fa2
+    style Server fill:#e1f5fe,stroke:#01579b
 ```
 
-### 상태 설명
+> **상세**: 입력(AutoAgentPanel) → 컨텍스트(ContextManager) → API → Proxy(handlers.py) → Router(agent.py) → RAG(임베딩+검색) → Knowledge(loader.py) → LLM(llm_service.py) → 계획 반환
 
-| 상태 | 설명 |
-|------|------|
-| `idle` | 대기 상태 |
-| `planning` | LLM에 계획 요청 중 |
-| `planned` | 계획 수립 완료, 실행 대기 |
-| `executing` | 현재 step 실행 중 |
-| `validating` | 코드 사전 검증 중 |
-| `verifying` | 실행 결과 상태 검증 중 |
-| `reflecting` | 오류 분석 중 |
-| `replanning` | 재계획 중 |
-| `completed` | 모든 step 완료 |
-| `failed` | 복구 불가 오류 |
+### B. 도구 실행 흐름 (Jupyter API)
 
-**코드 위치:** `extensions/jupyter/frontend/services/AgentOrchestrator.ts`
+```mermaid
+flowchart LR
+    subgraph Orch["Orchestrator"]
+        Execute["executeStep"]
+    end
 
----
+    subgraph ToolExec["ToolExecutor"]
+        Tool["executeTool"]
+    end
 
-## Rate Limit 처리
+    subgraph JupyterServer["Jupyter Server"]
+        Contents["Contents"]
+        Kernels["Kernels"]
+        Sessions["Sessions"]
+    end
 
-### 개요
+    subgraph Kernel["Kernel"]
+        Cell["셀 생성/실행/출력"]
+    end
 
-API Rate Limit (429) 발생 시 자동으로 다음 API 키로 교체합니다.
+    Execute --> Tool
+    Tool -->|"B"| Contents & Kernels & Sessions
+    Contents & Kernels & Sessions -->|"ZMQ"| Cell
 
-```
-┌───────────────┐     429 발생      ┌───────────────┐
-│   API 호출     │ ──────────────▶  │  키 교체       │
-│   (Key #1)    │                  │  (Key #2)     │
-└───────────────┘                  └───────────────┘
-       │                                  │
-       │ 성공                             │ 재시도
-       ▼                                  ▼
-  ┌───────────┐                    ┌───────────────┐
-  │   완료     │                    │  API 재호출    │
-  └───────────┘                    └───────────────┘
+    style Orch fill:#fff3e0,stroke:#e65100
+    style ToolExec fill:#c8e6c9,stroke:#2e7d32
+    style JupyterServer fill:#e8f5e9,stroke:#2e7d32
+    style Kernel fill:#fce4ec,stroke:#c2185b
 ```
 
-### fetchWithKeyRotation 래퍼
-
-모든 LLM API 호출에 전역으로 적용되는 래퍼입니다.
-
-```typescript
-// extensions/jupyter/frontend/services/ApiService.ts
-
-private async fetchWithKeyRotation<T>(
-  url: string,
-  request: { llmConfig?: any; [key: string]: any },
-  options?: {
-    onKeyRotation?: (keyIndex: number, totalKeys: number) => void;
-    defaultErrorMessage?: string;
-  }
-): Promise<T>
-```
-
-**특징:**
-- 최대 10회 재시도
-- 성공 시 키 로테이션 상태 리셋
-- 모든 키 소진 시 명확한 에러 메시지
-- 프론트엔드 전용 (서버는 키를 저장하지 않음)
-
-### 적용 API
-
-- `generateExecutionPlan()`
-- `refineStepCode()`
-- `replanExecution()`
-- `sendMessage()`
-- `cellAction()`
-- `fileAction()`
-- `validateCode()`
-- `reflectOnExecution()`
-- `verifyState()`
-
-**코드 위치:**
-- `extensions/jupyter/frontend/services/ApiService.ts`
-- `extensions/jupyter/frontend/services/ApiKeyManager.ts`
+> **상세**: Orchestrator.executeStep() → ToolExecutor.executeTool() → Jupyter API (Contents/Kernels/Sessions) → ZMQ → Kernel (insertCell, run, outputs)
 
 ---
 
@@ -482,10 +482,12 @@ private async fetchWithKeyRotation<T>(
 1. **Self-Healing**: 오류 발생 시 자동으로 코드 수정 시도
 2. **Context-Aware**: 노트북 상태를 지속적으로 추적
 3. **Knowledge-Enhanced**: 라이브러리별 전문 지식 동적 로딩
-4. **Fail-Fast Validation**: 실행 전 코드 품질 사전 검증
+4. **Fail-Fast Validation**: 실행 전 코드 품질 사전 검증 + Ruff 자동 수정
 5. **Adaptive Planning**: 상황에 따른 유연한 계획 수정
 6. **Deterministic Subsystems**: 에러 분류/상태 검증은 LLM 없이 처리
-7. **Rate Limit Resilience**: 자동 API 키 교체로 서비스 연속성 보장
+7. **LLM Fallback**: 패턴 매칭 실패 시 LLM 기반 에러 분석
+8. **Extended Toolset**: 18개 내장 도구 (파일, 셸, Git, 테스트, 리팩토링 등)
+9. **Rate Limit Resilience**: 자동 API 키 교체로 서비스 연속성 보장
 
 ---
 

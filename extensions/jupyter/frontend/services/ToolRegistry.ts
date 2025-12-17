@@ -262,6 +262,9 @@ export class ToolRegistry {
  * ToolExecutor의 메서드들을 executor로 연결하기 위해 나중에 초기화
  */
 export const BUILTIN_TOOL_DEFINITIONS: Omit<ToolDefinition, 'executor'>[] = [
+  // ─────────────────────────────────────────────────────────────────────────
+  // 기본 도구 (Cell 작업)
+  // ─────────────────────────────────────────────────────────────────────────
   {
     name: 'jupyter_cell',
     description: 'Jupyter 코드 셀 생성/수정/실행',
@@ -283,6 +286,149 @@ export const BUILTIN_TOOL_DEFINITIONS: Omit<ToolDefinition, 'executor'>[] = [
     requiresApproval: false,
     category: 'answer',
   },
+  // ─────────────────────────────────────────────────────────────────────────
+  // 확장 도구 (파일 시스템)
+  // ─────────────────────────────────────────────────────────────────────────
+  {
+    name: 'read_file',
+    description: '파일 내용 읽기 (읽기 전용)',
+    riskLevel: 'low',
+    requiresApproval: false,
+    category: 'file',
+  },
+  {
+    name: 'write_file',
+    description: '파일에 내용 쓰기 (덮어쓰기 가능)',
+    riskLevel: 'high',
+    requiresApproval: true,  // 항상 승인 필요
+    category: 'file',
+  },
+  {
+    name: 'list_files',
+    description: '디렉토리 내 파일/폴더 목록 조회',
+    riskLevel: 'low',
+    requiresApproval: false,
+    category: 'file',
+  },
+  {
+    name: 'search_files',
+    description: '파일 내용 검색 (grep/ripgrep 스타일)',
+    riskLevel: 'medium',
+    requiresApproval: false,
+    category: 'file',
+  },
+  // ─────────────────────────────────────────────────────────────────────────
+  // 확장 도구 (시스템)
+  // ─────────────────────────────────────────────────────────────────────────
+  {
+    name: 'execute_command',
+    description: '셸 명령 실행 (위험 명령만 승인 필요)',
+    riskLevel: 'critical',
+    requiresApproval: false,  // 조건부 승인 (위험 명령만) - ToolExecutor에서 처리
+    category: 'system',
+  },
+  // ─────────────────────────────────────────────────────────────────────────
+  // 확장 도구 Phase 2 (패키지/린트/셀/노트북/폴더/삭제)
+  // ─────────────────────────────────────────────────────────────────────────
+  {
+    name: 'install_package',
+    description: 'pip 패키지 설치 (버전 지정 가능)',
+    riskLevel: 'high',
+    requiresApproval: true,  // 시스템 변경이므로 승인 필요
+    category: 'system',
+  },
+  {
+    name: 'lint_file',
+    description: 'Python 파일 린트 검사 및 자동 수정 (ruff/pylint/flake8)',
+    riskLevel: 'medium',
+    requiresApproval: false,  // 읽기 위주, fix 시에도 안전
+    category: 'file',
+  },
+  {
+    name: 'delete_cell',
+    description: 'Jupyter 노트북 셀 삭제',
+    riskLevel: 'medium',
+    requiresApproval: true,  // 셀 삭제는 되돌리기 어려움
+    category: 'cell',
+  },
+  {
+    name: 'get_cell_output',
+    description: '특정 셀의 실행 출력 조회',
+    riskLevel: 'low',
+    requiresApproval: false,  // 읽기 전용
+    category: 'cell',
+  },
+  {
+    name: 'create_notebook',
+    description: '새 Jupyter 노트북 파일 생성',
+    riskLevel: 'medium',
+    requiresApproval: false,  // 새 파일 생성은 비파괴적
+    category: 'file',
+  },
+  {
+    name: 'create_folder',
+    description: '새 폴더(디렉토리) 생성',
+    riskLevel: 'low',
+    requiresApproval: false,  // 비파괴적
+    category: 'file',
+  },
+  {
+    name: 'delete_file',
+    description: '파일 또는 폴더 삭제',
+    riskLevel: 'critical',
+    requiresApproval: true,  // 항상 승인 필요 (되돌리기 불가)
+    category: 'file',
+  },
+  // ─────────────────────────────────────────────────────────────────────────
+  // 확장 도구 Phase 3 (Git/Test/Refactor)
+  // ─────────────────────────────────────────────────────────────────────────
+  {
+    name: 'git_operations',
+    description: 'Git 버전 관리 작업 (status, diff, commit, push, pull 등)',
+    riskLevel: 'high',
+    requiresApproval: false,  // 조건부 승인 - push/commit만 승인 필요 (executor에서 처리)
+    category: 'system',
+  },
+  {
+    name: 'run_tests',
+    description: '테스트 실행 (pytest/unittest) 및 결과 파싱',
+    riskLevel: 'medium',
+    requiresApproval: false,  // 읽기 위주 작업
+    category: 'system',
+  },
+  {
+    name: 'refactor_code',
+    description: '코드 리팩토링 (변수/함수 리네임, 함수 추출)',
+    riskLevel: 'high',
+    requiresApproval: true,  // 코드 변경이므로 승인 필요
+    category: 'file',
+  },
+];
+
+/**
+ * 위험한 셸 명령 패턴들
+ * execute_command에서 이 패턴에 매칭되는 명령은 사용자 승인 필요
+ */
+export const DANGEROUS_COMMAND_PATTERNS: RegExp[] = [
+  // 파일 삭제/제거
+  /\brm\s+(-[rRfF]+\s+)?/i,     // rm, rm -rf, rm -r, rm -f
+  /\brmdir\b/i,                  // rmdir
+  // 권한 상승/변경
+  /\bsudo\b/i,                   // sudo anything
+  /\bsu\b/i,                     // su
+  /\bchmod\s+7[0-7][0-7]/i,     // chmod 777, chmod 755 등 (위험한 권한)
+  /\bchown\b/i,                  // chown
+  // 시스템 파괴
+  />\s*\/dev\//i,                // > /dev/null 등
+  /\bmkfs\b/i,                   // mkfs (포맷)
+  /\bdd\b/i,                     // dd (디스크 복사/삭제)
+  // 원격 코드 실행
+  /\bcurl\s+.*\|\s*(ba)?sh/i,   // curl ... | sh
+  /\bwget\s+.*\|\s*(ba)?sh/i,   // wget ... | sh
+  /\beval\s+/i,                  // eval
+  // 네트워크 위험
+  /\bnc\s+-[el]/i,              // nc -l (listen mode)
+  /\biptables\b/i,              // iptables 조작
 ];
 
 /**
