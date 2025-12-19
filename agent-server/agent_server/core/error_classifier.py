@@ -154,6 +154,12 @@ class ErrorClassifier:
         installed_packages = installed_packages or []
         installed_lower = {pkg.lower() for pkg in installed_packages}
 
+        # Step 0: 일반 타입('runtime' 등)일 경우 traceback에서 실제 에러 추출
+        if error_type in ('runtime', 'timeout', 'safety', 'validation', 'environment'):
+            actual_error_type = self._extract_error_type_from_traceback(traceback, error_message)
+            if actual_error_type:
+                error_type = actual_error_type
+
         # Step 1: 에러 타입 정규화
         error_type_normalized = self._normalize_error_type(error_type)
 
@@ -194,6 +200,44 @@ class ErrorClassifier:
             error_type = error_type.split(".")[-1]
 
         return error_type
+
+    def _extract_error_type_from_traceback(self, traceback: str, error_message: str) -> Optional[str]:
+        """
+        traceback에서 실제 Python 에러 타입 추출
+
+        프론트엔드가 error.type을 'runtime'으로 보낼 때,
+        traceback에서 실제 에러 타입(ModuleNotFoundError, ImportError 등)을 찾음
+
+        Args:
+            traceback: 스택 트레이스 문자열
+            error_message: 에러 메시지
+
+        Returns:
+            추출된 에러 타입 (예: 'ModuleNotFoundError') 또는 None
+        """
+        if not traceback:
+            return None
+
+        # traceback의 마지막 줄에서 에러 타입 추출
+        # 형식: "ModuleNotFoundError: No module named 'matplotlib'"
+        lines = traceback.strip().split('\n')
+
+        # 뒤에서부터 에러 타입 라인 찾기
+        for line in reversed(lines):
+            line = line.strip()
+
+            # ANSI 색상 코드 제거
+            line = re.sub(r'\x1b\[[0-9;]*m', '', line)
+
+            # Python 에러 타입 패턴 매칭
+            # 예: "ModuleNotFoundError: ..." 또는 "ModuleNotFoundError                       Traceback..."
+            error_pattern = r'^([A-Z][a-zA-Z0-9]*Error|[A-Z][a-zA-Z0-9]*Exception)[\s:]'
+            match = re.match(error_pattern, line)
+
+            if match:
+                return match.group(1)
+
+        return None
 
     def _handle_module_error(
         self, error_message: str, traceback: str, installed_packages: set

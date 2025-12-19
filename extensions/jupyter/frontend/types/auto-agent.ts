@@ -210,6 +210,7 @@ export interface ToolResult {
   wasModified?: boolean;      // 기존 셀 수정 vs 새 셀 생성 구분
   operation?: CellOperation;  // 수행된 셀 작업 유형
   previousContent?: string;   // 수정 전 원본 내용 (MODIFY 시)
+  metadata?: Record<string, any>;  // 추가 메타데이터 (파일 해결, 선택 등)
 }
 
 // 커널 실행 결과
@@ -553,11 +554,13 @@ export interface AutoAgentReflectResponse {
 export type ReplanDecision = 'refine' | 'insert_steps' | 'replace_step' | 'replan_remaining';
 
 export interface AutoAgentReplanRequest {
-  originalRequest: string;
-  executedSteps: PlanStep[];
-  failedStep: PlanStep;
+  originalPlan: ExecutionPlan;
+  currentStepIndex: number;
   error: ExecutionError;
-  executionOutput?: string;
+  executionHistory?: Array<Record<string, any>>;
+  previousAttempts?: number;
+  previousCodes?: string[];
+  useLlmFallback?: boolean;
 }
 
 export interface ReplanAnalysis {

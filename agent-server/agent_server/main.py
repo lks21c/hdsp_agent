@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from agent_server.routers import health, config, agent, chat, rag
+from agent_server.routers import health, config, agent, chat, rag, file_resolver
 from agent_server.core.config_manager import ConfigManager
 from agent_server.core.rag_manager import get_rag_manager, reset_rag_manager
 from agent_server.schemas.rag import get_default_rag_config
@@ -85,6 +85,7 @@ app.include_router(config.router, prefix="/config", tags=["Configuration"])
 app.include_router(agent.router, prefix="/agent", tags=["Agent"])
 app.include_router(chat.router, prefix="/chat", tags=["Chat"])
 app.include_router(rag.router, prefix="/rag", tags=["RAG"])
+app.include_router(file_resolver.router, prefix="/file", tags=["File Resolution"])
 
 
 def run():

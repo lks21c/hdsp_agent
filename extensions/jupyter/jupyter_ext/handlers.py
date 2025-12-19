@@ -298,6 +298,54 @@ class FileActionProxyHandler(BaseProxyHandler):
         return "/file/action"
 
 
+class FileResolveProxyHandler(BaseProxyHandler):
+    """Proxy handler for /file/resolve endpoint."""
+
+    def get_proxy_path(self) -> str:
+        return "/file/resolve"
+
+    async def post(self, *args, **kwargs):
+        """Handle POST with notebookDir path conversion."""
+        import os
+
+        # Parse request body
+        try:
+            body = json.loads(self.request.body.decode('utf-8'))
+
+            # Convert notebookDir to absolute path
+            if 'notebookDir' in body and body['notebookDir']:
+                # Get Jupyter server root directory
+                server_root = self.settings.get('server_root_dir', os.getcwd())
+                server_root = os.path.expanduser(server_root)  # Expand ~
+                notebook_dir = body['notebookDir']
+
+                # Debug logging
+                print(f"[FileResolveProxy] Original notebookDir: {notebook_dir}")
+                print(f"[FileResolveProxy] Server root: {server_root}")
+
+                # Convert to absolute path
+                if not os.path.isabs(notebook_dir):
+                    body['notebookDir'] = os.path.join(server_root, notebook_dir)
+                    print(f"[FileResolveProxy] Converted to: {body['notebookDir']}")
+
+            # Re-encode body
+            modified_body = json.dumps(body).encode('utf-8')
+            await self.proxy_request("POST", modified_body)
+        except Exception as e:
+            print(f"[FileResolveProxy] Error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            self.set_status(500)
+            self.write({"error": f"Failed to process request: {str(e)}"})
+
+
+class FileSelectProxyHandler(BaseProxyHandler):
+    """Proxy handler for /file/select endpoint."""
+
+    def get_proxy_path(self) -> str:
+        return "/file/select"
+
+
 class TaskStatusProxyHandler(BaseProxyHandler):
     """Proxy handler for /task/{id}/status endpoint."""
 
@@ -395,6 +443,14 @@ def setup_handlers(web_app):
         (
             url_path_join(base_url, "hdsp-agent", "file", "action"),
             FileActionProxyHandler,
+        ),
+        (
+            url_path_join(base_url, "hdsp-agent", "file", "resolve"),
+            FileResolveProxyHandler,
+        ),
+        (
+            url_path_join(base_url, "hdsp-agent", "file", "select"),
+            FileSelectProxyHandler,
         ),
         # Task endpoints (with regex for task_id)
         (

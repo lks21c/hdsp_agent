@@ -45,6 +45,7 @@ import {
 } from '../types/auto-agent';
 
 import { ToolRegistry, BUILTIN_TOOL_DEFINITIONS, DANGEROUS_COMMAND_PATTERNS } from './ToolRegistry';
+import { ApiService } from './ApiService';
 
 export class ToolExecutor {
   private notebook: NotebookPanel;
@@ -52,8 +53,9 @@ export class ToolExecutor {
   private autoScrollEnabled: boolean = true;
   private registry: ToolRegistry;
   private instanceId: string; // Debug: unique instance ID
+  private apiService: ApiService | null = null;
 
-  constructor(notebook: NotebookPanel, sessionContext: ISessionContext) {
+  constructor(notebook: NotebookPanel, sessionContext: ISessionContext, apiService?: ApiService) {
     // Generate unique instance ID for debugging
     this.instanceId = `ToolExecutor-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
@@ -64,9 +66,28 @@ export class ToolExecutor {
     this.notebook = notebook;
     this.sessionContext = sessionContext;
     this.registry = ToolRegistry.getInstance();
+    this.apiService = apiService || null;
 
     // 빌트인 도구들 등록
     this.registerBuiltinTools();
+  }
+
+  /**
+   * Set ApiService instance (for file resolution)
+   */
+  setApiService(apiService: ApiService): void {
+    this.apiService = apiService;
+  }
+
+  /**
+   * Get current notebook directory
+   */
+  private getNotebookDir(): string | undefined {
+    const notebookPath = this.notebook.context.path;
+    if (!notebookPath) return undefined;
+    const pathParts = notebookPath.split('/');
+    pathParts.pop(); // Remove filename
+    return pathParts.join('/') || undefined;
   }
 
   /**
@@ -718,7 +739,239 @@ print(json.dumps(result))
   }
 
   /**
-   * list_files 도구: 디렉토리 목록 조회
+   * Check if pattern is an exact path (contains path separator)
+   */
+  private isExactPath(pattern: string): boolean {
+    return pattern.includes('/') || pattern.includes('\\');
+  }
+
+  /**
+   * Check file existence for exact paths
+   */
+  private async checkFileExists(filePath: string, basePath: string = '.'): Promise<ToolResult> {
+    const fullPath = filePath.startsWith('/') ? filePath : `${basePath}/${filePath}`;
+
+    const pythonCode = `
+import json
+import os
+try:
+    path = ${JSON.stringify(fullPath)}
+    if os.path.exists(path):
+        is_dir = os.path.isdir(path)
+        size = 0 if is_dir else os.path.getsize(path)
+        result = {
+            'success': True,
+            'path': path,
+            'isDir': is_dir,
+            'size': size
+        }
+    else:
+        result = {'success': False, 'error': f'File not found: {path}'}
+except Exception as e:
+    result = {'success': False, 'error': str(e)}
+print(json.dumps(result))
+`.trim();
+
+    try {
+      const execResult = await this.executeInKernel(pythonCode);
+      if (execResult.status === 'ok' && execResult.stdout) {
+        const parsed = JSON.parse(execResult.stdout.trim());
+        if (parsed.success) {
+          const icon = parsed.isDir ? '📁' : '📄';
+          const sizeInfo = parsed.isDir ? '' : ` (${parsed.size} bytes)`;
+          return {
+            success: true,
+            output: `${icon} ${parsed.path}${sizeInfo}`,
+            metadata: { resolvedPath: parsed.path }
+          };
+        }
+        return { success: false, error: parsed.error };
+      }
+      return { success: false, error: 'Failed to check file existence' };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Resolve file using file_resolver API
+   */
+  private async resolveWithFileResolver(
+    pattern: string,
+    params: ListFilesParams
+  ): Promise<ToolResult> {
+    console.log('[ToolExecutor] Resolving files locally via kernel...');
+
+    const notebookDirRelative = this.getNotebookDir() || '.';
+    const recursive = params.recursive ?? false;
+
+    // Python code to search for files in multiple paths
+    const pythonCode = `
+import json
+import os
+import glob as glob_module
+try:
+    pattern = ${JSON.stringify(pattern)}
+    notebook_dir_relative = ${JSON.stringify(notebookDirRelative)}
+    recursive = ${recursive ? 'True' : 'False'}
+
+    # For simple filename patterns (no path separators), always search recursively
+    # This allows finding files in subdirectories
+    is_filename_pattern = '/' not in pattern and '\\\\' not in pattern
+    if is_filename_pattern:
+        recursive = True
+
+    # Get current working directory (may be server root or notebook dir)
+    cwd = os.getcwd()
+
+    # Get Jupyter server root (absolute path)
+    server_root = os.getenv('JUPYTER_SERVER_ROOT') or \
+                  os.getenv('JUPYTERHUB_ROOT_DIR')
+
+    # Get notebook directory (absolute path)
+    if notebook_dir_relative and notebook_dir_relative != '.':
+        # If we have server_root, use it
+        if server_root:
+            notebook_dir = os.path.join(server_root, notebook_dir_relative)
+            if not os.path.exists(notebook_dir):
+                notebook_dir = cwd
+        else:
+            # No server_root env var - derive from cwd
+            # If cwd ends with notebook_dir_relative, it's already the notebook dir
+            if cwd.endswith(notebook_dir_relative):
+                notebook_dir = cwd
+                server_root = os.path.dirname(cwd)
+            else:
+                # cwd is probably server_root
+                notebook_dir = os.path.join(cwd, notebook_dir_relative)
+                server_root = cwd
+    else:
+        # notebook_dir_relative is '.'
+        notebook_dir = cwd
+        server_root = os.path.dirname(cwd) if os.path.dirname(cwd) != cwd else cwd
+
+    # Search paths:
+    # 1. notebook_dir (현재 노트북 디렉토리) - 좁은 범위 우선
+    # 2. server_root (JUPYTER_SERVER_ROOT, 프로젝트 루트) - 전체 프로젝트
+    search_paths = [notebook_dir]
+
+    # Add server_root if different from notebook_dir
+    if server_root != notebook_dir and os.path.exists(server_root):
+        search_paths.append(server_root)
+    elif notebook_dir != cwd and cwd != server_root and os.path.exists(cwd):
+        search_paths.append(cwd)
+
+    matches = []
+    seen_paths = set()  # Track unique absolute paths
+    debug_info = {
+        'notebook_dir': notebook_dir,
+        'server_root': server_root,
+        'search_paths': search_paths,
+        'searches': []
+    }
+
+    for search_path in search_paths:
+        # Construct glob pattern
+        if recursive and '**' not in pattern:
+            search_pattern = os.path.join(search_path, '**', pattern)
+        else:
+            search_pattern = os.path.join(search_path, pattern)
+
+        # Find files (limit depth to avoid searching too deep)
+        all_files = glob_module.glob(search_pattern, recursive=recursive)
+
+        # For recursive searches, apply depth limit based on search path
+        if recursive and '**' in search_pattern:
+            # For notebook_dir: limit to 3 levels (focused search)
+            # For server_root: limit to 5 levels (broader search)
+            if search_path == notebook_dir:
+                max_depth = 3
+            else:
+                max_depth = 5
+
+            files = [f for f in all_files if f.count(os.sep) - search_path.count(os.sep) <= max_depth]
+        else:
+            files = all_files
+
+        debug_info['searches'].append({
+            'search_path': search_path,
+            'search_pattern': search_pattern,
+            'found_count': len(files),
+            'files': files
+        })
+
+        for file_path in files:
+            abs_path = os.path.abspath(file_path)
+            # Avoid duplicates
+            if abs_path not in seen_paths:
+                seen_paths.add(abs_path)
+                matches.append({
+                    'path': abs_path,
+                    'relative': file_path,
+                    'dir': os.path.dirname(file_path) or '.'
+                })
+
+    result = {
+        'success': True,
+        'matches': matches,
+        'count': len(matches),
+        'debug': debug_info
+    }
+except Exception as e:
+    result = {'success': False, 'error': str(e)}
+print(json.dumps(result))
+`.trim();
+
+    try {
+      const execResult = await this.executeInKernel(pythonCode);
+      if (execResult.status === 'ok' && execResult.stdout) {
+        const parsed = JSON.parse(execResult.stdout.trim());
+
+        // Debug logging
+        if (parsed.debug) {
+          console.log('[ToolExecutor] File search debug info:', parsed.debug);
+        }
+
+        if (!parsed.success) {
+          return { success: false, error: parsed.error };
+        }
+
+        const matches = parsed.matches;
+
+        if (matches.length === 0) {
+          return { success: false, error: `'${pattern}' 파일을 찾을 수 없습니다.` };
+        }
+
+        if (matches.length === 1) {
+          // Single file found
+          return {
+            success: true,
+            output: `📄 ${matches[0].relative}`,
+            metadata: { resolvedPath: matches[0].path }
+          };
+        }
+
+        // Multiple files found - need user selection
+        return {
+          success: false,
+          error: 'FILE_SELECTION_REQUIRED',
+          metadata: {
+            type: 'file_selection',
+            pattern: pattern,
+            options: matches,
+            message: `'${pattern}' 패턴과 일치하는 파일이 ${matches.length}개 발견되었습니다.\n\n${matches.map((m, i) => `${i + 1}. ${m.relative}`).join('\n')}\n\n번호를 선택해주세요 (1-${matches.length})`
+          }
+        };
+      }
+
+      return { success: false, error: execResult.error?.evalue || 'File resolution failed' };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * list_files 도구: 디렉토리 목록 조회 (MECE 구조)
    */
   async executeListFiles(params: ListFilesParams): Promise<ToolResult> {
     console.log('[ToolExecutor] executeListFiles:', params);
@@ -729,8 +982,39 @@ print(json.dumps(result))
       return { success: false, error: pathCheck.error };
     }
 
-    const recursive = params.recursive ?? false;
     const pattern = params.pattern || '*';
+
+    // CASE 1: 정확한 경로 (사용자가 직접 명시)
+    // 예: "./titanic.csv", "data/train.csv"
+    if (this.isExactPath(pattern)) {
+      return await this.checkFileExists(pattern, params.path);
+    }
+
+    // CASE 2: 파일명/패턴 → file_resolver 시도
+    // 예: "titanic.csv", "*titanic*", "*.csv"
+    if (this.apiService) {
+      try {
+        return await this.resolveWithFileResolver(pattern, params);
+      } catch (error) {
+        console.warn('[ToolExecutor] file_resolver failed, falling back to glob:', error);
+        // Fallback to glob search
+      }
+    }
+
+    // CASE 3: Fallback - 기존 glob 검색 (apiService 없거나 실패 시)
+    return await this.executeListFilesWithGlob(pattern, params);
+  }
+
+  /**
+   * Glob-based file listing (fallback)
+   */
+  private async executeListFilesWithGlob(
+    pattern: string,
+    params: ListFilesParams
+  ): Promise<ToolResult> {
+    const recursive = params.recursive ?? false;
+    const isFilenameOnly = !pattern.includes('/') && !pattern.includes('\\') && pattern !== '*';
+    const effectiveRecursive = recursive || isFilenameOnly;
 
     // Python 코드로 파일 목록 조회
     const pythonCode = `
@@ -740,7 +1024,7 @@ import glob as glob_module
 try:
     path = ${JSON.stringify(params.path)}
     pattern = ${JSON.stringify(pattern)}
-    recursive = ${recursive}
+    recursive = ${effectiveRecursive ? 'True' : 'False'}
 
     if recursive:
         search_pattern = os.path.join(path, '**', pattern)
@@ -2266,7 +2550,8 @@ print(json.dumps(result))
         }
 
         if (output.type === 'stream') {
-          const streamOutput = output as any;
+          // CRITICAL: toJSON()으로 실제 데이터 추출 (직접 프로퍼티 접근은 undefined 반환 가능)
+          const streamOutput = (output as any).toJSON?.() || output;
           if (streamOutput.name === 'stdout') {
             stdout += streamOutput.text || '';
           } else if (streamOutput.name === 'stderr') {

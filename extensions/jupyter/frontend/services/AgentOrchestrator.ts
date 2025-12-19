@@ -105,7 +105,7 @@ export class AgentOrchestrator {
 
     this.notebook = notebook;
     this.apiService = apiService || new ApiService();
-    this.toolExecutor = new ToolExecutor(notebook, sessionContext);
+    this.toolExecutor = new ToolExecutor(notebook, sessionContext, this.apiService);
     this.safetyChecker = new SafetyChecker({
       enableSafetyCheck: config?.enableSafetyCheck ?? true,
       maxExecutionTime: (config?.executionTimeout ?? 30000) / 1000,
@@ -240,6 +240,27 @@ export class AgentOrchestrator {
 
         // 단계 실패 시 Adaptive Replanning 시도
         if (!stepResult.success) {
+          // Check for FILE_SELECTION_REQUIRED - throw special error for AutoAgentPanel
+          console.log('[Orchestrator] Step failed. Error:', stepResult.error);
+          console.log('[Orchestrator] Tool results:', stepResult.toolResults);
+
+          if (stepResult.error === 'FILE_SELECTION_REQUIRED') {
+            const fileSelectionMetadata = stepResult.toolResults.find(
+              r => r.metadata?.type === 'file_selection'
+            )?.metadata;
+
+            console.log('[Orchestrator] FILE_SELECTION_REQUIRED detected, metadata:', fileSelectionMetadata);
+
+            if (fileSelectionMetadata) {
+              const error: any = new Error('FILE_SELECTION_REQUIRED');
+              error.name = 'FileSelectionError';
+              error.fileSelectionMetadata = fileSelectionMetadata;
+              console.log('[Orchestrator] Throwing FileSelectionError', error);
+              console.log('[Orchestrator] Error object:', { name: error.name, message: error.message, hasMetadata: !!error.fileSelectionMetadata });
+              throw error;
+            }
+          }
+
           console.log('[Orchestrator] Step failed, attempting adaptive replanning');
 
           if (replanAttempts >= MAX_REPLAN_ATTEMPTS) {
@@ -294,11 +315,17 @@ export class AgentOrchestrator {
 
           try {
             const replanResponse = await this.apiService.replanExecution({
-              originalRequest: userRequest,
-              executedSteps: executedSteps.map(s => currentPlan.steps.find(p => p.stepNumber === s.stepNumber)!).filter(Boolean),
-              failedStep: step,
+              originalPlan: currentPlan,
+              currentStepIndex: stepIndex,
               error: executionError,
-              executionOutput: lastOutput,
+              executionHistory: executedSteps.map(s => ({
+                stepNumber: s.stepNumber,
+                success: s.success,
+                attempts: s.attempts,
+              })),
+              previousAttempts: replanAttempts,
+              previousCodes: [], // TODO: Track previously attempted codes
+              useLlmFallback: true,
             });
 
             console.log('[Orchestrator] Replan decision:', replanResponse.decision);
@@ -543,6 +570,18 @@ export class AgentOrchestrator {
         executionTime: Date.now() - startTime,
       };
     } catch (error: any) {
+      console.log('[Orchestrator] Caught error in executeTask:', error);
+      console.log('[Orchestrator] Error name:', error.name);
+      console.log('[Orchestrator] Error message:', error.message);
+
+      // FileSelectionError는 다시 throw해서 AutoAgentPanel이 처리하도록 함
+      if (error.name === 'FileSelectionError') {
+        console.log('[Orchestrator] Re-throwing FileSelectionError to AutoAgentPanel');
+        this.isRunning = false;
+        this.abortController = null;
+        throw error;
+      }
+
       onProgress({
         phase: 'failed',
         message: error.message || '알 수 없는 오류 발생',
@@ -857,12 +896,14 @@ export class AgentOrchestrator {
       }
 
       // 도구 실행 결과가 없는 경우
+      // Use the first tool's error message if available
+      const firstToolError = toolResults.find(r => r.error)?.error;
       return {
         success: false,
         stepNumber: step.stepNumber,
         toolResults,
         attempts: 1,
-        error: '도구 실행 결과 없음',
+        error: firstToolError || '도구 실행 결과 없음',
       };
 
     } catch (error: any) {

@@ -25,6 +25,7 @@ import {
   ExecutionSpeed,
 } from '../types/auto-agent';
 import { formatMarkdownToHtml, escapeHtml } from '../utils/markdownRenderer';
+import { FileSelectionDialog } from './FileSelectionDialog';
 
 // 로고 이미지 (SVG) - TypeScript 모듈에서 인라인 문자열로 import
 import { headerLogoSvg, tabbarLogoSvg } from '../logoSvg';
@@ -237,6 +238,10 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
   // Console 에러 자동 감지 상태
   const [lastConsoleError, setLastConsoleError] = useState<string | null>(null);
   const [showConsoleErrorNotification, setShowConsoleErrorNotification] = useState(false);
+
+  // File selection state
+  const [fileSelectionMetadata, setFileSelectionMetadata] = useState<any>(null);
+  const [pendingAgentRequest, setPendingAgentRequest] = useState<string | null>(null);
 
   // 모드 변경 시 로컬 스토리지에 저장
   useEffect(() => {
@@ -521,6 +526,36 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
         )
       );
     } catch (error: any) {
+      console.log('[AgentPanel] Caught error:', error);
+      console.log('[AgentPanel] Error name:', error.name);
+      console.log('[AgentPanel] Error has fileSelectionMetadata:', !!error.fileSelectionMetadata);
+
+      // Handle FILE_SELECTION_REQUIRED error
+      if (error.name === 'FileSelectionError' && error.fileSelectionMetadata) {
+        console.log('[AgentPanel] File selection required:', error.fileSelectionMetadata);
+
+        // Show file selection dialog
+        setFileSelectionMetadata(error.fileSelectionMetadata);
+        setPendingAgentRequest(request);
+
+        // Update message to show waiting state
+        setMessages(prev =>
+          prev.map(msg =>
+            msg.id === agentMessageId && 'type' in msg && msg.type === 'agent_execution'
+              ? {
+                  ...msg,
+                  status: {
+                    phase: 'executing',
+                    message: '파일 선택 대기 중...'
+                  },
+                }
+              : msg
+          )
+        );
+        // Keep isAgentRunning true to show we're paused, not failed
+        return;
+      }
+
       setMessages(prev =>
         prev.map(msg =>
           msg.id === agentMessageId && 'type' in msg && msg.type === 'agent_execution'
@@ -791,6 +826,101 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
     setLlmConfig(config);
 
     console.log('[AgentPanel] Config saved successfully');
+  };
+
+  // File selection handlers
+  const handleFileSelect = async (index: number) => {
+    console.log('[AgentPanel] File selected:', index);
+
+    if (!fileSelectionMetadata || !pendingAgentRequest) {
+      console.error('[AgentPanel] Missing file selection metadata or pending request');
+      return;
+    }
+
+    // Get selected file info (index is 1-based from the UI button click)
+    const selectedFile = fileSelectionMetadata.options[index - 1];
+    if (!selectedFile) {
+      console.error('[AgentPanel] Invalid file selection index:', index);
+      return;
+    }
+
+    console.log('[AgentPanel] Selected file:', selectedFile.path);
+
+    // Close dialog
+    setFileSelectionMetadata(null);
+    const originalRequest = pendingAgentRequest;
+    setPendingAgentRequest(null);
+
+    // Update the agent message to show file was selected
+    setMessages(prev =>
+      prev.map(msg => {
+        if ('type' in msg && msg.type === 'agent_execution' && msg.status.phase === 'executing') {
+          return {
+            ...msg,
+            status: {
+              phase: 'executing',
+              message: `파일 선택됨: ${selectedFile.relative}\n실행 재개 중...`
+            },
+          };
+        }
+        return msg;
+      })
+    );
+
+    // Re-execute the agent with the selected file path explicitly mentioned
+    // Modify the request to include the selected file path
+    const modifiedRequest = `${originalRequest} (파일 경로: ${selectedFile.path})`;
+
+    console.log('[AgentPanel] Re-executing agent with modified request:', modifiedRequest);
+
+    // Resume execution by calling handleAgentExecution with the modified request
+    // Note: This will create a new agent message, but the existing one should be marked as cancelled
+    setMessages(prev =>
+      prev.map(msg => {
+        if ('type' in msg && msg.type === 'agent_execution' && msg.status.phase === 'executing') {
+          return {
+            ...msg,
+            status: {
+              phase: 'completed',
+              message: `파일 선택됨: ${selectedFile.relative}\n새 실행으로 재개됩니다...`
+            },
+          };
+        }
+        return msg;
+      })
+    );
+
+    // Reset agent running state to allow new execution
+    setIsAgentRunning(false);
+    setCurrentAgentMessageId(null);
+
+    // Start new agent execution with explicit file path
+    await handleAgentExecution(modifiedRequest);
+  };
+
+  const handleFileSelectCancel = () => {
+    console.log('[AgentPanel] File selection cancelled');
+
+    // Update the agent message to show cancellation
+    setMessages(prev =>
+      prev.map(msg => {
+        if ('type' in msg && msg.type === 'agent_execution' && msg.status.phase === 'executing') {
+          return {
+            ...msg,
+            status: {
+              phase: 'failed',
+              message: '사용자가 파일 선택을 취소했습니다.'
+            },
+          };
+        }
+        return msg;
+      })
+    );
+
+    setFileSelectionMetadata(null);
+    setPendingAgentRequest(null);
+    setIsAgentRunning(false);
+    setCurrentAgentMessageId(null);
   };
 
   // Auto-scroll to bottom when messages change
@@ -2215,6 +2345,17 @@ SyntaxError: '(' was never closed
           </div>
         </div>
       </div>
+
+      {/* File Selection Dialog */}
+      {fileSelectionMetadata && (
+        <FileSelectionDialog
+          filename={fileSelectionMetadata.pattern}
+          options={fileSelectionMetadata.options}
+          message={fileSelectionMetadata.message}
+          onSelect={handleFileSelect}
+          onCancel={handleFileSelectCancel}
+        />
+      )}
     </div>
   );
 });

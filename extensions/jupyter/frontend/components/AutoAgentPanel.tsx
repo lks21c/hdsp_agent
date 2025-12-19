@@ -27,6 +27,7 @@ import {
   RollbackResult,
 } from '../types/auto-agent';
 import { ApprovalDialog } from './ApprovalDialog';
+import { FileSelectionDialog } from './FileSelectionDialog';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Props
@@ -395,6 +396,14 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
   const [isRollingBack, setIsRollingBack] = useState(false);
   const [rollbackResult, setRollbackResult] = useState<RollbackResult | null>(null);
 
+  // File Selection State
+  const [fileSelectionState, setFileSelectionState] = useState<{
+    isOpen: boolean;
+    filename: string;
+    options: Array<{ path: string; relative: string; dir: string }>;
+    message: string;
+  } | null>(null);
+
   const orchestratorRef = useRef<AgentOrchestrator | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mergedConfig = { ...DEFAULT_AUTO_AGENT_CONFIG, ...config, executionSpeed };
@@ -601,6 +610,48 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
 
     if (!currentNotebook || !currentSessionContext || !request.trim()) return;
 
+    // ★ NEW: File Resolution - 파일명 추출 및 검색
+    const filePattern = /['"]?([a-zA-Z0-9_-]+\.(?:csv|xlsx|json|txt|py|parquet|feather|pkl|pickle))['"]?/gi;
+    const matches = request.match(filePattern);
+
+    if (matches && matches.length > 0) {
+      // 첫 번째 파일명만 검색 (추후 여러 파일 지원 가능)
+      const filename = matches[0].replace(/['"]/g, '');
+      console.log('[AutoAgentPanel] Detected filename:', filename);
+
+      try {
+        const notebookDir = currentNotebook?.context?.path
+          ? currentNotebook.context.path.substring(0, currentNotebook.context.path.lastIndexOf('/'))
+          : undefined;
+
+        const resolveResult = await apiService.resolveFile({
+          filename,
+          notebookDir,
+        });
+
+        if (resolveResult.requiresSelection && resolveResult.options) {
+          // 여러 파일 발견 - 사용자 선택 필요
+          console.log('[AutoAgentPanel] Multiple files found, showing selection dialog');
+          setFileSelectionState({
+            isOpen: true,
+            filename: resolveResult.filename!,
+            options: resolveResult.options,
+            message: resolveResult.message!,
+          });
+          return; // 실행 중단, 사용자 선택 대기
+        }
+
+        if (resolveResult.path && resolveResult.relative) {
+          // 단일 파일 발견 - request에 상대 경로로 교체
+          console.log('[AutoAgentPanel] Single file found:', resolveResult.relative);
+          // Note: request는 이미 trim()되어 사용되므로 여기서는 로깅만
+        }
+      } catch (error: any) {
+        console.warn('[AutoAgentPanel] File resolution failed:', error.message);
+        // 파일 검색 실패해도 계속 진행 (원본 request 사용)
+      }
+    }
+
     // ★ 현재 활성화된 노트북으로 AgentOrchestrator 재생성
     const mergedConfig = { ...DEFAULT_AUTO_AGENT_CONFIG, ...config };
     const orchestrator = new AgentOrchestrator(currentNotebook, currentSessionContext, apiService || new ApiService(), mergedConfig);
@@ -625,6 +676,24 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
       }
       onComplete?.(taskResult);
     } catch (error: any) {
+      console.log('[AutoAgentPanel] Caught error:', error);
+      console.log('[AutoAgentPanel] Error name:', error.name);
+      console.log('[AutoAgentPanel] Error has fileSelectionMetadata:', !!error.fileSelectionMetadata);
+
+      // Handle FILE_SELECTION_REQUIRED specially
+      if (error.name === 'FileSelectionError' && error.fileSelectionMetadata) {
+        console.log('[AutoAgentPanel] File selection required, showing dialog');
+        setFileSelectionState({
+          isOpen: true,
+          filename: error.fileSelectionMetadata.pattern || 'file',
+          options: error.fileSelectionMetadata.options || [],
+          message: error.fileSelectionMetadata.message || 'Select a file',
+        });
+        setStatus({ phase: 'idle', message: 'Waiting for file selection...' });
+        setIsRunning(false);
+        return;
+      }
+
       setStatus({ phase: 'failed', message: error.message || 'Execution failed' });
     } finally {
       setIsRunning(false);
@@ -637,6 +706,34 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
     setIsRunning(false);
     onCancel?.();
   }, [onCancel]);
+
+  // File Selection Handler
+  const handleFileSelect = useCallback(async (index: number) => {
+    if (!fileSelectionState) return;
+
+    try {
+      const selected = await apiService.selectFile({
+        selection: String(index),
+        options: fileSelectionState.options,
+      });
+
+      console.log('[AutoAgentPanel] File selected:', selected.relative);
+
+      // 선택한 경로로 request 업데이트
+      const updatedRequest = request.replace(
+        fileSelectionState.filename,
+        selected.relative
+      );
+      setRequest(updatedRequest);
+      setFileSelectionState(null);
+
+      // 자동으로 실행 재시도
+      setTimeout(() => handleExecute(), 100);
+    } catch (error: any) {
+      console.error('[AutoAgentPanel] File selection failed:', error.message);
+      setFileSelectionState(null);
+    }
+  }, [fileSelectionState, request, apiService, handleExecute]);
 
   const handleReset = useCallback(() => {
     setRequest('');
@@ -887,6 +984,17 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
         onClose={handleApprovalDialogClose}
         autoRejectTimeout={30}  // 30초 후 자동 거부
       />
+
+      {/* File Selection Dialog */}
+      {fileSelectionState?.isOpen && (
+        <FileSelectionDialog
+          filename={fileSelectionState.filename}
+          options={fileSelectionState.options}
+          message={fileSelectionState.message}
+          onSelect={handleFileSelect}
+          onCancel={() => setFileSelectionState(null)}
+        />
+      )}
     </div>
   );
 };

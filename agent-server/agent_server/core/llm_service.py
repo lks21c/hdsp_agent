@@ -4,10 +4,12 @@ LLM Service - Handles interactions with different LLM providers
 
 import os
 import json
+import ssl
 import asyncio
 from typing import Dict, Any, Optional, Tuple
 from contextlib import asynccontextmanager
 import aiohttp
+import certifi
 
 
 class LLMService:
@@ -17,6 +19,8 @@ class LLMService:
         self.config = config
         self.provider = config.get('provider', 'gemini')
         self._key_manager = key_manager  # Optional injection for testing
+        # Create SSL context with certifi certificates
+        self._ssl_context = ssl.create_default_context(cafile=certifi.where())
 
     def _get_key_manager(self):
         """Get key manager if using Gemini provider"""
@@ -147,7 +151,8 @@ class LLMService:
     ):
         """Context manager for HTTP POST requests with automatic session cleanup"""
         timeout = aiohttp.ClientTimeout(total=timeout_seconds)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        connector = aiohttp.TCPConnector(ssl=self._ssl_context)
+        async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
             async with session.post(url, json=payload, headers=headers) as response:
                 if response.status != 200:
                     error_text = await response.text()
@@ -335,7 +340,8 @@ class LLMService:
         for attempt in range(max_retries):
             try:
                 timeout = aiohttp.ClientTimeout(total=60)
-                async with aiohttp.ClientSession(timeout=timeout) as session:
+                connector = aiohttp.TCPConnector(ssl=self._ssl_context)
+                async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
                     async with session.post(url, json=payload) as response:
                         # 429 Rate limit - return to client for key rotation
                         if response.status == 429:
@@ -437,7 +443,8 @@ class LLMService:
         for attempt in range(max_retries):
             try:
                 timeout = aiohttp.ClientTimeout(total=120)
-                async with aiohttp.ClientSession(timeout=timeout) as session:
+                connector = aiohttp.TCPConnector(ssl=self._ssl_context)
+                async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
                     async with session.post(url, json=payload) as response:
                         # 429 Rate limit - return to client for key rotation
                         if response.status == 429:

@@ -123,22 +123,96 @@ class ReplanResponse(BaseModel):
 # ============ Reflect Request/Response ============
 
 
-class ReflectRequest(BaseModel):
-    """Request body for reflection on execution"""
+class ReflectionEvaluation(BaseModel):
+    """Reflection evaluation result"""
 
-    plan: ExecutionPlan = Field(description="Executed plan")
-    executionResults: List[Dict[str, Any]] = Field(description="Results from each step")
-    userGoal: str = Field(description="Original user goal")
+    checkpoint_passed: bool = Field(description="Whether checkpoint criteria passed")
+    output_matches_expected: bool = Field(
+        description="Whether output matches expected outcome"
+    )
+    confidence_score: float = Field(description="Confidence score (0.0-1.0)")
+
+
+class ReflectionAnalysis(BaseModel):
+    """Reflection analysis details"""
+
+    success_factors: List[str] = Field(
+        default_factory=list, description="Factors contributing to success"
+    )
+    failure_factors: List[str] = Field(
+        default_factory=list, description="Factors causing failure"
+    )
+    unexpected_outcomes: List[str] = Field(
+        default_factory=list, description="Unexpected outcomes"
+    )
+
+
+class ReflectionImpact(BaseModel):
+    """Impact on remaining steps"""
+
+    affected_steps: List[int] = Field(
+        default_factory=list, description="Step numbers affected"
+    )
+    severity: str = Field(
+        description="Impact severity: none, minor, major, critical"
+    )
+    description: str = Field(description="Impact description")
+
+
+class ReflectionAdjustment(BaseModel):
+    """Recommended adjustment"""
+
+    step_number: int = Field(description="Step number to adjust")
+    change_type: str = Field(
+        description="Change type: modify_code, add_step, remove_step, change_approach"
+    )
+    description: str = Field(description="Adjustment description")
+    new_content: Optional[str] = Field(default=None, description="New content if applicable")
+
+
+class ReflectionRecommendations(BaseModel):
+    """Reflection recommendations"""
+
+    action: str = Field(description="Recommended action: continue, adjust, retry, replan")
+    adjustments: List[ReflectionAdjustment] = Field(
+        default_factory=list, description="Specific adjustments"
+    )
+    reasoning: str = Field(description="Reasoning for recommendations")
+
+
+class ReflectionResult(BaseModel):
+    """Complete reflection result"""
+
+    evaluation: ReflectionEvaluation = Field(description="Evaluation results")
+    analysis: ReflectionAnalysis = Field(description="Analysis details")
+    impact_on_remaining: ReflectionImpact = Field(description="Impact on remaining steps")
+    recommendations: ReflectionRecommendations = Field(description="Recommendations")
+
+
+class ReflectRequest(BaseModel):
+    """Request body for step reflection"""
+
+    stepNumber: int = Field(description="Step number being reflected on")
+    stepDescription: str = Field(description="Step description")
+    executedCode: str = Field(description="Code that was executed")
+    executionStatus: str = Field(description="Execution status (success/error/warning)")
+    executionOutput: str = Field(description="Output from execution")
+    errorMessage: Optional[str] = Field(default=None, description="Error message if any")
+    expectedOutcome: Optional[str] = Field(
+        default=None, description="Expected outcome description"
+    )
+    validationCriteria: Optional[List[str]] = Field(
+        default=None, description="Validation criteria"
+    )
+    remainingSteps: Optional[List[Dict[str, Any]]] = Field(
+        default=None, description="Remaining steps in plan"
+    )
 
 
 class ReflectResponse(BaseModel):
-    """Response body for reflection"""
+    """Response body for step reflection"""
 
-    goalAchieved: bool = Field(description="Whether the goal was achieved")
-    summary: str = Field(description="Summary of execution")
-    suggestions: List[str] = Field(
-        default_factory=list, description="Suggestions for improvement"
-    )
+    reflection: ReflectionResult = Field(description="Reflection analysis result")
 
 
 # ============ State Verification ============
@@ -180,3 +254,61 @@ class ReportExecutionResponse(BaseModel):
 
     acknowledged: bool = Field(default=True)
     nextAction: Optional[str] = Field(default=None, description="Suggested next action")
+
+
+# ============ Code Validation ============
+
+
+class ValidationIssue(BaseModel):
+    """Code validation issue (syntax, undefined names, etc.)"""
+
+    severity: str = Field(description="Issue severity: error, warning, info")
+    category: str = Field(
+        description="Issue category: syntax, undefined_name, unused_import, unused_variable, redefined, import_error, type_error"
+    )
+    message: str = Field(description="Issue description")
+    line: Optional[int] = Field(default=None, description="Line number")
+    column: Optional[int] = Field(default=None, description="Column number")
+    code_snippet: Optional[str] = Field(default=None, description="Code snippet")
+
+
+class DependencyInfo(BaseModel):
+    """Code dependency information"""
+
+    imports: List[str] = Field(default_factory=list, description="Import statements")
+    from_imports: Dict[str, List[str]] = Field(
+        default_factory=dict, description="From-import statements"
+    )
+    defined_names: List[str] = Field(
+        default_factory=list, description="Defined variable/function names"
+    )
+    used_names: List[str] = Field(
+        default_factory=list, description="Used variable/function names"
+    )
+    undefined_names: List[str] = Field(
+        default_factory=list, description="Undefined names (potential errors)"
+    )
+
+
+class ValidateRequest(BaseModel):
+    """Request body for code validation"""
+
+    code: str = Field(description="Code to validate")
+    notebookContext: Optional[NotebookContext] = Field(
+        default=None, description="Current notebook context (for variable/import tracking)"
+    )
+
+
+class ValidateResponse(BaseModel):
+    """Response body for code validation"""
+
+    valid: bool = Field(description="Whether code is valid (no errors)")
+    issues: List[ValidationIssue] = Field(
+        default_factory=list, description="Validation issues"
+    )
+    dependencies: Optional[DependencyInfo] = Field(
+        default=None, description="Code dependencies"
+    )
+    hasErrors: bool = Field(description="Whether there are any errors")
+    hasWarnings: bool = Field(description="Whether there are any warnings")
+    summary: str = Field(description="Validation summary")

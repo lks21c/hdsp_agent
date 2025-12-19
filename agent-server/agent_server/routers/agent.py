@@ -11,6 +11,7 @@ from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException
 
+from agent_server.core.code_validator import CodeValidator
 from agent_server.core.config_manager import ConfigManager
 from agent_server.core.error_classifier import get_error_classifier
 from agent_server.core.llm_service import LLMService
@@ -20,16 +21,21 @@ from agent_server.knowledge.loader import get_knowledge_base, get_library_detect
 from agent_server.prompts.auto_agent_prompts import (
     format_plan_prompt,
     format_refine_prompt,
+    format_reflection_prompt,
 )
 from agent_server.schemas.agent import (
     PlanRequest,
     PlanResponse,
     RefineRequest,
     RefineResponse,
+    ReflectRequest,
+    ReflectResponse,
     ReplanRequest,
     ReplanResponse,
     ReportExecutionRequest,
     ReportExecutionResponse,
+    ValidateRequest,
+    ValidateResponse,
     VerifyStateRequest,
     VerifyStateResponse,
 )
@@ -463,3 +469,117 @@ async def report_execution(request: ReportExecutionRequest) -> Dict[str, Any]:
         "acknowledged": True,
         "nextAction": None,  # Could return next suggested action
     }
+
+
+@router.post("/validate", response_model=ValidateResponse)
+async def validate_code(request: ValidateRequest) -> Dict[str, Any]:
+    """
+    Validate code before execution.
+
+    Performs static analysis using AST, Ruff, and Pyflakes to detect:
+    - Syntax errors
+    - Undefined variables
+    - Unused imports
+    - Code style issues
+    - Security vulnerabilities
+
+    Returns validation results with automatic fixes when possible.
+    """
+    logger.info(f"Validate request for {len(request.code)} chars of code")
+
+    try:
+        # Build notebook context for validator
+        notebook_ctx = {}
+        if request.notebookContext:
+            notebook_ctx = {
+                "definedVariables": request.notebookContext.definedVariables,
+                "importedLibraries": request.notebookContext.importedLibraries,
+            }
+
+        # Run full validation
+        validator = CodeValidator(notebook_context=notebook_ctx)
+        result = validator.full_validation(request.code)
+
+        # Convert ValidationResult to ValidateResponse
+        return {
+            "valid": result.is_valid,
+            "issues": [issue.to_dict() for issue in result.issues],
+            "dependencies": result.dependencies.to_dict() if result.dependencies else None,
+            "hasErrors": result.has_errors,
+            "hasWarnings": result.has_warnings,
+            "summary": result.summary,
+        }
+
+    except Exception as e:
+        logger.error(f"Code validation failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/reflect", response_model=ReflectResponse)
+async def reflect_on_step(request: ReflectRequest) -> Dict[str, Any]:
+    """
+    Reflect on step execution results.
+
+    Analyzes the execution result of a single step to determine:
+    - Whether the step succeeded and met checkpoint criteria
+    - Impact on remaining steps
+    - Recommended next actions (continue/adjust/retry/replan)
+
+    This is called after each step execution to guide adaptive planning.
+    """
+    logger.info(f"Reflect request for step {request.stepNumber}: {request.stepDescription[:50]}...")
+
+    try:
+        # Build reflection prompt
+        prompt = format_reflection_prompt(
+            step_number=request.stepNumber,
+            step_description=request.stepDescription,
+            executed_code=request.executedCode,
+            execution_status=request.executionStatus,
+            execution_output=request.executionOutput,
+            error_message=request.errorMessage or "",
+            expected_outcome=request.expectedOutcome or "",
+            validation_criteria=request.validationCriteria or [],
+            remaining_steps=request.remainingSteps or [],
+        )
+
+        # Call LLM (using server config since ReflectRequest doesn't have llmConfig)
+        response = await _call_llm(prompt)
+
+        # Parse JSON response
+        reflection_data = _parse_json_response(response)
+
+        if not reflection_data:
+            # Fallback: Simple heuristic when LLM fails
+            is_success = request.executionStatus == "success"
+            return {
+                "reflection": {
+                    "evaluation": {
+                        "checkpoint_passed": is_success,
+                        "output_matches_expected": is_success,
+                        "confidence_score": 0.5,
+                    },
+                    "analysis": {
+                        "success_factors": ["실행 완료"] if is_success else [],
+                        "failure_factors": [] if is_success else ["에러 발생"],
+                        "unexpected_outcomes": [],
+                    },
+                    "impact_on_remaining": {
+                        "affected_steps": [],
+                        "severity": "none" if is_success else "minor",
+                        "description": "영향 없음" if is_success else "다음 단계 확인 필요",
+                    },
+                    "recommendations": {
+                        "action": "continue" if is_success else "retry",
+                        "adjustments": [],
+                        "reasoning": "기본 휴리스틱 기반 판단",
+                    },
+                }
+            }
+
+        # Return structured reflection result
+        return {"reflection": reflection_data}
+
+    except Exception as e:
+        logger.error(f"Reflection failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))

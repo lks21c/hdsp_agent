@@ -628,4 +628,65 @@ export class ApiService {
       { onKeyRotation, defaultErrorMessage: '파일 액션 실패' }
     );
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // File Resolution API Methods (파일 경로 해결)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Resolve file path - 파일명 또는 패턴으로 경로 검색
+   */
+  async resolveFile(request: {
+    filename?: string;
+    pattern?: string;
+    recursive?: boolean;
+    notebookDir?: string;
+    cwd?: string;
+  }): Promise<{
+    path?: string;
+    relative?: string;
+    requiresSelection?: boolean;
+    filename?: string;
+    options?: Array<{ path: string; relative: string; dir: string }>;
+    message?: string;
+    error?: string;
+  }> {
+    console.log('[ApiService] resolveFile request:', request);
+    const response = await fetch(`${this.baseUrl}/file/resolve`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      credentials: 'include',
+      body: JSON.stringify(request)
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Failed to resolve file: ${error}`);
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Select file from multiple options - 사용자 선택 처리
+   */
+  async selectFile(request: {
+    selection: string;
+    options: Array<{ path: string; relative: string; dir: string }>;
+  }): Promise<{ path: string; relative: string }> {
+    console.log('[ApiService] selectFile request:', request);
+    const response = await fetch(`${this.baseUrl}/file/select`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      credentials: 'include',
+      body: JSON.stringify(request)
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Failed to select file: ${error}`);
+    }
+
+    return response.json();
+  }
 }
