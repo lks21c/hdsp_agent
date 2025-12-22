@@ -1,10 +1,12 @@
 """
-HDSP Jupyter Extension - Thin client for HDSP Agent Server.
+HDSP Jupyter Extension - Dual-mode client for HDSP Agent.
 
-This extension proxies requests from JupyterLab frontend to the HDSP Agent Server.
-All AI logic and processing happens in the Agent Server.
+Supports two execution modes:
+- Embedded mode (HDSP_AGENT_MODE=embedded): Direct in-process execution
+- Proxy mode (HDSP_AGENT_MODE=proxy): HTTP proxy to external Agent Server
 """
 
+import asyncio
 import os
 import sys
 import traceback
@@ -81,6 +83,49 @@ def _ensure_config_files():
         pass
 
 
+async def _initialize_service_factory(server_app):
+    """Initialize ServiceFactory based on HDSP_AGENT_MODE environment variable."""
+    try:
+        from hdsp_agent_core.factory import get_service_factory
+
+        factory = get_service_factory()
+        await factory.initialize()
+
+        mode = factory.mode.value
+        server_app.log.info(f"HDSP Agent ServiceFactory initialized in {mode} mode")
+
+        if factory.is_embedded:
+            # Log embedded mode specific info
+            rag_service = factory.get_rag_service()
+            rag_ready = rag_service.is_ready()
+            server_app.log.info(f"  RAG service ready: {rag_ready}")
+        else:
+            # Log proxy mode specific info
+            server_app.log.info(f"  Agent Server URL: {factory.server_url}")
+
+    except ImportError as e:
+        server_app.log.warning(f"hdsp_agent_core not available, falling back to proxy mode: {e}")
+    except Exception as e:
+        server_app.log.error(f"Failed to initialize ServiceFactory: {e}")
+        server_app.log.error(traceback.format_exc())
+
+
+def _schedule_initialization(server_app):
+    """Schedule async initialization in the event loop."""
+    try:
+        # Get the current event loop
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # If loop is already running, schedule the coroutine
+            asyncio.ensure_future(_initialize_service_factory(server_app))
+        else:
+            # If loop is not running, run until complete
+            loop.run_until_complete(_initialize_service_factory(server_app))
+    except RuntimeError:
+        # No event loop, create one
+        asyncio.run(_initialize_service_factory(server_app))
+
+
 def load_jupyter_server_extension(server_app):
     """Load the Jupyter Server extension."""
     # [Auto-config] Create config files if they don't exist
@@ -93,10 +138,21 @@ def load_jupyter_server_extension(server_app):
         setup_handlers(web_app)
 
         server_app.log.info("HDSP Jupyter Extension loaded (v%s)", __version__)
-        server_app.log.info(
-            "Proxying requests to Agent Server at: %s",
-            os.environ.get("AGENT_SERVER_URL", "http://localhost:8000"),
-        )
+
+        # Determine mode from environment
+        mode = os.environ.get("HDSP_AGENT_MODE", "proxy")
+        server_app.log.info(f"HDSP_AGENT_MODE: {mode}")
+
+        if mode == "embedded":
+            server_app.log.info("Running in embedded mode (direct in-process execution)")
+        else:
+            server_app.log.info(
+                "Running in proxy mode (proxying to Agent Server at: %s)",
+                os.environ.get("AGENT_SERVER_URL", "http://localhost:8000"),
+            )
+
+        # Schedule ServiceFactory initialization
+        _schedule_initialization(server_app)
 
     except Exception as e:
         server_app.log.error(f"Failed to load HDSP Jupyter Extension: {e}")
