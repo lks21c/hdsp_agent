@@ -10,9 +10,9 @@ Defines configuration schemas for the Local RAG system including:
 """
 
 import os
-from typing import Optional, List, Literal, Dict, Any
+from typing import Any, Dict, List, Literal, Optional
+
 from pydantic import BaseModel, Field
-from pathlib import Path
 
 
 class QdrantConfig(BaseModel):
@@ -20,26 +20,22 @@ class QdrantConfig(BaseModel):
 
     mode: Literal["local", "server", "cloud"] = Field(
         default="local",
-        description="Deployment mode: local (file-based), server (Docker), cloud"
+        description="Deployment mode: local (file-based), server (Docker), cloud",
     )
     # Local mode settings
     local_path: Optional[str] = Field(
         default=None,
-        description="Path for local Qdrant storage. Defaults to ~/.hdsp_agent/qdrant"
+        description="Path for local Qdrant storage. Defaults to ~/.hdsp_agent/qdrant",
     )
     # Server mode settings
     url: Optional[str] = Field(
         default="http://localhost:6333",
-        description="Qdrant server URL for server/cloud mode"
+        description="Qdrant server URL for server/cloud mode",
     )
-    api_key: Optional[str] = Field(
-        default=None,
-        description="API key for cloud mode"
-    )
+    api_key: Optional[str] = Field(default=None, description="API key for cloud mode")
     # Collection settings
     collection_name: str = Field(
-        default="hdsp_knowledge",
-        description="Vector collection name"
+        default="hdsp_knowledge", description="Vector collection name"
     )
 
     def get_local_path(self) -> str:
@@ -59,24 +55,20 @@ class EmbeddingConfig(BaseModel):
 
     model_name: str = Field(
         default="intfloat/multilingual-e5-small",
-        description="HuggingFace model name for embeddings"
+        description="HuggingFace model name for embeddings",
     )
     device: Literal["cpu", "cuda", "mps"] = Field(
-        default="cpu",
-        description="Device for embedding computation"
+        default="cpu", description="Device for embedding computation"
     )
     batch_size: int = Field(
-        default=32,
-        description="Batch size for embedding generation"
+        default=32, description="Batch size for embedding generation"
     )
     cache_folder: Optional[str] = Field(
-        default=None,
-        description="Model cache folder. Defaults to ~/.cache/huggingface"
+        default=None, description="Model cache folder. Defaults to ~/.cache/huggingface"
     )
     # Model-specific settings
     normalize_embeddings: bool = Field(
-        default=True,
-        description="Normalize embeddings for cosine similarity"
+        default=True, description="Normalize embeddings for cosine similarity"
     )
 
     def get_model_name(self) -> str:
@@ -91,59 +83,45 @@ class EmbeddingConfig(BaseModel):
 class ChunkingConfig(BaseModel):
     """Document chunking configuration"""
 
-    chunk_size: int = Field(
-        default=512,
-        description="Target chunk size in characters"
-    )
+    chunk_size: int = Field(default=512, description="Target chunk size in characters")
     chunk_overlap: int = Field(
-        default=50,
-        description="Overlap between chunks in characters"
+        default=50, description="Overlap between chunks in characters"
     )
     split_by_header: bool = Field(
-        default=True,
-        description="Split markdown by headers for semantic boundaries"
+        default=True, description="Split markdown by headers for semantic boundaries"
     )
     min_chunk_size: int = Field(
-        default=100,
-        description="Minimum chunk size to include"
+        default=100, description="Minimum chunk size to include"
     )
     max_chunk_size: int = Field(
-        default=2000,
-        description="Maximum chunk size (hard limit)"
+        default=2000, description="Maximum chunk size (hard limit)"
     )
 
 
 class WatchdogConfig(BaseModel):
     """File monitoring configuration"""
 
-    enabled: bool = Field(
-        default=True,
-        description="Enable file system monitoring"
-    )
+    enabled: bool = Field(default=True, description="Enable file system monitoring")
     debounce_seconds: float = Field(
-        default=2.0,
-        description="Debounce time for file change events"
+        default=2.0, description="Debounce time for file change events"
     )
     patterns: List[str] = Field(
         default=["*.md", "*.py", "*.txt", "*.json"],
-        description="File patterns to monitor"
+        description="File patterns to monitor",
     )
     ignore_patterns: List[str] = Field(
         default=[".*", "__pycache__", "*.pyc", "*.egg-info"],
-        description="Patterns to ignore"
+        description="Patterns to ignore",
     )
 
 
 class RAGConfig(BaseModel):
     """Main RAG system configuration"""
 
-    enabled: bool = Field(
-        default=True,
-        description="Enable RAG system"
-    )
+    enabled: bool = Field(default=True, description="Enable RAG system")
     knowledge_base_path: Optional[str] = Field(
         default=None,
-        description="Path to knowledge base. Defaults to built-in libraries/"
+        description="Path to knowledge base. Defaults to built-in libraries/",
     )
     qdrant: QdrantConfig = Field(default_factory=QdrantConfig)
     embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
@@ -151,25 +129,18 @@ class RAGConfig(BaseModel):
     watchdog: WatchdogConfig = Field(default_factory=WatchdogConfig)
 
     # Retrieval settings
-    top_k: int = Field(
-        default=5,
-        description="Number of chunks to retrieve"
-    )
+    top_k: int = Field(default=5, description="Number of chunks to retrieve")
     score_threshold: float = Field(
-        default=0.3,
-        description="Minimum similarity score threshold"
+        default=0.3, description="Minimum similarity score threshold"
     )
     use_hybrid_search: bool = Field(
-        default=True,
-        description="Enable BM25 + dense vector hybrid search"
+        default=True, description="Enable BM25 + dense vector hybrid search"
     )
     hybrid_alpha: float = Field(
-        default=0.5,
-        description="Weight for dense vectors (1-alpha for BM25)"
+        default=0.5, description="Weight for dense vectors (1-alpha for BM25)"
     )
     max_context_tokens: int = Field(
-        default=1500,
-        description="Maximum tokens for RAG context injection"
+        default=1500, description="Maximum tokens for RAG context injection"
     )
 
     def is_enabled(self) -> bool:
@@ -198,35 +169,22 @@ class RAGConfig(BaseModel):
 class SearchRequest(BaseModel):
     """Request body for explicit RAG search"""
 
-    query: str = Field(
-        description="Search query"
-    )
-    top_k: Optional[int] = Field(
-        default=None,
-        description="Override default top_k"
-    )
+    query: str = Field(description="Search query")
+    top_k: Optional[int] = Field(default=None, description="Override default top_k")
     filters: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Metadata filters (e.g., {'source_type': 'library'})"
+        default=None, description="Metadata filters (e.g., {'source_type': 'library'})"
     )
     include_score: bool = Field(
-        default=True,
-        description="Include relevance scores in results"
+        default=True, description="Include relevance scores in results"
     )
 
 
 class SearchResult(BaseModel):
     """Single search result"""
 
-    content: str = Field(
-        description="Chunk content"
-    )
-    score: float = Field(
-        description="Relevance score (0-1)"
-    )
-    metadata: Dict[str, Any] = Field(
-        description="Chunk metadata (source, type, etc.)"
-    )
+    content: str = Field(description="Chunk content")
+    score: float = Field(description="Relevance score (0-1)")
+    metadata: Dict[str, Any] = Field(description="Chunk metadata (source, type, etc.)")
 
 
 class SearchResponse(BaseModel):
@@ -235,35 +193,21 @@ class SearchResponse(BaseModel):
     results: List[SearchResult] = Field(
         description="Search results sorted by relevance"
     )
-    query: str = Field(
-        description="Original query"
-    )
-    total_results: int = Field(
-        description="Total matching chunks"
-    )
+    query: str = Field(description="Original query")
+    total_results: int = Field(description="Total matching chunks")
 
 
 class IndexStatusResponse(BaseModel):
     """Response body for index status"""
 
-    ready: bool = Field(
-        description="Whether RAG system is ready"
-    )
-    total_documents: int = Field(
-        default=0,
-        description="Total indexed documents"
-    )
-    total_chunks: int = Field(
-        default=0,
-        description="Total indexed chunks"
-    )
+    ready: bool = Field(description="Whether RAG system is ready")
+    total_documents: int = Field(default=0, description="Total indexed documents")
+    total_chunks: int = Field(default=0, description="Total indexed chunks")
     last_updated: Optional[str] = Field(
-        default=None,
-        description="Last index update timestamp"
+        default=None, description="Last index update timestamp"
     )
     knowledge_base_path: Optional[str] = Field(
-        default=None,
-        description="Current knowledge base path"
+        default=None, description="Current knowledge base path"
     )
 
 
@@ -271,31 +215,93 @@ class ReindexRequest(BaseModel):
     """Request body for manual reindexing"""
 
     force: bool = Field(
-        default=False,
-        description="Force full reindex even if files unchanged"
+        default=False, description="Force full reindex even if files unchanged"
     )
     path: Optional[str] = Field(
-        default=None,
-        description="Specific file or directory to reindex"
+        default=None, description="Specific file or directory to reindex"
     )
 
 
 class ReindexResponse(BaseModel):
     """Response body for reindex operation"""
 
-    success: bool = Field(
-        description="Whether reindex completed successfully"
-    )
-    indexed: int = Field(
-        description="Number of files indexed"
-    )
-    skipped: int = Field(
-        description="Number of files skipped (unchanged)"
-    )
+    success: bool = Field(description="Whether reindex completed successfully")
+    indexed: int = Field(description="Number of files indexed")
+    skipped: int = Field(description="Number of files skipped (unchanged)")
     errors: List[Dict[str, str]] = Field(
-        default=[],
-        description="List of indexing errors"
+        default=[], description="List of indexing errors"
     )
+
+
+# ============ Debug Models ============
+
+
+class ChunkDebugInfo(BaseModel):
+    """청크별 상세 점수 정보"""
+
+    chunk_id: str
+    content_preview: str  # 처음 200자
+    dense_score: float  # Dense vector 유사도 (0-1)
+    bm25_score: Optional[float] = None  # BM25 정규화 점수
+    bm25_raw_score: Optional[float] = None  # BM25 원본 점수
+    fused_score: float  # 최종 융합 점수
+    rank_dense: int  # Dense 순위
+    rank_bm25: Optional[int] = None  # BM25 순위
+    rank_final: int  # 최종 순위
+    metadata: Dict[str, Any]  # source, section 등
+    passed_threshold: bool  # threshold 통과 여부
+
+
+class LibraryDetectionDebug(BaseModel):
+    """라이브러리 감지 단계 디버그 정보"""
+
+    input_query: str
+    imported_libraries: List[str]
+    available_libraries: List[str]
+    detected_libraries: List[str]
+    detection_method: str
+
+
+class SearchConfigDebug(BaseModel):
+    """검색 설정 정보"""
+
+    top_k: int
+    score_threshold: float
+    use_hybrid_search: bool
+    hybrid_alpha: float
+    max_context_tokens: int
+
+
+class DebugSearchRequest(BaseModel):
+    """디버그 검색 요청"""
+
+    query: str = Field(description="Search query for debugging")
+    imported_libraries: List[str] = Field(
+        default=[], description="List of imported libraries to filter search"
+    )
+    top_k: Optional[int] = Field(default=None, description="Override default top_k")
+    include_full_content: bool = Field(
+        default=False, description="Include full content instead of preview"
+    )
+    simulate_plan_context: bool = Field(
+        default=True, description="Generate formatted context as in plan generation"
+    )
+
+
+class DebugSearchResponse(BaseModel):
+    """디버그 검색 응답"""
+
+    library_detection: LibraryDetectionDebug
+    config: SearchConfigDebug
+    chunks: List[ChunkDebugInfo]
+    total_candidates: int
+    total_passed_threshold: int
+    dense_search_ms: float
+    bm25_search_ms: Optional[float] = None
+    total_search_ms: float
+    formatted_context: str
+    context_char_count: int
+    estimated_context_tokens: int
 
 
 # ============ Factory Functions ============
@@ -307,9 +313,8 @@ def get_default_rag_config() -> RAGConfig:
         enabled=True,
         qdrant=QdrantConfig(mode="local"),
         embedding=EmbeddingConfig(
-            model_name="intfloat/multilingual-e5-small",
-            device="cpu"
+            model_name="intfloat/multilingual-e5-small", device="cpu"
         ),
         chunking=ChunkingConfig(),
-        watchdog=WatchdogConfig()
+        watchdog=WatchdogConfig(),
     )
