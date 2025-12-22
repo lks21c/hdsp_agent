@@ -125,7 +125,7 @@ async def debug_search(request: DebugSearchRequest) -> DebugSearchResponse:
 
     반환 정보:
     - 라이브러리 감지 결과
-    - 청크별 Dense/BM25/Fused 점수
+    - 청크별 벡터 유사도 점수
     - 최종 포맷된 컨텍스트
     """
     rag_manager = get_rag_manager()
@@ -152,9 +152,7 @@ async def debug_search(request: DebugSearchRequest) -> DebugSearchResponse:
             chunks=[ChunkDebugInfo(**c) for c in result["chunks"]],
             total_candidates=result["total_candidates"],
             total_passed_threshold=result["total_passed_threshold"],
-            dense_search_ms=result["dense_search_ms"],
-            bm25_search_ms=result["bm25_search_ms"],
-            total_search_ms=result["total_search_ms"],
+            search_ms=result["search_ms"],
             formatted_context=result["formatted_context"],
             context_char_count=result["context_char_count"],
             estimated_context_tokens=result["estimated_context_tokens"],

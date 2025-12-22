@@ -634,8 +634,6 @@ class RAGManager:
         config_info = {
             "top_k": top_k or self._config.top_k,
             "score_threshold": self._config.score_threshold,
-            "use_hybrid_search": self._config.use_hybrid_search,
-            "hybrid_alpha": self._config.hybrid_alpha,
             "max_context_tokens": self._config.max_context_tokens,
         }
 
@@ -655,13 +653,8 @@ class RAGManager:
                 {
                     "chunk_id": chunk.chunk_id,
                     "content_preview": content_preview,
-                    "dense_score": chunk.dense_score,
-                    "bm25_score": chunk.bm25_score,
-                    "bm25_raw_score": chunk.bm25_raw_score,
-                    "fused_score": chunk.fused_score,
-                    "rank_dense": chunk.rank_dense,
-                    "rank_bm25": chunk.rank_bm25,
-                    "rank_final": chunk.rank_final,
+                    "score": chunk.score,
+                    "rank": chunk.rank,
                     "metadata": chunk.metadata,
                     "passed_threshold": chunk.passed_threshold,
                 }
@@ -682,7 +675,7 @@ class RAGManager:
                 for chunk in passed_chunks:
                     source = chunk.metadata.get("source", "unknown")
                     section = chunk.metadata.get("section", "")
-                    score = chunk.fused_score
+                    score = chunk.score
 
                     # Format chunk with source info
                     chunk_text = f"[Source: {source}"
@@ -708,9 +701,7 @@ class RAGManager:
             "total_passed_threshold": sum(
                 1 for c in debug_result.chunks if c.passed_threshold
             ),
-            "dense_search_ms": debug_result.dense_search_ms,
-            "bm25_search_ms": debug_result.bm25_search_ms,
-            "total_search_ms": debug_result.total_search_ms,
+            "search_ms": debug_result.search_ms,
             "formatted_context": formatted_context,
             "context_char_count": len(formatted_context),
             "estimated_context_tokens": len(formatted_context) // 4,

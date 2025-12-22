@@ -133,12 +133,6 @@ class RAGConfig(BaseModel):
     score_threshold: float = Field(
         default=0.3, description="Minimum similarity score threshold"
     )
-    use_hybrid_search: bool = Field(
-        default=True, description="Enable BM25 + dense vector hybrid search"
-    )
-    hybrid_alpha: float = Field(
-        default=0.5, description="Weight for dense vectors (1-alpha for BM25)"
-    )
     max_context_tokens: int = Field(
         default=1500, description="Maximum tokens for RAG context injection"
     )
@@ -241,13 +235,8 @@ class ChunkDebugInfo(BaseModel):
 
     chunk_id: str
     content_preview: str  # 처음 200자
-    dense_score: float  # Dense vector 유사도 (0-1)
-    bm25_score: Optional[float] = None  # BM25 정규화 점수
-    bm25_raw_score: Optional[float] = None  # BM25 원본 점수
-    fused_score: float  # 최종 융합 점수
-    rank_dense: int  # Dense 순위
-    rank_bm25: Optional[int] = None  # BM25 순위
-    rank_final: int  # 최종 순위
+    score: float  # Vector similarity score (0-1)
+    rank: int  # 순위
     metadata: Dict[str, Any]  # source, section 등
     passed_threshold: bool  # threshold 통과 여부
 
@@ -267,8 +256,6 @@ class SearchConfigDebug(BaseModel):
 
     top_k: int
     score_threshold: float
-    use_hybrid_search: bool
-    hybrid_alpha: float
     max_context_tokens: int
 
 
@@ -296,9 +283,7 @@ class DebugSearchResponse(BaseModel):
     chunks: List[ChunkDebugInfo]
     total_candidates: int
     total_passed_threshold: int
-    dense_search_ms: float
-    bm25_search_ms: Optional[float] = None
-    total_search_ms: float
+    search_ms: float  # Vector search time in milliseconds
     formatted_context: str
     context_char_count: int
     estimated_context_tokens: int

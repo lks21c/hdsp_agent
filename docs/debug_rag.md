@@ -2,7 +2,7 @@
 
 ## 개요
 
-RAG 디버깅 기능은 검색 파이프라인의 전체 리니지를 추적하여, 어떤 문서의 어떤 부분이 검색되어 기여했는지 상세히 확인할 수 있습니다.
+RAG 디버깅 기능은 벡터 검색 파이프라인의 전체 리니지를 추적하여, 어떤 문서의 어떤 부분이 검색되어 기여했는지 상세히 확인할 수 있습니다.
 
 ## 사용 방법
 
@@ -53,15 +53,12 @@ Detected Libraries: ['pandas']
 ================================================================================
   top_k: 5
   score_threshold: 0.3
-  use_hybrid_search: True
-  hybrid_alpha: 0.5
+  max_context_tokens: 1500
 
 ================================================================================
  TIMING
 ================================================================================
-  Dense search: 12.34 ms
-  BM25 search: 3.21 ms
-  Total: 18.76 ms
+  Vector search: 12.34 ms
 
 ================================================================================
  RETRIEVED CHUNKS
@@ -69,11 +66,11 @@ Detected Libraries: ['pandas']
 Total candidates: 15
 Passed threshold: 5
 
- Rank   Dense    BM25    Fused   Pass   Source
---------------------------------------------------------------------------------
-   1  0.9234  0.8123  0.8679   YES   pandas.md > DataFrame Creation
-   2  0.8567  0.7890  0.8229   YES   pandas.md > Data Loading
-   3  0.7234  0.6543  0.6889   YES   numpy.md > Array Operations
+ Rank   Score    Pass   Source
+----------------------------------------------------------------------
+   1   0.9234    YES   pandas.md > DataFrame Creation
+   2   0.8567    YES   pandas.md > Data Loading
+   3   0.7234    YES   numpy.md > Array Operations
    ...
 
 ================================================================================
@@ -130,21 +127,14 @@ curl -X POST http://localhost:8765/rag/debug \
   "config": {
     "top_k": 5,
     "score_threshold": 0.3,
-    "use_hybrid_search": true,
-    "hybrid_alpha": 0.5,
     "max_context_tokens": 1500
   },
   "chunks": [
     {
       "chunk_id": "abc123",
       "content_preview": "DataFrame 생성하기...",
-      "dense_score": 0.9234,
-      "bm25_score": 0.8123,
-      "bm25_raw_score": 4.52,
-      "fused_score": 0.8679,
-      "rank_dense": 1,
-      "rank_bm25": 2,
-      "rank_final": 1,
+      "score": 0.9234,
+      "rank": 1,
       "metadata": {
         "source": "pandas.md",
         "section": "DataFrame Creation"
@@ -154,9 +144,7 @@ curl -X POST http://localhost:8765/rag/debug \
   ],
   "total_candidates": 15,
   "total_passed_threshold": 5,
-  "dense_search_ms": 12.34,
-  "bm25_search_ms": 3.21,
-  "total_search_ms": 18.76,
+  "search_ms": 12.34,
   "formatted_context": "## 라이브러리 API 참조...",
   "context_char_count": 2456,
   "estimated_context_tokens": 614
@@ -187,13 +175,8 @@ curl -X POST http://localhost:8765/rag/debug \
 |------|------|
 | `chunk_id` | 청크 고유 ID |
 | `content_preview` | 컨텐츠 미리보기 (처음 200자) |
-| `dense_score` | Dense vector 유사도 점수 (0-1) |
-| `bm25_score` | BM25 정규화 점수 (0-1) |
-| `bm25_raw_score` | BM25 원본 점수 |
-| `fused_score` | 최종 융합 점수 (alpha * dense + (1-alpha) * bm25) |
-| `rank_dense` | Dense 점수 기준 순위 |
-| `rank_bm25` | BM25 점수 기준 순위 |
-| `rank_final` | 최종 순위 |
+| `score` | 벡터 유사도 점수 (0-1) |
+| `rank` | 순위 |
 | `metadata` | 청크 메타데이터 (source, section 등) |
 | `passed_threshold` | score_threshold 통과 여부 |
 
@@ -201,9 +184,7 @@ curl -X POST http://localhost:8765/rag/debug \
 
 | 필드 | 설명 |
 |------|------|
-| `dense_search_ms` | Dense vector 검색 소요 시간 (밀리초) |
-| `bm25_search_ms` | BM25 검색 소요 시간 (밀리초, hybrid 비활성화 시 null) |
-| `total_search_ms` | 전체 검색 소요 시간 (밀리초) |
+| `search_ms` | 벡터 검색 소요 시간 (밀리초) |
 
 ---
 
@@ -215,7 +196,7 @@ curl -X POST http://localhost:8765/rag/debug \
 python -m scripts.debug_rag "dask 병렬 처리" --verbose
 ```
 
-각 청크의 dense score, BM25 score, fused score를 비교하여 어떤 청크가 왜 상위에 랭크되었는지 분석할 수 있습니다.
+각 청크의 벡터 유사도 점수를 확인하여 어떤 청크가 왜 상위에 랭크되었는지 분석할 수 있습니다.
 
 ### 2. Threshold 조정 필요성 판단
 
@@ -223,13 +204,7 @@ python -m scripts.debug_rag "dask 병렬 처리" --verbose
 - 너무 많은 청크가 통과하면 threshold를 높여야 함
 - 관련 청크가 통과하지 못하면 threshold를 낮춰야 함
 
-### 3. Hybrid Search 가중치 튜닝
-
-`dense_score`와 `bm25_score`를 비교하여:
-- 키워드 매칭이 중요한 쿼리에는 `hybrid_alpha`를 낮춤
-- 의미적 유사성이 중요한 쿼리에는 `hybrid_alpha`를 높임
-
-### 4. 컨텍스트 길이 최적화
+### 3. 컨텍스트 길이 최적화
 
 `estimated_context_tokens`를 확인하여 LLM에 주입되는 컨텍스트 크기를 모니터링합니다.
 
@@ -243,8 +218,6 @@ RAG 설정은 `agent_server/schemas/rag.py`의 `RAGConfig`에서 관리됩니다
 class RAGConfig(BaseModel):
     top_k: int = 5                    # 검색할 청크 수
     score_threshold: float = 0.3     # 최소 점수 임계값
-    use_hybrid_search: bool = True   # Hybrid 검색 활성화
-    hybrid_alpha: float = 0.5        # Dense 가중치 (1-alpha는 BM25)
     max_context_tokens: int = 1500   # 최대 컨텍스트 토큰
 ```
 
@@ -270,11 +243,3 @@ RAG 시스템이 초기화되지 않은 경우 발생합니다. 서버 로그를
 1. `score_threshold`가 너무 높은지 확인
 2. Knowledge Base에 관련 문서가 있는지 확인
 3. 임베딩 모델이 올바르게 로드되었는지 확인
-
-### BM25 점수가 null인 경우
-
-`use_hybrid_search`가 `false`이거나 `rank-bm25` 패키지가 설치되지 않은 경우입니다.
-
-```bash
-pip install rank-bm25
-```

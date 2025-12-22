@@ -1,11 +1,7 @@
 """
-Retriever - Hybrid search implementation with dense vectors and BM25.
+Retriever - Dense vector search implementation.
 
-Provides intelligent retrieval combining:
-- Dense vector search via Qdrant (semantic similarity)
-- BM25 keyword matching (exact term matching)
-- Reciprocal Rank Fusion for result combination
-- Metadata filtering for precise retrieval
+Provides semantic similarity search via Qdrant vector database.
 """
 
 import logging
@@ -22,17 +18,12 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ChunkScoreDetails:
-    """내부 데이터 구조: 청크별 점수 상세"""
+    """청크별 점수 상세 정보"""
 
     chunk_id: str
     content: str
-    dense_score: float
-    bm25_score: Optional[float]
-    bm25_raw_score: Optional[float]
-    fused_score: float
-    rank_dense: int
-    rank_bm25: Optional[int]
-    rank_final: int
+    score: float  # Vector similarity score (0-1)
+    rank: int
     metadata: Dict[str, Any]
     passed_threshold: bool
 
@@ -41,22 +32,18 @@ class DebugSearchResult(NamedTuple):
     """디버그 검색 결과"""
 
     chunks: List[ChunkScoreDetails]
-    dense_search_ms: float
-    bm25_search_ms: Optional[float]
-    total_search_ms: float
+    search_ms: float
     total_candidates: int
 
 
 class Retriever:
     """
-    Hybrid retrieval combining dense vectors with BM25 keyword matching.
+    Dense vector retrieval using Qdrant.
 
     Features:
     - Dense vector search via Qdrant
-    - BM25 keyword matching for precision (optional)
-    - Configurable fusion weights (alpha parameter)
     - Metadata filtering
-    - Score normalization
+    - Score thresholding
 
     Usage:
         retriever = Retriever(client, embedding_service, config)
@@ -72,26 +59,6 @@ class Retriever:
         self._client = client
         self._embedding_service = embedding_service
         self._config = config
-        self._bm25_available = False
-
-        # Initialize BM25 if hybrid search is enabled
-        if config.use_hybrid_search:
-            self._init_bm25()
-
-    def _init_bm25(self) -> None:
-        """Initialize BM25 capability check"""
-        try:
-            from rank_bm25 import BM25Okapi
-
-            self._bm25_class = BM25Okapi
-            self._bm25_available = True
-            logger.info("BM25 hybrid search enabled")
-        except ImportError:
-            logger.warning(
-                "rank_bm25 not installed, hybrid search disabled. "
-                "Install with: pip install rank-bm25"
-            )
-            self._bm25_available = False
 
     async def search(
         self,
@@ -101,7 +68,7 @@ class Retriever:
         score_threshold: Optional[float] = None,
     ) -> List[Dict[str, Any]]:
         """
-        Perform hybrid search (dense + BM25).
+        Perform dense vector search.
 
         Args:
             query: Search query
@@ -123,139 +90,25 @@ class Retriever:
 
         # Dense vector search
         try:
-            dense_results = self._client.search(
+            results = self._client.search(
                 collection_name=self._config.qdrant.collection_name,
                 query_vector=query_embedding,
                 query_filter=qdrant_filter,
-                limit=effective_top_k * 2
-                if self._should_use_hybrid()
-                else effective_top_k,
+                limit=effective_top_k,
                 score_threshold=effective_threshold
-                * 0.5,  # Lower threshold for initial retrieval
+                * 0.5,  # Lower for initial retrieval
             )
         except Exception as e:
-            logger.error(f"Dense search failed: {e}")
+            logger.error(f"Search failed: {e}")
             return []
 
-        if not dense_results:
+        if not results:
             logger.debug(f"No results for query: {query[:50]}...")
             return []
 
-        # Hybrid search if enabled and available
-        if self._should_use_hybrid():
-            return self._hybrid_search(
-                query=query,
-                dense_results=dense_results,
-                top_k=effective_top_k,
-                score_threshold=effective_threshold,
-            )
+        return self._format_results(results, effective_threshold)
 
-        # Dense-only results
-        return self._format_results(
-            dense_results[:effective_top_k], effective_threshold
-        )
-
-    def _should_use_hybrid(self) -> bool:
-        """Check if hybrid search should be used"""
-        return self._config.use_hybrid_search and self._bm25_available
-
-    def _hybrid_search(
-        self, query: str, dense_results: List, top_k: int, score_threshold: float
-    ) -> List[Dict[str, Any]]:
-        """
-        Combine dense and BM25 results using Reciprocal Rank Fusion.
-
-        RRF formula: score = sum(1 / (k + rank)) for each ranking
-        """
-        if not dense_results:
-            return []
-
-        # Extract documents for BM25
-        documents = []
-        doc_ids = []
-        for r in dense_results:
-            content = r.payload.get("content", "")
-            if content:
-                documents.append(content)
-                doc_ids.append(r.id)
-
-        if not documents:
-            return self._format_results(dense_results[:top_k], score_threshold)
-
-        # Tokenize for BM25
-        tokenized_docs = [self._tokenize(doc) for doc in documents]
-        tokenized_query = self._tokenize(query)
-
-        # BM25 scoring
-        bm25 = self._bm25_class(tokenized_docs)
-        bm25_scores = bm25.get_scores(tokenized_query)
-
-        # Normalize BM25 scores
-        max_bm25 = (
-            max(bm25_scores) if bm25_scores.any() and max(bm25_scores) > 0 else 1.0
-        )
-        normalized_bm25 = bm25_scores / max_bm25
-
-        # Combine scores with alpha weighting
-        alpha = self._config.hybrid_alpha
-        fused_scores = {}
-
-        for i, result in enumerate(dense_results):
-            doc_id = result.id
-            dense_score = result.score  # Already 0-1 for cosine
-            keyword_score = normalized_bm25[i] if i < len(normalized_bm25) else 0
-
-            # Weighted combination
-            fused_scores[doc_id] = alpha * dense_score + (1 - alpha) * keyword_score
-
-        # Sort by fused score
-        sorted_ids = sorted(
-            fused_scores.keys(), key=lambda x: fused_scores[x], reverse=True
-        )
-
-        # Build results
-        id_to_result = {r.id: r for r in dense_results}
-        results = []
-
-        for doc_id in sorted_ids[:top_k]:
-            score = fused_scores[doc_id]
-            if score < score_threshold:
-                continue
-
-            result = id_to_result[doc_id]
-            results.append(
-                {
-                    "content": result.payload.get("content", ""),
-                    "score": round(score, 4),
-                    "metadata": {
-                        k: v for k, v in result.payload.items() if k != "content"
-                    },
-                }
-            )
-
-        return results
-
-    def _tokenize(self, text: str) -> List[str]:
-        """
-        Simple tokenization for BM25.
-
-        Handles both English and Korean text.
-        """
-        import re
-
-        # Convert to lowercase
-        text = text.lower()
-
-        # Split on whitespace and punctuation
-        # Keep Korean characters together
-        tokens = re.findall(r"[\w가-힣]+", text)
-
-        # Filter very short tokens
-        tokens = [t for t in tokens if len(t) > 1]
-
-        return tokens
-
-    def _build_filter(self, filters: Dict[str, Any]) -> Dict[str, Any]:
+    def _build_filter(self, filters: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Convert filter dict to Qdrant filter format"""
         if not filters:
             return None
@@ -304,18 +157,14 @@ class Retriever:
         """
         import asyncio
 
-        # If we're in an async context, run in executor
         try:
-            loop = asyncio.get_running_loop()
-            # We're in async context - shouldn't use this method
+            asyncio.get_running_loop()
             logger.warning(
                 "search_sync called from async context, use search() instead"
             )
         except RuntimeError:
-            # Not in async context - safe to run
             pass
 
-        # Run the coroutine
         return asyncio.run(self.search(query, top_k, filters))
 
     async def search_with_debug(
@@ -327,12 +176,6 @@ class Retriever:
     ) -> DebugSearchResult:
         """
         전체 점수 정보를 포함한 디버그 검색 수행.
-
-        1. Dense search (with timing)
-        2. BM25 scoring (if hybrid enabled)
-        3. Score fusion (alpha * dense + (1-alpha) * bm25)
-        4. Rankings for all scoring methods
-        5. Return detailed ChunkScoreDetails
 
         Args:
             query: Search query
@@ -354,11 +197,10 @@ class Retriever:
         # Build filter condition
         qdrant_filter = self._build_filter(filters) if filters else None
 
-        # Dense search with timing
-        dense_start = time.perf_counter()
+        # Vector search with timing
         try:
             # 디버그용으로 더 많은 결과 (3배)를 낮은 threshold로 가져옴
-            dense_results = self._client.search(
+            results = self._client.search(
                 collection_name=self._config.qdrant.collection_name,
                 query_vector=query_embedding,
                 query_filter=qdrant_filter,
@@ -366,173 +208,40 @@ class Retriever:
                 score_threshold=effective_threshold * 0.3,
             )
         except Exception as e:
-            logger.error(f"Dense search failed: {e}")
+            logger.error(f"Search failed: {e}")
             return DebugSearchResult(
                 chunks=[],
-                dense_search_ms=0.0,
-                bm25_search_ms=None,
-                total_search_ms=0.0,
-                total_candidates=0,
-            )
-        dense_ms = (time.perf_counter() - dense_start) * 1000
-
-        if not dense_results:
-            return DebugSearchResult(
-                chunks=[],
-                dense_search_ms=round(dense_ms, 2),
-                bm25_search_ms=None,
-                total_search_ms=round((time.perf_counter() - start_time) * 1000, 2),
+                search_ms=0.0,
                 total_candidates=0,
             )
 
-        # Dense rankings 생성
-        dense_rankings = {r.id: (i + 1, r.score) for i, r in enumerate(dense_results)}
-        id_to_result = {r.id: r for r in dense_results}
+        search_ms = (time.perf_counter() - start_time) * 1000
 
-        # BM25 scoring (if hybrid enabled)
-        bm25_ms = None
-        normalized_bm25: Dict[Any, float] = {}
-        raw_bm25: Dict[Any, float] = {}
-        bm25_rankings: Dict[Any, int] = {}
-
-        if self._should_use_hybrid():
-            bm25_start = time.perf_counter()
-
-            # Extract documents for BM25
-            documents = []
-            doc_ids = []
-            for r in dense_results:
-                content = r.payload.get("content", "")
-                if content:
-                    documents.append(content)
-                    doc_ids.append(r.id)
-
-            if documents:
-                # Tokenize for BM25
-                tokenized_docs = [self._tokenize(doc) for doc in documents]
-                tokenized_query = self._tokenize(query)
-
-                # BM25 scoring
-                bm25 = self._bm25_class(tokenized_docs)
-                bm25_scores = bm25.get_scores(tokenized_query)
-
-                # Store raw BM25 scores
-                for i, doc_id in enumerate(doc_ids):
-                    raw_bm25[doc_id] = float(bm25_scores[i])
-
-                # Normalize BM25 scores
-                max_bm25 = (
-                    max(bm25_scores)
-                    if bm25_scores.any() and max(bm25_scores) > 0
-                    else 1.0
-                )
-                for i, doc_id in enumerate(doc_ids):
-                    normalized_bm25[doc_id] = float(bm25_scores[i] / max_bm25)
-
-                # BM25 rankings
-                sorted_by_bm25 = sorted(
-                    doc_ids, key=lambda x: raw_bm25.get(x, 0), reverse=True
-                )
-                bm25_rankings = {
-                    doc_id: (rank + 1) for rank, doc_id in enumerate(sorted_by_bm25)
-                }
-
-            bm25_ms = (time.perf_counter() - bm25_start) * 1000
-
-        # Fused scores 계산
-        alpha = self._config.hybrid_alpha
-        fused_scores: Dict[Any, float] = {}
-
-        for r in dense_results:
-            dense_score = r.score
-            bm25_norm = normalized_bm25.get(r.id, 0.0)
-            if self._should_use_hybrid():
-                fused_scores[r.id] = alpha * dense_score + (1 - alpha) * bm25_norm
-            else:
-                fused_scores[r.id] = dense_score
-
-        # Final rankings (by fused score)
-        sorted_ids = sorted(
-            fused_scores.keys(), key=lambda x: fused_scores[x], reverse=True
-        )
-        final_rankings = {doc_id: (rank + 1) for rank, doc_id in enumerate(sorted_ids)}
+        if not results:
+            return DebugSearchResult(
+                chunks=[],
+                search_ms=round(search_ms, 2),
+                total_candidates=0,
+            )
 
         # Build detailed results
         chunks = []
-        for doc_id in sorted_ids:
-            result = id_to_result[doc_id]
+        for rank, result in enumerate(results, start=1):
             chunks.append(
                 ChunkScoreDetails(
-                    chunk_id=str(doc_id),
+                    chunk_id=str(result.id),
                     content=result.payload.get("content", ""),
-                    dense_score=round(dense_rankings[doc_id][1], 4),
-                    bm25_score=round(normalized_bm25.get(doc_id, 0.0), 4)
-                    if self._should_use_hybrid()
-                    else None,
-                    bm25_raw_score=round(raw_bm25.get(doc_id, 0.0), 4)
-                    if self._should_use_hybrid()
-                    else None,
-                    fused_score=round(fused_scores[doc_id], 4),
-                    rank_dense=dense_rankings[doc_id][0],
-                    rank_bm25=bm25_rankings.get(doc_id)
-                    if self._should_use_hybrid()
-                    else None,
-                    rank_final=final_rankings[doc_id],
+                    score=round(result.score, 4),
+                    rank=rank,
                     metadata={
                         k: v for k, v in result.payload.items() if k != "content"
                     },
-                    passed_threshold=fused_scores[doc_id] >= effective_threshold,
+                    passed_threshold=result.score >= effective_threshold,
                 )
             )
 
-        total_ms = (time.perf_counter() - start_time) * 1000
-
         return DebugSearchResult(
             chunks=chunks,
-            dense_search_ms=round(dense_ms, 2),
-            bm25_search_ms=round(bm25_ms, 2) if bm25_ms is not None else None,
-            total_search_ms=round(total_ms, 2),
-            total_candidates=len(dense_results),
+            search_ms=round(search_ms, 2),
+            total_candidates=len(results),
         )
-
-
-class SimpleRetriever:
-    """
-    Simplified retriever for basic dense-only search.
-
-    Use this when BM25 hybrid search is not needed.
-    """
-
-    def __init__(
-        self,
-        client,
-        embedding_service: "EmbeddingService",
-        collection_name: str,
-        top_k: int = 5,
-        score_threshold: float = 0.3,
-    ):
-        self._client = client
-        self._embedding_service = embedding_service
-        self._collection_name = collection_name
-        self._top_k = top_k
-        self._score_threshold = score_threshold
-
-    def search(self, query: str, top_k: Optional[int] = None) -> List[Dict[str, Any]]:
-        """Simple dense vector search"""
-        query_embedding = self._embedding_service.embed_query(query)
-
-        results = self._client.search(
-            collection_name=self._collection_name,
-            query_vector=query_embedding,
-            limit=top_k or self._top_k,
-            score_threshold=self._score_threshold,
-        )
-
-        return [
-            {
-                "content": r.payload.get("content", ""),
-                "score": round(r.score, 4),
-                "metadata": {k: v for k, v in r.payload.items() if k != "content"},
-            }
-            for r in results
-        ]

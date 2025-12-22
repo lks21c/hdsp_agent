@@ -4,7 +4,7 @@ Unit tests for RAG system components.
 Tests cover:
 - EmbeddingService: Local embedding generation
 - DocumentChunker: Format-aware document splitting
-- Retriever: Hybrid search (dense + BM25)
+- Retriever: Dense vector search
 - RAGManager: Orchestration and lifecycle
 
 All tests use mocks to avoid actual model loading and API calls.
@@ -239,7 +239,7 @@ This section has enough content to meet the minimum size requirement.
 
 
 class TestRetriever:
-    """Tests for hybrid retrieval."""
+    """Tests for dense vector retrieval."""
 
     @pytest.fixture
     def mock_qdrant_client(self):
@@ -265,13 +265,12 @@ class TestRetriever:
         service.embed_query.return_value = [0.1] * 384
         return service
 
-    def test_dense_only_search(self, mock_qdrant_client, mock_embedding_service):
-        """Test dense-only search (no BM25)."""
+    def test_dense_search(self, mock_qdrant_client, mock_embedding_service):
+        """Test dense vector search."""
         from agent_server.core.retriever import Retriever
         from agent_server.schemas.rag import QdrantConfig, RAGConfig
 
         config = RAGConfig(
-            use_hybrid_search=False,
             qdrant=QdrantConfig(collection_name="test"),
         )
 
@@ -291,7 +290,6 @@ class TestRetriever:
         from agent_server.schemas.rag import QdrantConfig, RAGConfig
 
         config = RAGConfig(
-            use_hybrid_search=False,
             qdrant=QdrantConfig(collection_name="test"),
         )
 
@@ -328,7 +326,6 @@ class TestRetriever:
         mock_qdrant_client.search.return_value = [mock_result_high, mock_result_low]
 
         config = RAGConfig(
-            use_hybrid_search=False,
             score_threshold=0.5,
             qdrant=QdrantConfig(collection_name="test"),
         )
@@ -644,17 +641,16 @@ class TestRAGDebug:
         service.embed_query.return_value = [0.1] * 384
         return service
 
-    def test_search_with_debug_returns_all_scores(
+    def test_search_with_debug_returns_scores(
         self, mock_qdrant_client_debug, mock_embedding_service_debug
     ):
-        """search_with_debug should return dense, bm25, fused scores."""
+        """search_with_debug should return vector similarity scores."""
         import asyncio
 
         from agent_server.core.retriever import Retriever
         from agent_server.schemas.rag import QdrantConfig, RAGConfig
 
         config = RAGConfig(
-            use_hybrid_search=False,  # Disable BM25 for simpler test
             score_threshold=0.3,
             qdrant=QdrantConfig(collection_name="test"),
         )
@@ -673,23 +669,20 @@ class TestRAGDebug:
         # Check all chunks have required fields
         for chunk in result.chunks:
             assert chunk.chunk_id is not None
-            assert chunk.dense_score is not None
-            assert chunk.fused_score is not None
-            assert chunk.rank_dense is not None
-            assert chunk.rank_final is not None
+            assert chunk.score is not None
+            assert chunk.rank is not None
             assert chunk.passed_threshold is not None
 
-    def test_search_with_debug_dense_scores_descending(
+    def test_search_with_debug_scores_descending(
         self, mock_qdrant_client_debug, mock_embedding_service_debug
     ):
-        """Fused scores should be sorted in descending order."""
+        """Scores should be sorted in descending order."""
         import asyncio
 
         from agent_server.core.retriever import Retriever
         from agent_server.schemas.rag import QdrantConfig, RAGConfig
 
         config = RAGConfig(
-            use_hybrid_search=False,
             score_threshold=0.3,
             qdrant=QdrantConfig(collection_name="test"),
         )
@@ -701,7 +694,7 @@ class TestRAGDebug:
         result = asyncio.run(retriever.search_with_debug("test query"))
 
         # Verify descending order
-        scores = [chunk.fused_score for chunk in result.chunks]
+        scores = [chunk.score for chunk in result.chunks]
         assert scores == sorted(scores, reverse=True)
 
     def test_search_with_debug_threshold_filtering(
@@ -714,7 +707,6 @@ class TestRAGDebug:
         from agent_server.schemas.rag import QdrantConfig, RAGConfig
 
         config = RAGConfig(
-            use_hybrid_search=False,
             score_threshold=0.5,  # Higher threshold
             qdrant=QdrantConfig(collection_name="test"),
         )
@@ -732,7 +724,7 @@ class TestRAGDebug:
         # doc1 (0.9) and doc2 (0.7) should pass, doc3 (0.4) should not
         assert len(passed) == 2
         assert len(not_passed) == 1
-        assert not_passed[0].fused_score < 0.5
+        assert not_passed[0].score < 0.5
 
     def test_debug_search_timing_present(
         self, mock_qdrant_client_debug, mock_embedding_service_debug
@@ -744,7 +736,6 @@ class TestRAGDebug:
         from agent_server.schemas.rag import QdrantConfig, RAGConfig
 
         config = RAGConfig(
-            use_hybrid_search=False,
             qdrant=QdrantConfig(collection_name="test"),
         )
 
@@ -755,10 +746,7 @@ class TestRAGDebug:
         result = asyncio.run(retriever.search_with_debug("test query"))
 
         # Verify timing info is present
-        assert result.dense_search_ms >= 0
-        assert result.total_search_ms >= 0
-        # BM25 should be None when hybrid is disabled
-        assert result.bm25_search_ms is None
+        assert result.search_ms >= 0
 
 
 class TestRAGManagerDebug:
@@ -773,8 +761,6 @@ class TestRAGManagerDebug:
             enabled=True,
             score_threshold=0.3,
             top_k=5,
-            use_hybrid_search=True,
-            hybrid_alpha=0.5,
             max_context_tokens=1500,
             qdrant=QdrantConfig(mode="local", collection_name="test"),
         )
@@ -859,43 +845,15 @@ class TestDebugSchemas:
         chunk = ChunkDebugInfo(
             chunk_id="doc1",
             content_preview="Test content...",
-            dense_score=0.85,
-            bm25_score=0.72,
-            bm25_raw_score=3.5,
-            fused_score=0.785,
-            rank_dense=1,
-            rank_bm25=2,
-            rank_final=1,
+            score=0.85,
+            rank=1,
             metadata={"source": "test.md"},
             passed_threshold=True,
         )
 
         assert chunk.chunk_id == "doc1"
-        assert chunk.dense_score == 0.85
+        assert chunk.score == 0.85
         assert chunk.passed_threshold is True
-
-    def test_chunk_debug_info_optional_fields(self):
-        """ChunkDebugInfo optional fields should be nullable."""
-        from agent_server.schemas.rag import ChunkDebugInfo
-
-        # BM25 fields are optional (None when hybrid disabled)
-        chunk = ChunkDebugInfo(
-            chunk_id="doc1",
-            content_preview="Test content...",
-            dense_score=0.85,
-            bm25_score=None,
-            bm25_raw_score=None,
-            fused_score=0.85,
-            rank_dense=1,
-            rank_bm25=None,
-            rank_final=1,
-            metadata={"source": "test.md"},
-            passed_threshold=True,
-        )
-
-        assert chunk.bm25_score is None
-        assert chunk.bm25_raw_score is None
-        assert chunk.rank_bm25 is None
 
     def test_library_detection_debug_validation(self):
         """LibraryDetectionDebug should validate correctly."""
@@ -919,10 +877,8 @@ class TestDebugSchemas:
         config = SearchConfigDebug(
             top_k=5,
             score_threshold=0.3,
-            use_hybrid_search=True,
-            hybrid_alpha=0.5,
             max_context_tokens=1500,
         )
 
         assert config.top_k == 5
-        assert config.use_hybrid_search is True
+        assert config.score_threshold == 0.3

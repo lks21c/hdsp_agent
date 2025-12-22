@@ -93,17 +93,12 @@ async def run_debug_search(
     config_info = result["config"]
     print(f"  top_k: {config_info['top_k']}")
     print(f"  score_threshold: {config_info['score_threshold']}")
-    print(f"  use_hybrid_search: {config_info['use_hybrid_search']}")
-    print(f"  hybrid_alpha: {config_info['hybrid_alpha']}")
     print(f"  max_context_tokens: {config_info['max_context_tokens']}")
     print()
 
     # Timing info
     print_header("TIMING")
-    print(f"  Dense search: {result['dense_search_ms']:.2f} ms")
-    if result["bm25_search_ms"] is not None:
-        print(f"  BM25 search: {result['bm25_search_ms']:.2f} ms")
-    print(f"  Total: {result['total_search_ms']:.2f} ms")
+    print(f"  Vector search: {result['search_ms']:.2f} ms")
     print()
 
     # Retrieved chunks
@@ -113,14 +108,8 @@ async def run_debug_search(
     print()
 
     # Chunks table
-    if config_info["use_hybrid_search"]:
-        print(
-            f" {'Rank':>4}  {'Dense':>7}  {'BM25':>7}  {'Fused':>7}  {'Pass':>4}   Source"
-        )
-        print("-" * 80)
-    else:
-        print(f" {'Rank':>4}  {'Score':>7}  {'Pass':>4}   Source")
-        print("-" * 60)
+    print(f" {'Rank':>4}  {'Score':>7}  {'Pass':>4}   Source")
+    print("-" * 70)
 
     for chunk in result["chunks"]:
         source = chunk["metadata"].get("source", "unknown")
@@ -130,26 +119,17 @@ async def run_debug_search(
             source_display += f" > {section}"
 
         passed = "YES" if chunk["passed_threshold"] else "NO"
-
-        if config_info["use_hybrid_search"]:
-            bm25 = chunk["bm25_score"] if chunk["bm25_score"] is not None else 0.0
-            print(
-                f" {chunk['rank_final']:>4}  {chunk['dense_score']:>7.4f}  {bm25:>7.4f}  {chunk['fused_score']:>7.4f}  {passed:>4}   {source_display}"
-            )
-        else:
-            print(
-                f" {chunk['rank_final']:>4}  {chunk['fused_score']:>7.4f}  {passed:>4}   {source_display}"
-            )
+        print(
+            f" {chunk['rank']:>4}  {chunk['score']:>7.4f}  {passed:>4}   {source_display}"
+        )
 
     if verbose:
         print()
         print_subheader("CHUNK DETAILS")
         for i, chunk in enumerate(result["chunks"]):
             print(f"\n[Chunk {i + 1}] ID: {chunk['chunk_id']}")
-            print(f"  Dense Rank: {chunk['rank_dense']}")
-            if chunk["rank_bm25"] is not None:
-                print(f"  BM25 Rank: {chunk['rank_bm25']}")
-            print(f"  Final Rank: {chunk['rank_final']}")
+            print(f"  Rank: {chunk['rank']}")
+            print(f"  Score: {chunk['score']:.4f}")
             print(f"  Passed: {chunk['passed_threshold']}")
             print("  Content Preview:")
             preview = chunk["content_preview"]
