@@ -2,8 +2,10 @@
 HDSP Jupyter Extension - Dual-mode client for HDSP Agent.
 
 Supports two execution modes:
-- Embedded mode (HDSP_AGENT_MODE=embedded): Direct in-process execution
-- Proxy mode (HDSP_AGENT_MODE=proxy): HTTP proxy to external Agent Server
+- Embedded mode (embed_agent_server=true): Direct in-process execution via uvicorn thread
+- Proxy mode (embed_agent_server=false): HTTP proxy to external Agent Server
+
+Configuration: ~/.jupyter/hdsp_agent_config.json
 """
 
 import asyncio
@@ -67,6 +69,9 @@ def _ensure_config_files():
             default_config = {
                 "provider": "gemini",
                 "agent_server_url": "http://localhost:8000",
+                "agent_server_port": 8000,
+                "agent_server_timeout": 120.0,
+                "embed_agent_server": False,
                 "gemini": {"apiKey": "", "model": "gemini-2.5-pro"},
                 "vllm": {
                     "endpoint": "http://localhost:8000",
@@ -83,8 +88,44 @@ def _ensure_config_files():
         pass
 
 
+def _start_embedded_agent_server(server_app, port: int):
+    """Start agent server in embedded mode (same process via uvicorn thread)."""
+    import threading
+
+    import uvicorn
+
+    # Try to import from installed package first, then fallback to dev path
+    try:
+        from agent_server.main import app as agent_app
+    except ImportError:
+        # Development mode: add agent-server to path
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+        agent_server_path = os.path.join(project_root, "agent-server")
+        if os.path.exists(agent_server_path) and agent_server_path not in sys.path:
+            sys.path.insert(0, agent_server_path)
+        from agent_server.main import app as agent_app
+
+    def run_uvicorn():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        config = uvicorn.Config(
+            agent_app,
+            host="127.0.0.1",
+            port=port,
+            log_level="info",
+            access_log=False,
+        )
+        server = uvicorn.Server(config)
+        loop.run_until_complete(server.serve())
+
+    thread = threading.Thread(target=run_uvicorn, daemon=True, name="EmbeddedAgentServer")
+    thread.start()
+
+    server_app.log.info(f"Embedded Agent Server started on http://127.0.0.1:{port}")
+
+
 async def _initialize_service_factory(server_app):
-    """Initialize ServiceFactory based on HDSP_AGENT_MODE environment variable."""
+    """Initialize ServiceFactory if hdsp_agent_core is available."""
     try:
         from hdsp_agent_core.factory import get_service_factory
 
@@ -95,34 +136,28 @@ async def _initialize_service_factory(server_app):
         server_app.log.info(f"HDSP Agent ServiceFactory initialized in {mode} mode")
 
         if factory.is_embedded:
-            # Log embedded mode specific info
             rag_service = factory.get_rag_service()
             rag_ready = rag_service.is_ready()
             server_app.log.info(f"  RAG service ready: {rag_ready}")
         else:
-            # Log proxy mode specific info
             server_app.log.info(f"  Agent Server URL: {factory.server_url}")
 
-    except ImportError as e:
-        server_app.log.warning(f"hdsp_agent_core not available, falling back to proxy mode: {e}")
+    except ImportError:
+        # hdsp_agent_core not available, skip ServiceFactory initialization
+        pass
     except Exception as e:
-        server_app.log.error(f"Failed to initialize ServiceFactory: {e}")
-        server_app.log.error(traceback.format_exc())
+        server_app.log.warning(f"ServiceFactory initialization failed: {e}")
 
 
 def _schedule_initialization(server_app):
     """Schedule async initialization in the event loop."""
     try:
-        # Get the current event loop
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            # If loop is already running, schedule the coroutine
             asyncio.ensure_future(_initialize_service_factory(server_app))
         else:
-            # If loop is not running, run until complete
             loop.run_until_complete(_initialize_service_factory(server_app))
     except RuntimeError:
-        # No event loop, create one
         asyncio.run(_initialize_service_factory(server_app))
 
 
@@ -131,6 +166,21 @@ def load_jupyter_server_extension(server_app):
     # [Auto-config] Create config files if they don't exist
     _ensure_config_files()
 
+    # Load configuration (from hdsp_agent_config.json + env overrides)
+    from .config import get_agent_server_config
+
+    config = get_agent_server_config()
+    embed_agent_server = config.embed_agent_server
+
+    if embed_agent_server:
+        try:
+            _start_embedded_agent_server(server_app, config.agent_server_port)
+        except Exception as e:
+            server_app.log.warning(f"Failed to start embedded agent server: {e}")
+            server_app.log.warning(traceback.format_exc())
+            server_app.log.warning("Falling back to proxy mode")
+            embed_agent_server = False
+
     try:
         from .handlers import setup_handlers
 
@@ -138,20 +188,15 @@ def load_jupyter_server_extension(server_app):
         setup_handlers(web_app)
 
         server_app.log.info("HDSP Jupyter Extension loaded (v%s)", __version__)
-
-        # Determine mode from environment
-        mode = os.environ.get("HDSP_AGENT_MODE", "proxy")
-        server_app.log.info(f"HDSP_AGENT_MODE: {mode}")
-
-        if mode == "embedded":
-            server_app.log.info("Running in embedded mode (direct in-process execution)")
+        if embed_agent_server:
+            server_app.log.info("Running in EMBEDDED mode (single process)")
         else:
             server_app.log.info(
-                "Running in proxy mode (proxying to Agent Server at: %s)",
-                os.environ.get("AGENT_SERVER_URL", "http://localhost:8000"),
+                "Proxying requests to Agent Server at: %s",
+                config.base_url,
             )
 
-        # Schedule ServiceFactory initialization
+        # Schedule ServiceFactory initialization (if hdsp_agent_core is available)
         _schedule_initialization(server_app)
 
     except Exception as e:
