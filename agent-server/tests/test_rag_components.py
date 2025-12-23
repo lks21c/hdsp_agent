@@ -4,7 +4,7 @@ Unit tests for RAG system components.
 Tests cover:
 - EmbeddingService: Local embedding generation
 - DocumentChunker: Format-aware document splitting
-- Retriever: Hybrid search (dense + BM25)
+- Retriever: Dense vector search
 - RAGManager: Orchestration and lifecycle
 
 All tests use mocks to avoid actual model loading and API calls.
@@ -239,7 +239,7 @@ This section has enough content to meet the minimum size requirement.
 
 
 class TestRetriever:
-    """Tests for hybrid retrieval."""
+    """Tests for dense vector retrieval."""
 
     @pytest.fixture
     def mock_qdrant_client(self):
@@ -265,13 +265,12 @@ class TestRetriever:
         service.embed_query.return_value = [0.1] * 384
         return service
 
-    def test_dense_only_search(self, mock_qdrant_client, mock_embedding_service):
-        """Test dense-only search (no BM25)."""
+    def test_dense_search(self, mock_qdrant_client, mock_embedding_service):
+        """Test dense vector search."""
         from agent_server.core.retriever import Retriever
         from agent_server.schemas.rag import QdrantConfig, RAGConfig
 
         config = RAGConfig(
-            use_hybrid_search=False,
             qdrant=QdrantConfig(collection_name="test"),
         )
 
@@ -291,7 +290,6 @@ class TestRetriever:
         from agent_server.schemas.rag import QdrantConfig, RAGConfig
 
         config = RAGConfig(
-            use_hybrid_search=False,
             qdrant=QdrantConfig(collection_name="test"),
         )
 
@@ -328,7 +326,6 @@ class TestRetriever:
         mock_qdrant_client.search.return_value = [mock_result_high, mock_result_low]
 
         config = RAGConfig(
-            use_hybrid_search=False,
             score_threshold=0.5,
             qdrant=QdrantConfig(collection_name="test"),
         )
@@ -593,3 +590,295 @@ class TestRAGIntegration:
 
         config2 = RAGConfig(enabled=True)
         assert config2.is_enabled() is True
+
+
+# ============ RAG Debug Tests ============
+
+
+class TestRAGDebug:
+    """Tests for Retriever.search_with_debug()"""
+
+    @pytest.fixture
+    def mock_qdrant_client_debug(self):
+        """Create mock Qdrant client with multiple results for debug testing."""
+        client = MagicMock()
+
+        # Mock search results with varying scores
+        mock_result1 = MagicMock()
+        mock_result1.id = "doc1"
+        mock_result1.score = 0.9
+        mock_result1.payload = {
+            "content": "High score document content for testing",
+            "source": "pandas.md",
+            "section": "DataFrame Creation",
+        }
+
+        mock_result2 = MagicMock()
+        mock_result2.id = "doc2"
+        mock_result2.score = 0.7
+        mock_result2.payload = {
+            "content": "Medium score document content",
+            "source": "numpy.md",
+            "section": "Array Operations",
+        }
+
+        mock_result3 = MagicMock()
+        mock_result3.id = "doc3"
+        mock_result3.score = 0.4
+        mock_result3.payload = {
+            "content": "Low score document below threshold",
+            "source": "matplotlib.md",
+            "section": "Plotting",
+        }
+
+        client.search.return_value = [mock_result1, mock_result2, mock_result3]
+        return client
+
+    @pytest.fixture
+    def mock_embedding_service_debug(self):
+        """Create mock embedding service for debug testing."""
+        service = MagicMock()
+        service.embed_query.return_value = [0.1] * 384
+        return service
+
+    def test_search_with_debug_returns_scores(
+        self, mock_qdrant_client_debug, mock_embedding_service_debug
+    ):
+        """search_with_debug should return vector similarity scores."""
+        import asyncio
+
+        from agent_server.core.retriever import Retriever
+        from agent_server.schemas.rag import QdrantConfig, RAGConfig
+
+        config = RAGConfig(
+            score_threshold=0.3,
+            qdrant=QdrantConfig(collection_name="test"),
+        )
+
+        retriever = Retriever(
+            mock_qdrant_client_debug, mock_embedding_service_debug, config
+        )
+
+        result = asyncio.run(retriever.search_with_debug("test query"))
+
+        # Should return DebugSearchResult
+        assert result is not None
+        assert len(result.chunks) == 3
+        assert result.total_candidates == 3
+
+        # Check all chunks have required fields
+        for chunk in result.chunks:
+            assert chunk.chunk_id is not None
+            assert chunk.score is not None
+            assert chunk.rank is not None
+            assert chunk.passed_threshold is not None
+
+    def test_search_with_debug_scores_descending(
+        self, mock_qdrant_client_debug, mock_embedding_service_debug
+    ):
+        """Scores should be sorted in descending order."""
+        import asyncio
+
+        from agent_server.core.retriever import Retriever
+        from agent_server.schemas.rag import QdrantConfig, RAGConfig
+
+        config = RAGConfig(
+            score_threshold=0.3,
+            qdrant=QdrantConfig(collection_name="test"),
+        )
+
+        retriever = Retriever(
+            mock_qdrant_client_debug, mock_embedding_service_debug, config
+        )
+
+        result = asyncio.run(retriever.search_with_debug("test query"))
+
+        # Verify descending order
+        scores = [chunk.score for chunk in result.chunks]
+        assert scores == sorted(scores, reverse=True)
+
+    def test_search_with_debug_threshold_filtering(
+        self, mock_qdrant_client_debug, mock_embedding_service_debug
+    ):
+        """passed_threshold should be correctly set based on score threshold."""
+        import asyncio
+
+        from agent_server.core.retriever import Retriever
+        from agent_server.schemas.rag import QdrantConfig, RAGConfig
+
+        config = RAGConfig(
+            score_threshold=0.5,  # Higher threshold
+            qdrant=QdrantConfig(collection_name="test"),
+        )
+
+        retriever = Retriever(
+            mock_qdrant_client_debug, mock_embedding_service_debug, config
+        )
+
+        result = asyncio.run(retriever.search_with_debug("test query"))
+
+        # Count passed vs not passed
+        passed = [c for c in result.chunks if c.passed_threshold]
+        not_passed = [c for c in result.chunks if not c.passed_threshold]
+
+        # doc1 (0.9) and doc2 (0.7) should pass, doc3 (0.4) should not
+        assert len(passed) == 2
+        assert len(not_passed) == 1
+        assert not_passed[0].score < 0.5
+
+    def test_debug_search_timing_present(
+        self, mock_qdrant_client_debug, mock_embedding_service_debug
+    ):
+        """Timing information should be included in results."""
+        import asyncio
+
+        from agent_server.core.retriever import Retriever
+        from agent_server.schemas.rag import QdrantConfig, RAGConfig
+
+        config = RAGConfig(
+            qdrant=QdrantConfig(collection_name="test"),
+        )
+
+        retriever = Retriever(
+            mock_qdrant_client_debug, mock_embedding_service_debug, config
+        )
+
+        result = asyncio.run(retriever.search_with_debug("test query"))
+
+        # Verify timing info is present
+        assert result.search_ms >= 0
+
+
+class TestRAGManagerDebug:
+    """Tests for RAGManager.debug_search()"""
+
+    @pytest.fixture
+    def mock_config(self):
+        """Create mock RAG config for debug testing."""
+        from agent_server.schemas.rag import QdrantConfig, RAGConfig
+
+        return RAGConfig(
+            enabled=True,
+            score_threshold=0.3,
+            top_k=5,
+            max_context_tokens=1500,
+            qdrant=QdrantConfig(mode="local", collection_name="test"),
+        )
+
+    def test_debug_search_returns_library_detection(self, mock_config):
+        """debug_search should return library detection information."""
+        import asyncio
+
+        from agent_server.core.rag_manager import RAGManager, reset_rag_manager
+
+        reset_rag_manager()
+        manager = RAGManager(mock_config)
+
+        # Without initialization, should return error
+        result = asyncio.run(manager.debug_search("pandas dataframe"))
+
+        assert "error" in result
+        assert result["error"] == "RAG system not ready"
+
+        reset_rag_manager()
+
+    def test_debug_search_not_ready_returns_error(self, mock_config):
+        """debug_search should return error when RAG is not ready."""
+        import asyncio
+
+        from agent_server.core.rag_manager import RAGManager, reset_rag_manager
+
+        reset_rag_manager()
+        manager = RAGManager(mock_config)
+        # Don't initialize
+
+        result = asyncio.run(manager.debug_search("test query"))
+
+        assert "error" in result
+
+        reset_rag_manager()
+
+
+class TestDebugSchemas:
+    """Tests for debug schema validation."""
+
+    def test_debug_search_request_validation(self):
+        """DebugSearchRequest should validate correctly."""
+        from agent_server.schemas.rag import DebugSearchRequest
+
+        # Valid request
+        request = DebugSearchRequest(query="test query")
+        assert request.query == "test query"
+        assert request.imported_libraries == []
+        assert request.top_k is None
+        assert request.include_full_content is False
+        assert request.simulate_plan_context is True
+
+    def test_debug_search_request_defaults(self):
+        """DebugSearchRequest should have correct defaults."""
+        from agent_server.schemas.rag import DebugSearchRequest
+
+        request = DebugSearchRequest(query="test")
+
+        assert request.imported_libraries == []
+        assert request.top_k is None
+        assert request.include_full_content is False
+        assert request.simulate_plan_context is True
+
+    def test_debug_search_request_with_libraries(self):
+        """DebugSearchRequest should accept library list."""
+        from agent_server.schemas.rag import DebugSearchRequest
+
+        request = DebugSearchRequest(
+            query="test query",
+            imported_libraries=["pandas", "numpy"],
+            top_k=10,
+        )
+
+        assert request.imported_libraries == ["pandas", "numpy"]
+        assert request.top_k == 10
+
+    def test_chunk_debug_info_validation(self):
+        """ChunkDebugInfo should validate correctly."""
+        from agent_server.schemas.rag import ChunkDebugInfo
+
+        chunk = ChunkDebugInfo(
+            chunk_id="doc1",
+            content_preview="Test content...",
+            score=0.85,
+            rank=1,
+            metadata={"source": "test.md"},
+            passed_threshold=True,
+        )
+
+        assert chunk.chunk_id == "doc1"
+        assert chunk.score == 0.85
+        assert chunk.passed_threshold is True
+
+    def test_library_detection_debug_validation(self):
+        """LibraryDetectionDebug should validate correctly."""
+        from agent_server.schemas.rag import LibraryDetectionDebug
+
+        detection = LibraryDetectionDebug(
+            input_query="pandas dataframe",
+            imported_libraries=["pandas"],
+            available_libraries=["pandas", "numpy", "matplotlib"],
+            detected_libraries=["pandas"],
+            detection_method="deterministic",
+        )
+
+        assert detection.input_query == "pandas dataframe"
+        assert detection.detected_libraries == ["pandas"]
+
+    def test_search_config_debug_validation(self):
+        """SearchConfigDebug should validate correctly."""
+        from agent_server.schemas.rag import SearchConfigDebug
+
+        config = SearchConfigDebug(
+            top_k=5,
+            score_threshold=0.3,
+            max_context_tokens=1500,
+        )
+
+        assert config.top_k == 5
+        assert config.score_threshold == 0.3

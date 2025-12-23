@@ -565,6 +565,148 @@ class RAGManager:
         """Check if RAG system is operational."""
         return self._ready
 
+    async def debug_search(
+        self,
+        query: str,
+        imported_libraries: Optional[List[str]] = None,
+        top_k: Optional[int] = None,
+        include_full_content: bool = False,
+        simulate_plan_context: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        전체 파이프라인 리니지를 포함한 디버그 검색.
+
+        반환 정보:
+        - 라이브러리 감지 결과
+        - 청크별 점수 (dense, BM25, fused)
+        - 최종 포맷된 컨텍스트
+
+        Args:
+            query: Search query
+            imported_libraries: List of imported libraries
+            top_k: Override default top_k
+            include_full_content: Include full content instead of preview
+            simulate_plan_context: Generate formatted context as in plan generation
+
+        Returns:
+            Dict with comprehensive debug information
+        """
+        if not self._ready:
+            return {"error": "RAG system not ready"}
+
+        # 1. 라이브러리 감지 (agent.py와 동일 로직)
+        try:
+            from agent_server.knowledge.loader import (
+                get_knowledge_base,
+                get_library_detector,
+            )
+
+            knowledge_base = get_knowledge_base()
+            library_detector = get_library_detector()
+            available = (
+                knowledge_base.list_available_libraries() if knowledge_base else []
+            )
+            detected_libraries = (
+                library_detector.detect(
+                    request=query,
+                    available_libraries=available,
+                    imported_libraries=imported_libraries or [],
+                )
+                if library_detector
+                else []
+            )
+            detection_method = "deterministic"
+        except Exception as e:
+            logger.warning(f"Library detection failed: {e}")
+            available = []
+            detected_libraries = []
+            detection_method = "fallback (detection failed)"
+
+        library_detection_info = {
+            "input_query": query,
+            "imported_libraries": imported_libraries or [],
+            "available_libraries": available or [],
+            "detected_libraries": detected_libraries,
+            "detection_method": detection_method,
+        }
+
+        # 2. 설정 정보
+        config_info = {
+            "top_k": top_k or self._config.top_k,
+            "score_threshold": self._config.score_threshold,
+            "max_context_tokens": self._config.max_context_tokens,
+        }
+
+        # 3. 디버그 검색 수행
+        debug_result = await self._retriever.search_with_debug(
+            query=query, top_k=top_k or self._config.top_k
+        )
+
+        # 4. 청크 디버그 정보 구성
+        chunks_info = []
+        for chunk in debug_result.chunks:
+            content_preview = chunk.content
+            if not include_full_content and len(chunk.content) > 200:
+                content_preview = chunk.content[:200] + "..."
+
+            chunks_info.append(
+                {
+                    "chunk_id": chunk.chunk_id,
+                    "content_preview": content_preview,
+                    "score": chunk.score,
+                    "rank": chunk.rank,
+                    "metadata": chunk.metadata,
+                    "passed_threshold": chunk.passed_threshold,
+                }
+            )
+
+        # 5. 포맷된 컨텍스트 생성 (get_context_for_query와 동일)
+        formatted_context = ""
+        if simulate_plan_context:
+            passed_chunks = [c for c in debug_result.chunks if c.passed_threshold]
+
+            if passed_chunks:
+                context_parts = []
+                char_count = 0
+                char_limit = (
+                    self._config.max_context_tokens * 4
+                )  # Rough char-to-token ratio
+
+                for chunk in passed_chunks:
+                    source = chunk.metadata.get("source", "unknown")
+                    section = chunk.metadata.get("section", "")
+                    score = chunk.score
+
+                    # Format chunk with source info
+                    chunk_text = f"[Source: {source}"
+                    if section:
+                        chunk_text += f" > {section}"
+                    chunk_text += f" (relevance: {score:.2f})]\n{chunk.content}\n"
+
+                    if char_count + len(chunk_text) > char_limit:
+                        break
+                    context_parts.append(chunk_text)
+                    char_count += len(chunk_text)
+
+                if context_parts:
+                    header = "## 📚 라이브러리 API 참조 (RAG Retrieved)\n\n"
+                    header += "아래 가이드의 API 사용법을 **반드시** 따르세요.\n\n"
+                    formatted_context = header + "\n---\n".join(context_parts)
+
+        return {
+            "library_detection": library_detection_info,
+            "config": config_info,
+            "chunks": chunks_info,
+            "total_candidates": debug_result.total_candidates,
+            "total_passed_threshold": sum(
+                1 for c in debug_result.chunks if c.passed_threshold
+            ),
+            "search_ms": debug_result.search_ms,
+            "formatted_context": formatted_context,
+            "context_char_count": len(formatted_context),
+            "estimated_context_tokens": len(formatted_context) // 4,
+        }
+
 
 # ============ Singleton Accessor ============
 
