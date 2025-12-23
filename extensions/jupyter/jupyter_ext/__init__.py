@@ -121,7 +121,24 @@ def _start_embedded_agent_server(server_app, port: int):
     thread = threading.Thread(target=run_uvicorn, daemon=True, name="EmbeddedAgentServer")
     thread.start()
 
-    server_app.log.info(f"Embedded Agent Server started on http://127.0.0.1:{port}")
+    # Wait for agent server to be ready
+    import time
+    ready = False
+    for i in range(50):  # 5 seconds timeout
+        try:
+            import httpx
+            response = httpx.get(f"http://127.0.0.1:{port}/health", timeout=0.2)
+            if response.status_code == 200:
+                ready = True
+                break
+        except Exception:
+            pass
+        time.sleep(0.1)
+
+    if ready:
+        server_app.log.info(f"Embedded Agent Server ready on http://127.0.0.1:{port}")
+    else:
+        server_app.log.warning(f"Embedded Agent Server started on http://127.0.0.1:{port} (may still be initializing)")
 
 
 async def _initialize_service_factory(server_app):
@@ -190,14 +207,15 @@ def load_jupyter_server_extension(server_app):
         server_app.log.info("HDSP Jupyter Extension loaded (v%s)", __version__)
         if embed_agent_server:
             server_app.log.info("Running in EMBEDDED mode (single process)")
+            # In embedded mode, ServiceFactory is initialized by agent_server's lifespan
+            # Don't initialize here to avoid race condition
         else:
             server_app.log.info(
                 "Proxying requests to Agent Server at: %s",
                 config.base_url,
             )
-
-        # Schedule ServiceFactory initialization (if hdsp_agent_core is available)
-        _schedule_initialization(server_app)
+            # In proxy mode, initialize ServiceFactory for client-side services
+            _schedule_initialization(server_app)
 
     except Exception as e:
         server_app.log.error(f"Failed to load HDSP Jupyter Extension: {e}")

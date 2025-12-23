@@ -94,19 +94,23 @@ echo ""
 echo "3. Building whl package..."
 cd "$ROOT_DIR/extensions/jupyter"
 
-# Copy agent_server for whl build
-echo "Copying agent_server module..."
+# Copy agent_server and hdsp_agent_core for whl build
+echo "Copying agent_server and hdsp_agent_core modules..."
 if [ -d "agent_server" ]; then
     rm -rf agent_server
 fi
+if [ -d "hdsp_agent_core" ]; then
+    rm -rf hdsp_agent_core
+fi
 cp -r "$ROOT_DIR/agent-server/agent_server" .
+cp -r "$ROOT_DIR/hdsp_agent_core/hdsp_agent_core" .
 
 # Build whl
 echo "Building whl with python -m build..."
 python -m build
 
-# Cleanup copied agent_server
-rm -rf agent_server
+# Cleanup copied modules
+rm -rf agent_server hdsp_agent_core
 
 echo "whl package built:"
 ls -lh dist/*.whl
