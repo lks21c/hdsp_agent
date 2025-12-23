@@ -1,18 +1,246 @@
 """
-Proxy handlers for HDSP Jupyter Extension.
+HDSP Jupyter Extension Handlers.
 
-All requests are forwarded to the HDSP Agent Server.
+ServiceFactory-based handlers supporting both embedded and proxy modes:
+- Embedded mode (HDSP_AGENT_MODE=embedded): Direct in-process execution
+- Proxy mode (HDSP_AGENT_MODE=proxy): HTTP proxy to external Agent Server
 """
 
 import json
+import logging
+import os
+from typing import Any, Dict
+
 import httpx
-from tornado.web import RequestHandler
-from tornado.httpclient import AsyncHTTPClient, HTTPRequest
-from tornado.httputil import HTTPHeaders
 from jupyter_server.base.handlers import APIHandler
 from jupyter_server.utils import url_path_join
+from tornado.web import RequestHandler
 
-from .config import get_agent_server_config
+logger = logging.getLogger(__name__)
+
+
+def _get_service_factory():
+    """Get ServiceFactory instance (lazy import to avoid circular imports)"""
+    from hdsp_agent_core.factory import get_service_factory
+    return get_service_factory()
+
+
+def _is_embedded_mode() -> bool:
+    """Check if running in embedded mode"""
+    try:
+        factory = _get_service_factory()
+        return factory.is_embedded
+    except Exception:
+        return False
+
+
+# ============ Service-Based Handlers ============
+
+
+class AgentPlanHandler(APIHandler):
+    """Handler for /agent/plan endpoint using ServiceFactory."""
+
+    async def post(self):
+        """Generate execution plan."""
+        try:
+            from hdsp_agent_core.models.agent import PlanRequest
+
+            factory = _get_service_factory()
+            agent_service = factory.get_agent_service()
+
+            # Parse request
+            body = json.loads(self.request.body.decode("utf-8"))
+            request = PlanRequest(**body)
+
+            # Call service
+            response = await agent_service.generate_plan(request)
+
+            self.set_header("Content-Type", "application/json")
+            self.write(response.model_dump(mode="json"))
+
+        except Exception as e:
+            logger.error(f"Plan generation failed: {e}", exc_info=True)
+            self.set_status(500)
+            self.write({"error": str(e)})
+
+
+class AgentRefineHandler(APIHandler):
+    """Handler for /agent/refine endpoint using ServiceFactory."""
+
+    async def post(self):
+        """Refine code after error."""
+        try:
+            from hdsp_agent_core.models.agent import RefineRequest
+
+            factory = _get_service_factory()
+            agent_service = factory.get_agent_service()
+
+            body = json.loads(self.request.body.decode("utf-8"))
+            request = RefineRequest(**body)
+
+            response = await agent_service.refine_code(request)
+
+            self.set_header("Content-Type", "application/json")
+            self.write(response.model_dump(mode="json"))
+
+        except Exception as e:
+            logger.error(f"Refine failed: {e}", exc_info=True)
+            self.set_status(500)
+            self.write({"error": str(e)})
+
+
+class AgentReplanHandler(APIHandler):
+    """Handler for /agent/replan endpoint using ServiceFactory."""
+
+    async def post(self):
+        """Determine how to handle failed step."""
+        try:
+            from hdsp_agent_core.models.agent import ReplanRequest
+
+            factory = _get_service_factory()
+            agent_service = factory.get_agent_service()
+
+            body = json.loads(self.request.body.decode("utf-8"))
+            request = ReplanRequest(**body)
+
+            response = await agent_service.replan(request)
+
+            self.set_header("Content-Type", "application/json")
+            self.write(response.model_dump(mode="json"))
+
+        except Exception as e:
+            logger.error(f"Replan failed: {e}", exc_info=True)
+            self.set_status(500)
+            self.write({"error": str(e)})
+
+
+class AgentValidateHandler(APIHandler):
+    """Handler for /agent/validate endpoint using ServiceFactory."""
+
+    async def post(self):
+        """Validate code before execution."""
+        try:
+            factory = _get_service_factory()
+            agent_service = factory.get_agent_service()
+
+            body = json.loads(self.request.body.decode("utf-8"))
+            code = body.get("code", "")
+            notebook_context = body.get("notebookContext")
+
+            response = await agent_service.validate_code(code, notebook_context)
+
+            self.set_header("Content-Type", "application/json")
+            self.write(response)
+
+        except Exception as e:
+            logger.error(f"Validate failed: {e}", exc_info=True)
+            self.set_status(500)
+            self.write({"error": str(e)})
+
+
+class ChatMessageHandler(APIHandler):
+    """Handler for /chat/message endpoint using ServiceFactory."""
+
+    async def post(self):
+        """Send chat message and get response."""
+        try:
+            from hdsp_agent_core.models.chat import ChatRequest
+
+            factory = _get_service_factory()
+            chat_service = factory.get_chat_service()
+
+            body = json.loads(self.request.body.decode("utf-8"))
+            request = ChatRequest(**body)
+
+            response = await chat_service.send_message(request)
+
+            self.set_header("Content-Type", "application/json")
+            self.write(response.model_dump(mode="json"))
+
+        except Exception as e:
+            logger.error(f"Chat message failed: {e}", exc_info=True)
+            self.set_status(500)
+            self.write({"error": str(e)})
+
+
+class ChatStreamHandler(APIHandler):
+    """Handler for /chat/stream endpoint using ServiceFactory."""
+
+    async def post(self):
+        """Send chat message and get streaming response."""
+        try:
+            from hdsp_agent_core.models.chat import ChatRequest
+
+            factory = _get_service_factory()
+            chat_service = factory.get_chat_service()
+
+            body = json.loads(self.request.body.decode("utf-8"))
+            request = ChatRequest(**body)
+
+            # Set SSE headers
+            self.set_header("Content-Type", "text/event-stream")
+            self.set_header("Cache-Control", "no-cache")
+            self.set_header("Connection", "keep-alive")
+            self.set_header("X-Accel-Buffering", "no")
+
+            async for chunk in chat_service.send_message_stream(request):
+                self.write(f"data: {json.dumps(chunk)}\n\n")
+                await self.flush()
+
+            self.finish()
+
+        except Exception as e:
+            logger.error(f"Chat stream failed: {e}", exc_info=True)
+            self.write(f'data: {json.dumps({"error": str(e)})}\n\n')
+            self.finish()
+
+
+class RAGSearchHandler(APIHandler):
+    """Handler for /rag/search endpoint using ServiceFactory."""
+
+    async def post(self):
+        """Search knowledge base."""
+        try:
+            from hdsp_agent_core.models.rag import SearchRequest
+
+            factory = _get_service_factory()
+            rag_service = factory.get_rag_service()
+
+            body = json.loads(self.request.body.decode("utf-8"))
+            request = SearchRequest(**body)
+
+            response = await rag_service.search(request)
+
+            self.set_header("Content-Type", "application/json")
+            self.write(response.model_dump(mode="json"))
+
+        except Exception as e:
+            logger.error(f"RAG search failed: {e}", exc_info=True)
+            self.set_status(500)
+            self.write({"error": str(e)})
+
+
+class RAGStatusHandler(APIHandler):
+    """Handler for /rag/status endpoint using ServiceFactory."""
+
+    async def get(self):
+        """Get RAG system status."""
+        try:
+            factory = _get_service_factory()
+            rag_service = factory.get_rag_service()
+
+            status = await rag_service.get_index_status()
+
+            self.set_header("Content-Type", "application/json")
+            self.write(status)
+
+        except Exception as e:
+            logger.error(f"RAG status failed: {e}", exc_info=True)
+            self.set_status(500)
+            self.write({"error": str(e)})
+
+
+# ============ Proxy-Only Handlers (for endpoints not yet migrated) ============
 
 
 class BaseProxyHandler(APIHandler):
@@ -21,25 +249,24 @@ class BaseProxyHandler(APIHandler):
     @property
     def agent_server_url(self) -> str:
         """Get the Agent Server base URL."""
+        from .config import get_agent_server_config
         config = get_agent_server_config()
         return config.base_url
 
     @property
     def timeout(self) -> float:
         """Get request timeout."""
+        from .config import get_agent_server_config
         config = get_agent_server_config()
         return config.timeout
 
     def get_proxy_path(self) -> str:
         """Get the path to proxy to (override in subclasses if needed)."""
-        # Extract path after /hdsp-agent/
         request_path = self.request.path
         base_url = self.settings.get("base_url", "/")
-
-        # Remove base URL and hdsp-agent prefix to get the target path
         prefix = url_path_join(base_url, "hdsp-agent")
         if request_path.startswith(prefix):
-            return request_path[len(prefix) :]
+            return request_path[len(prefix):]
         return request_path
 
     async def proxy_request(self, method: str = "GET", body: bytes = None):
@@ -47,12 +274,10 @@ class BaseProxyHandler(APIHandler):
         target_path = self.get_proxy_path()
         target_url = f"{self.agent_server_url}{target_path}"
 
-        # Forward headers (excluding host)
         headers = {}
         for name, value in self.request.headers.items():
             if name.lower() not in ("host", "content-length"):
                 headers[name] = value
-
         headers["Content-Type"] = "application/json"
 
         try:
@@ -60,13 +285,9 @@ class BaseProxyHandler(APIHandler):
                 if method == "GET":
                     response = await client.get(target_url, headers=headers)
                 elif method == "POST":
-                    response = await client.post(
-                        target_url, headers=headers, content=body
-                    )
+                    response = await client.post(target_url, headers=headers, content=body)
                 elif method == "PUT":
-                    response = await client.put(
-                        target_url, headers=headers, content=body
-                    )
+                    response = await client.put(target_url, headers=headers, content=body)
                 elif method == "DELETE":
                     response = await client.delete(target_url, headers=headers)
                 else:
@@ -74,52 +295,38 @@ class BaseProxyHandler(APIHandler):
                     self.write({"error": f"Method {method} not supported"})
                     return
 
-                # Forward response
                 self.set_status(response.status_code)
                 for name, value in response.headers.items():
-                    if name.lower() not in (
-                        "content-encoding",
-                        "transfer-encoding",
-                        "content-length",
-                    ):
+                    if name.lower() not in ("content-encoding", "transfer-encoding", "content-length"):
                         self.set_header(name, value)
-
                 self.write(response.content)
 
         except httpx.ConnectError:
             self.set_status(503)
-            self.write(
-                {
-                    "error": "Agent Server is not available",
-                    "detail": f"Could not connect to {self.agent_server_url}",
-                }
-            )
+            self.write({
+                "error": "Agent Server is not available",
+                "detail": f"Could not connect to {self.agent_server_url}",
+            })
         except httpx.TimeoutException:
             self.set_status(504)
-            self.write(
-                {
-                    "error": "Agent Server timeout",
-                    "detail": f"Request to {target_url} timed out after {self.timeout}s",
-                }
-            )
+            self.write({
+                "error": "Agent Server timeout",
+                "detail": f"Request to {target_url} timed out after {self.timeout}s",
+            })
         except Exception as e:
             self.set_status(500)
             self.write({"error": "Proxy error", "detail": str(e)})
 
     async def get(self, *args, **kwargs):
-        """Handle GET requests."""
         await self.proxy_request("GET")
 
     async def post(self, *args, **kwargs):
-        """Handle POST requests."""
         await self.proxy_request("POST", self.request.body)
 
     async def put(self, *args, **kwargs):
-        """Handle PUT requests."""
         await self.proxy_request("PUT", self.request.body)
 
     async def delete(self, *args, **kwargs):
-        """Handle DELETE requests."""
         await self.proxy_request("DELETE")
 
 
@@ -128,23 +335,22 @@ class StreamProxyHandler(APIHandler):
 
     @property
     def agent_server_url(self) -> str:
-        """Get the Agent Server base URL."""
+        from .config import get_agent_server_config
         config = get_agent_server_config()
         return config.base_url
 
     @property
     def timeout(self) -> float:
-        """Get request timeout."""
+        from .config import get_agent_server_config
         config = get_agent_server_config()
         return config.timeout
 
     def get_proxy_path(self) -> str:
-        """Get the path to proxy to."""
         request_path = self.request.path
         base_url = self.settings.get("base_url", "/")
         prefix = url_path_join(base_url, "hdsp-agent")
         if request_path.startswith(prefix):
-            return request_path[len(prefix) :]
+            return request_path[len(prefix):]
         return request_path
 
     async def post(self, *args, **kwargs):
@@ -152,7 +358,6 @@ class StreamProxyHandler(APIHandler):
         target_path = self.get_proxy_path()
         target_url = f"{self.agent_server_url}{target_path}"
 
-        # Set SSE headers
         self.set_header("Content-Type", "text/event-stream")
         self.set_header("Cache-Control", "no-cache")
         self.set_header("Connection", "keep-alive")
@@ -171,9 +376,7 @@ class StreamProxyHandler(APIHandler):
                         await self.flush()
 
         except httpx.ConnectError:
-            self.write(
-                f'data: {json.dumps({"error": "Agent Server is not available"})}\n\n'
-            )
+            self.write(f'data: {json.dumps({"error": "Agent Server is not available"})}\n\n')
         except httpx.TimeoutException:
             self.write(f'data: {json.dumps({"error": "Agent Server timeout"})}\n\n')
         except Exception as e:
@@ -182,38 +385,61 @@ class StreamProxyHandler(APIHandler):
             self.finish()
 
 
+# ============ Health & Config Handlers ============
+
+
 class HealthHandler(APIHandler):
-    """Local health check for Jupyter extension."""
+    """Health check handler."""
 
     async def get(self):
         """Return extension health status."""
-        config = get_agent_server_config()
-
-        # Check Agent Server connectivity
-        agent_server_healthy = False
-        agent_server_error = None
-
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(f"{config.base_url}/health")
-                agent_server_healthy = response.status_code == 200
-        except Exception as e:
-            agent_server_error = str(e)
+            factory = _get_service_factory()
+            mode = factory.mode.value if factory.is_initialized else "not_initialized"
 
-        self.write(
-            {
-                "status": "healthy" if agent_server_healthy else "degraded",
+            status = {
+                "status": "healthy",
                 "extension_version": "2.0.0",
-                "agent_server": {
+                "mode": mode,
+            }
+
+            if factory.is_embedded:
+                # In embedded mode, check RAG service directly
+                rag_service = factory.get_rag_service()
+                status["rag"] = {
+                    "ready": rag_service.is_ready(),
+                }
+            else:
+                # In proxy mode, check agent server connectivity
+                from .config import get_agent_server_config
+                config = get_agent_server_config()
+
+                agent_server_healthy = False
+                agent_server_error = None
+
+                try:
+                    async with httpx.AsyncClient(timeout=5.0) as client:
+                        response = await client.get(f"{config.base_url}/health")
+                        agent_server_healthy = response.status_code == 200
+                except Exception as e:
+                    agent_server_error = str(e)
+
+                status["agent_server"] = {
                     "url": config.base_url,
                     "healthy": agent_server_healthy,
                     "error": agent_server_error,
-                },
-            }
-        )
+                }
+
+            self.write(status)
+
+        except Exception as e:
+            logger.error(f"Health check failed: {e}")
+            self.write({
+                "status": "degraded",
+                "error": str(e),
+            })
 
 
-# Path-specific handlers for better routing
 class ConfigProxyHandler(BaseProxyHandler):
     """Proxy handler for /config endpoint."""
 
@@ -221,32 +447,7 @@ class ConfigProxyHandler(BaseProxyHandler):
         return "/config"
 
 
-class AgentPlanProxyHandler(BaseProxyHandler):
-    """Proxy handler for /agent/plan endpoint."""
-
-    def get_proxy_path(self) -> str:
-        return "/agent/plan"
-
-
-class AgentRefineProxyHandler(BaseProxyHandler):
-    """Proxy handler for /agent/refine endpoint."""
-
-    def get_proxy_path(self) -> str:
-        return "/agent/refine"
-
-
-class AgentReplanProxyHandler(BaseProxyHandler):
-    """Proxy handler for /agent/replan endpoint."""
-
-    def get_proxy_path(self) -> str:
-        return "/agent/replan"
-
-
-class AgentValidateProxyHandler(BaseProxyHandler):
-    """Proxy handler for /agent/validate endpoint."""
-
-    def get_proxy_path(self) -> str:
-        return "/agent/validate"
+# ============ Remaining Proxy Handlers (for endpoints not yet in ServiceFactory) ============
 
 
 class AgentReflectProxyHandler(BaseProxyHandler):
@@ -268,20 +469,6 @@ class AgentPlanStreamProxyHandler(StreamProxyHandler):
 
     def get_proxy_path(self) -> str:
         return "/agent/plan/stream"
-
-
-class ChatMessageProxyHandler(BaseProxyHandler):
-    """Proxy handler for /chat/message endpoint."""
-
-    def get_proxy_path(self) -> str:
-        return "/chat/message"
-
-
-class ChatStreamProxyHandler(StreamProxyHandler):
-    """Proxy handler for /chat/stream endpoint."""
-
-    def get_proxy_path(self) -> str:
-        return "/chat/stream"
 
 
 class CellActionProxyHandler(BaseProxyHandler):
@@ -306,35 +493,22 @@ class FileResolveProxyHandler(BaseProxyHandler):
 
     async def post(self, *args, **kwargs):
         """Handle POST with notebookDir path conversion."""
-        import os
-
-        # Parse request body
         try:
-            body = json.loads(self.request.body.decode('utf-8'))
+            body = json.loads(self.request.body.decode("utf-8"))
 
-            # Convert notebookDir to absolute path
-            if 'notebookDir' in body and body['notebookDir']:
-                # Get Jupyter server root directory
-                server_root = self.settings.get('server_root_dir', os.getcwd())
-                server_root = os.path.expanduser(server_root)  # Expand ~
-                notebook_dir = body['notebookDir']
+            if "notebookDir" in body and body["notebookDir"]:
+                server_root = self.settings.get("server_root_dir", os.getcwd())
+                server_root = os.path.expanduser(server_root)
+                notebook_dir = body["notebookDir"]
 
-                # Debug logging
-                print(f"[FileResolveProxy] Original notebookDir: {notebook_dir}")
-                print(f"[FileResolveProxy] Server root: {server_root}")
-
-                # Convert to absolute path
                 if not os.path.isabs(notebook_dir):
-                    body['notebookDir'] = os.path.join(server_root, notebook_dir)
-                    print(f"[FileResolveProxy] Converted to: {body['notebookDir']}")
+                    body["notebookDir"] = os.path.join(server_root, notebook_dir)
 
-            # Re-encode body
-            modified_body = json.dumps(body).encode('utf-8')
+            modified_body = json.dumps(body).encode("utf-8")
             await self.proxy_request("POST", modified_body)
+
         except Exception as e:
-            print(f"[FileResolveProxy] Error: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"FileResolveProxy error: {e}")
             self.set_status(500)
             self.write({"error": f"Failed to process request: {str(e)}"})
 
@@ -350,9 +524,7 @@ class TaskStatusProxyHandler(BaseProxyHandler):
     """Proxy handler for /task/{id}/status endpoint."""
 
     def get_proxy_path(self) -> str:
-        # Extract task_id from URL
         request_path = self.request.path
-        # Pattern: /hdsp-agent/task/{id}/status
         parts = request_path.split("/")
         task_idx = parts.index("task") if "task" in parts else -1
         if task_idx >= 0 and task_idx + 1 < len(parts):
@@ -387,84 +559,74 @@ class TaskCancelProxyHandler(BaseProxyHandler):
         return "/task/unknown/cancel"
 
 
+class RAGReindexHandler(APIHandler):
+    """Handler for /rag/reindex endpoint using ServiceFactory."""
+
+    async def post(self):
+        """Trigger reindex operation."""
+        try:
+            factory = _get_service_factory()
+            rag_service = factory.get_rag_service()
+
+            body = json.loads(self.request.body.decode("utf-8")) if self.request.body else {}
+            force = body.get("force", False)
+
+            response = await rag_service.trigger_reindex(force=force)
+
+            self.set_header("Content-Type", "application/json")
+            self.write(response)
+
+        except Exception as e:
+            logger.error(f"RAG reindex failed: {e}", exc_info=True)
+            self.set_status(500)
+            self.write({"error": str(e)})
+
+
+# ============ Handler Setup ============
+
+
 def setup_handlers(web_app):
-    """Register all proxy handlers."""
+    """Register all handlers based on execution mode."""
     host_pattern = ".*$"
     base_url = web_app.settings["base_url"]
 
     handlers = [
-        # Health check (local)
+        # Health check
         (url_path_join(base_url, "hdsp-agent", "health"), HealthHandler),
-        # Config endpoints
+        # Config endpoint (still proxied)
         (url_path_join(base_url, "hdsp-agent", "config"), ConfigProxyHandler),
+
+        # ===== ServiceFactory-based handlers =====
         # Agent endpoints
-        (
-            url_path_join(base_url, "hdsp-agent", "auto-agent", "plan"),
-            AgentPlanProxyHandler,
-        ),
-        (
-            url_path_join(base_url, "hdsp-agent", "auto-agent", "refine"),
-            AgentRefineProxyHandler,
-        ),
-        (
-            url_path_join(base_url, "hdsp-agent", "auto-agent", "replan"),
-            AgentReplanProxyHandler,
-        ),
-        (
-            url_path_join(base_url, "hdsp-agent", "auto-agent", "validate"),
-            AgentValidateProxyHandler,
-        ),
-        (
-            url_path_join(base_url, "hdsp-agent", "auto-agent", "reflect"),
-            AgentReflectProxyHandler,
-        ),
-        (
-            url_path_join(base_url, "hdsp-agent", "auto-agent", "verify-state"),
-            AgentVerifyStateProxyHandler,
-        ),
-        (
-            url_path_join(base_url, "hdsp-agent", "auto-agent", "plan", "stream"),
-            AgentPlanStreamProxyHandler,
-        ),
+        (url_path_join(base_url, "hdsp-agent", "auto-agent", "plan"), AgentPlanHandler),
+        (url_path_join(base_url, "hdsp-agent", "auto-agent", "refine"), AgentRefineHandler),
+        (url_path_join(base_url, "hdsp-agent", "auto-agent", "replan"), AgentReplanHandler),
+        (url_path_join(base_url, "hdsp-agent", "auto-agent", "validate"), AgentValidateHandler),
+
         # Chat endpoints
-        (
-            url_path_join(base_url, "hdsp-agent", "chat", "message"),
-            ChatMessageProxyHandler,
-        ),
-        (
-            url_path_join(base_url, "hdsp-agent", "chat", "stream"),
-            ChatStreamProxyHandler,
-        ),
+        (url_path_join(base_url, "hdsp-agent", "chat", "message"), ChatMessageHandler),
+        (url_path_join(base_url, "hdsp-agent", "chat", "stream"), ChatStreamHandler),
+
+        # RAG endpoints
+        (url_path_join(base_url, "hdsp-agent", "rag", "search"), RAGSearchHandler),
+        (url_path_join(base_url, "hdsp-agent", "rag", "status"), RAGStatusHandler),
+        (url_path_join(base_url, "hdsp-agent", "rag", "reindex"), RAGReindexHandler),
+
+        # ===== Proxy-only handlers (not yet migrated to ServiceFactory) =====
+        (url_path_join(base_url, "hdsp-agent", "auto-agent", "reflect"), AgentReflectProxyHandler),
+        (url_path_join(base_url, "hdsp-agent", "auto-agent", "verify-state"), AgentVerifyStateProxyHandler),
+        (url_path_join(base_url, "hdsp-agent", "auto-agent", "plan", "stream"), AgentPlanStreamProxyHandler),
+
         # Cell/File action endpoints
-        (
-            url_path_join(base_url, "hdsp-agent", "cell", "action"),
-            CellActionProxyHandler,
-        ),
-        (
-            url_path_join(base_url, "hdsp-agent", "file", "action"),
-            FileActionProxyHandler,
-        ),
-        (
-            url_path_join(base_url, "hdsp-agent", "file", "resolve"),
-            FileResolveProxyHandler,
-        ),
-        (
-            url_path_join(base_url, "hdsp-agent", "file", "select"),
-            FileSelectProxyHandler,
-        ),
-        # Task endpoints (with regex for task_id)
-        (
-            url_path_join(base_url, "hdsp-agent", "task", r"([^/]+)", "status"),
-            TaskStatusProxyHandler,
-        ),
-        (
-            url_path_join(base_url, "hdsp-agent", "task", r"([^/]+)", "stream"),
-            TaskStreamProxyHandler,
-        ),
-        (
-            url_path_join(base_url, "hdsp-agent", "task", r"([^/]+)", "cancel"),
-            TaskCancelProxyHandler,
-        ),
+        (url_path_join(base_url, "hdsp-agent", "cell", "action"), CellActionProxyHandler),
+        (url_path_join(base_url, "hdsp-agent", "file", "action"), FileActionProxyHandler),
+        (url_path_join(base_url, "hdsp-agent", "file", "resolve"), FileResolveProxyHandler),
+        (url_path_join(base_url, "hdsp-agent", "file", "select"), FileSelectProxyHandler),
+
+        # Task endpoints
+        (url_path_join(base_url, "hdsp-agent", "task", r"([^/]+)", "status"), TaskStatusProxyHandler),
+        (url_path_join(base_url, "hdsp-agent", "task", r"([^/]+)", "stream"), TaskStreamProxyHandler),
+        (url_path_join(base_url, "hdsp-agent", "task", r"([^/]+)", "cancel"), TaskCancelProxyHandler),
     ]
 
     web_app.add_handlers(host_pattern, handlers)

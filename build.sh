@@ -31,8 +31,29 @@ echo ""
 # Step 1: Build Agent Server
 echo "1. Building Agent Server..."
 cd "$ROOT_DIR/agent-server"
+
+# Temporarily add torch==2.2.2 for Mac build compatibility
+echo "Temporarily adding torch==2.2.2 for build..."
+if ! grep -q 'torch = "2.2.2"' pyproject.toml; then
+    # Add torch after sentence-transformers dependency line (not comments)
+    sed -i.bak '/^sentence-transformers = /a\
+torch = "2.2.2"  # Temporary: Auto-added by build.sh for Mac compatibility
+' pyproject.toml
+    TORCH_ADDED=true
+else
+    TORCH_ADDED=false
+fi
+
 poetry install --no-interaction
 poetry run pytest tests/ -v --tb=short
+
+# Remove temporary torch addition
+if [ "$TORCH_ADDED" = true ]; then
+    echo "Removing temporary torch from pyproject.toml..."
+    mv pyproject.toml.bak pyproject.toml 2>/dev/null || sed -i.bak '/torch = "2.2.2"/d' pyproject.toml
+    rm -f pyproject.toml.bak
+fi
+
 echo "Agent Server build complete"
 echo ""
 
@@ -66,16 +87,39 @@ echo "Building labextension..."
 cd "$ROOT_DIR"
 poetry run jupyter labextension build "$ROOT_DIR/extensions/jupyter" --development True
 
-# Install Jupyter Extension (Python package + server extension)
-echo "Installing Jupyter Extension..."
-poetry run pip install -e "$ROOT_DIR/extensions/jupyter"
-poetry run jupyter labextension develop --overwrite "$ROOT_DIR/extensions/jupyter"
-
 echo "Jupyter Extension build complete"
 echo ""
 
-# Step 3: Show results
+# Step 3: Build whl package (with embedded agent-server)
+echo "3. Building whl package..."
+cd "$ROOT_DIR/extensions/jupyter"
+
+# Copy agent_server and hdsp_agent_core for whl build
+echo "Copying agent_server and hdsp_agent_core modules..."
+if [ -d "agent_server" ]; then
+    rm -rf agent_server
+fi
+if [ -d "hdsp_agent_core" ]; then
+    rm -rf hdsp_agent_core
+fi
+cp -r "$ROOT_DIR/agent-server/agent_server" .
+cp -r "$ROOT_DIR/hdsp_agent_core/hdsp_agent_core" .
+
+# Build whl
+echo "Building whl with python -m build..."
+python -m build
+
+# Cleanup copied modules
+rm -rf agent_server hdsp_agent_core
+
+echo "whl package built:"
+ls -lh dist/*.whl
+echo ""
+
+# Step 4: Show results
 echo "Build complete!"
+echo ""
+echo "whl location: $ROOT_DIR/extensions/jupyter/dist/"
 echo ""
 echo "To run:"
 echo "  Agent Server: cd agent-server && poetry run uvicorn agent_server.main:app --port 8000"

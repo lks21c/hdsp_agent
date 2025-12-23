@@ -2,18 +2,19 @@
 HDSP Agent Server - FastAPI Entry Point
 
 AI Agent Server for IDE integrations (JupyterLab, VS Code, PyCharm)
+
+This server always runs in embedded mode (HDSP_AGENT_MODE=embedded)
+since it's the actual implementation server that executes agent logic.
 """
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from agent_server.routers import health, config, agent, chat, rag, file_resolver
-from agent_server.core.config_manager import ConfigManager
-from agent_server.core.rag_manager import get_rag_manager, reset_rag_manager
-from agent_server.schemas.rag import get_default_rag_config
 
 # Configure logging
 logging.basicConfig(
@@ -28,7 +29,57 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler for startup/shutdown events"""
     # Startup
     logger.info("Starting HDSP Agent Server...")
+
+    # Force embedded mode for the server (it IS the implementation)
+    os.environ.setdefault("HDSP_AGENT_MODE", "embedded")
+
     try:
+        from hdsp_agent_core.factory import get_service_factory
+
+        factory = get_service_factory()
+        await factory.initialize()
+
+        logger.info(f"ServiceFactory initialized in {factory.mode.value} mode")
+
+        # Log service status
+        rag_service = factory.get_rag_service()
+        if rag_service.is_ready():
+            logger.info("RAG service ready")
+        else:
+            logger.info("RAG service not ready (will start without RAG)")
+
+    except ImportError as e:
+        logger.warning(f"hdsp_agent_core not available: {e}")
+        # Fallback to legacy initialization
+        await _legacy_startup()
+    except Exception as e:
+        logger.warning(f"Failed to initialize ServiceFactory: {e}")
+        # Fallback to legacy initialization
+        await _legacy_startup()
+
+    yield
+
+    # Shutdown
+    logger.info("Shutting down HDSP Agent Server...")
+
+    try:
+        from hdsp_agent_core.factory import get_service_factory
+
+        factory = get_service_factory()
+        await factory.shutdown()
+        logger.info("ServiceFactory shutdown complete")
+    except Exception as e:
+        logger.warning(f"Error during ServiceFactory shutdown: {e}")
+        # Fallback to legacy shutdown
+        await _legacy_shutdown()
+
+
+async def _legacy_startup():
+    """Legacy startup for backward compatibility (when hdsp_agent_core not available)"""
+    logger.info("Using legacy startup (hdsp_agent_core not available)")
+
+    try:
+        from agent_server.core.config_manager import ConfigManager
         ConfigManager.get_instance()
         logger.info("Configuration loaded successfully")
     except Exception as e:
@@ -36,6 +87,9 @@ async def lifespan(app: FastAPI):
 
     # Initialize RAG system
     try:
+        from agent_server.core.rag_manager import get_rag_manager
+        from agent_server.schemas.rag import get_default_rag_config
+
         rag_config = get_default_rag_config()
         if rag_config.is_enabled():
             rag_manager = get_rag_manager(rag_config)
@@ -45,22 +99,22 @@ async def lifespan(app: FastAPI):
             logger.info("RAG system disabled by configuration")
     except Exception as e:
         logger.warning(f"Failed to initialize RAG system: {e}")
-        # Continue without RAG - graceful degradation
 
-    yield
 
-    # Shutdown
-    logger.info("Shutting down HDSP Agent Server...")
+async def _legacy_shutdown():
+    """Legacy shutdown for backward compatibility"""
+    logger.info("Using legacy shutdown")
 
-    # Shutdown RAG system
     try:
+        from agent_server.core.rag_manager import get_rag_manager, reset_rag_manager
+
         rag_manager = get_rag_manager()
         if rag_manager.is_ready:
             await rag_manager.shutdown()
             logger.info("RAG system shut down successfully")
         reset_rag_manager()
     except Exception as e:
-        logger.warning(f"Error during RAG shutdown: {e}")
+        logger.warning(f"Error during legacy RAG shutdown: {e}")
 
 
 app = FastAPI(

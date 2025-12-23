@@ -1,10 +1,14 @@
 """
-HDSP Jupyter Extension - Thin client for HDSP Agent Server.
+HDSP Jupyter Extension - Dual-mode client for HDSP Agent.
 
-This extension proxies requests from JupyterLab frontend to the HDSP Agent Server.
-All AI logic and processing happens in the Agent Server.
+Supports two execution modes:
+- Embedded mode (embed_agent_server=true): Direct in-process execution via uvicorn thread
+- Proxy mode (embed_agent_server=false): HTTP proxy to external Agent Server
+
+Configuration: ~/.jupyter/hdsp_agent_config.json
 """
 
+import asyncio
 import os
 import sys
 import traceback
@@ -65,6 +69,9 @@ def _ensure_config_files():
             default_config = {
                 "provider": "gemini",
                 "agent_server_url": "http://localhost:8000",
+                "agent_server_port": 8000,
+                "agent_server_timeout": 120.0,
+                "embed_agent_server": False,
                 "gemini": {"apiKey": "", "model": "gemini-2.5-pro"},
                 "vllm": {
                     "endpoint": "http://localhost:8000",
@@ -81,10 +88,115 @@ def _ensure_config_files():
         pass
 
 
+def _start_embedded_agent_server(server_app, port: int):
+    """Start agent server in embedded mode (same process via uvicorn thread)."""
+    import threading
+
+    import uvicorn
+
+    # Try to import from installed package first, then fallback to dev path
+    try:
+        from agent_server.main import app as agent_app
+    except ImportError:
+        # Development mode: add agent-server to path
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+        agent_server_path = os.path.join(project_root, "agent-server")
+        if os.path.exists(agent_server_path) and agent_server_path not in sys.path:
+            sys.path.insert(0, agent_server_path)
+        from agent_server.main import app as agent_app
+
+    def run_uvicorn():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        config = uvicorn.Config(
+            agent_app,
+            host="127.0.0.1",
+            port=port,
+            log_level="info",
+            access_log=False,
+        )
+        server = uvicorn.Server(config)
+        loop.run_until_complete(server.serve())
+
+    thread = threading.Thread(target=run_uvicorn, daemon=True, name="EmbeddedAgentServer")
+    thread.start()
+
+    # Wait for agent server to be ready
+    import time
+    ready = False
+    for i in range(50):  # 5 seconds timeout
+        try:
+            import httpx
+            response = httpx.get(f"http://127.0.0.1:{port}/health", timeout=0.2)
+            if response.status_code == 200:
+                ready = True
+                break
+        except Exception:
+            pass
+        time.sleep(0.1)
+
+    if ready:
+        server_app.log.info(f"Embedded Agent Server ready on http://127.0.0.1:{port}")
+    else:
+        server_app.log.warning(f"Embedded Agent Server started on http://127.0.0.1:{port} (may still be initializing)")
+
+
+async def _initialize_service_factory(server_app):
+    """Initialize ServiceFactory if hdsp_agent_core is available."""
+    try:
+        from hdsp_agent_core.factory import get_service_factory
+
+        factory = get_service_factory()
+        await factory.initialize()
+
+        mode = factory.mode.value
+        server_app.log.info(f"HDSP Agent ServiceFactory initialized in {mode} mode")
+
+        if factory.is_embedded:
+            rag_service = factory.get_rag_service()
+            rag_ready = rag_service.is_ready()
+            server_app.log.info(f"  RAG service ready: {rag_ready}")
+        else:
+            server_app.log.info(f"  Agent Server URL: {factory.server_url}")
+
+    except ImportError:
+        # hdsp_agent_core not available, skip ServiceFactory initialization
+        pass
+    except Exception as e:
+        server_app.log.warning(f"ServiceFactory initialization failed: {e}")
+
+
+def _schedule_initialization(server_app):
+    """Schedule async initialization in the event loop."""
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.ensure_future(_initialize_service_factory(server_app))
+        else:
+            loop.run_until_complete(_initialize_service_factory(server_app))
+    except RuntimeError:
+        asyncio.run(_initialize_service_factory(server_app))
+
+
 def load_jupyter_server_extension(server_app):
     """Load the Jupyter Server extension."""
     # [Auto-config] Create config files if they don't exist
     _ensure_config_files()
+
+    # Load configuration (from hdsp_agent_config.json + env overrides)
+    from .config import get_agent_server_config
+
+    config = get_agent_server_config()
+    embed_agent_server = config.embed_agent_server
+
+    if embed_agent_server:
+        try:
+            _start_embedded_agent_server(server_app, config.agent_server_port)
+        except Exception as e:
+            server_app.log.warning(f"Failed to start embedded agent server: {e}")
+            server_app.log.warning(traceback.format_exc())
+            server_app.log.warning("Falling back to proxy mode")
+            embed_agent_server = False
 
     try:
         from .handlers import setup_handlers
@@ -93,10 +205,17 @@ def load_jupyter_server_extension(server_app):
         setup_handlers(web_app)
 
         server_app.log.info("HDSP Jupyter Extension loaded (v%s)", __version__)
-        server_app.log.info(
-            "Proxying requests to Agent Server at: %s",
-            os.environ.get("AGENT_SERVER_URL", "http://localhost:8000"),
-        )
+        if embed_agent_server:
+            server_app.log.info("Running in EMBEDDED mode (single process)")
+            # In embedded mode, ServiceFactory is initialized by agent_server's lifespan
+            # Don't initialize here to avoid race condition
+        else:
+            server_app.log.info(
+                "Proxying requests to Agent Server at: %s",
+                config.base_url,
+            )
+            # In proxy mode, initialize ServiceFactory for client-side services
+            _schedule_initialization(server_app)
 
     except Exception as e:
         server_app.log.error(f"Failed to load HDSP Jupyter Extension: {e}")
