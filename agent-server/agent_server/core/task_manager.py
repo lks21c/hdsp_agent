@@ -4,13 +4,14 @@ Task Manager - Manages background notebook generation tasks
 
 import asyncio
 import uuid
-from typing import Dict, Any, Optional, Callable
 from datetime import datetime
 from enum import Enum
+from typing import Any, Callable, Dict, Optional
 
 
 class TaskStatus(Enum):
     """Task status enumeration"""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -37,17 +38,17 @@ class Task:
     def to_dict(self) -> Dict[str, Any]:
         """Convert task to dictionary"""
         return {
-            'taskId': self.task_id,
-            'prompt': self.prompt,
-            'status': self.status.value,
-            'progress': self.progress,
-            'message': self.message,
-            'result': self.result,
-            'error': self.error,
-            'notebookPath': self.notebook_path,
-            'createdAt': self.created_at.isoformat(),
-            'startedAt': self.started_at.isoformat() if self.started_at else None,
-            'completedAt': self.completed_at.isoformat() if self.completed_at else None
+            "taskId": self.task_id,
+            "prompt": self.prompt,
+            "status": self.status.value,
+            "progress": self.progress,
+            "message": self.message,
+            "result": self.result,
+            "error": self.error,
+            "notebookPath": self.notebook_path,
+            "createdAt": self.created_at.isoformat(),
+            "startedAt": self.started_at.isoformat() if self.started_at else None,
+            "completedAt": self.completed_at.isoformat() if self.completed_at else None,
         }
 
 
@@ -106,43 +107,52 @@ class TaskManager:
 
     def start_task(self, task_id: str):
         """Mark task as started"""
-        self._update_task_state(task_id, {
-            'status': TaskStatus.RUNNING,
-            'started_at': datetime.now(),
-            'progress': 5,
-            'message': "작업 시작..."
-        })
+        self._update_task_state(
+            task_id,
+            {
+                "status": TaskStatus.RUNNING,
+                "started_at": datetime.now(),
+                "progress": 5,
+                "message": "작업 시작...",
+            },
+        )
 
     def complete_task(self, task_id: str, notebook_path: str, result: Any = None):
         """Mark task as completed"""
-        self._update_task_state(task_id, {
-            'status': TaskStatus.COMPLETED,
-            'completed_at': datetime.now(),
-            'progress': 100,
-            'message': "완료!",
-            'notebook_path': notebook_path,
-            'result': result
-        })
+        self._update_task_state(
+            task_id,
+            {
+                "status": TaskStatus.COMPLETED,
+                "completed_at": datetime.now(),
+                "progress": 100,
+                "message": "완료!",
+                "notebook_path": notebook_path,
+                "result": result,
+            },
+        )
 
     def fail_task(self, task_id: str, error: str):
         """Mark task as failed"""
-        self._update_task_state(task_id, {
-            'status': TaskStatus.FAILED,
-            'completed_at': datetime.now(),
-            'error': error,
-            'message': f"실패: {error}"
-        })
+        self._update_task_state(
+            task_id,
+            {
+                "status": TaskStatus.FAILED,
+                "completed_at": datetime.now(),
+                "error": error,
+                "message": f"실패: {error}",
+            },
+        )
 
     def cancel_task(self, task_id: str):
         """Cancel a task"""
         self._update_task_state(
             task_id,
             {
-                'status': TaskStatus.CANCELLED,
-                'completed_at': datetime.now(),
-                'message': "취소됨"
+                "status": TaskStatus.CANCELLED,
+                "completed_at": datetime.now(),
+                "message": "취소됨",
             },
-            condition=lambda t: t.status in [TaskStatus.PENDING, TaskStatus.RUNNING]
+            condition=lambda t: t.status in [TaskStatus.PENDING, TaskStatus.RUNNING],
         )
 
     def add_progress_callback(self, task_id: str, callback: Callable):
@@ -170,7 +180,11 @@ class TaskManager:
         to_remove = []
 
         for task_id, task in self.tasks.items():
-            if task.status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED]:
+            if task.status in [
+                TaskStatus.COMPLETED,
+                TaskStatus.FAILED,
+                TaskStatus.CANCELLED,
+            ]:
                 if task.completed_at:
                     age = (now - task.completed_at).total_seconds() / 3600
                     if age > max_age_hours:

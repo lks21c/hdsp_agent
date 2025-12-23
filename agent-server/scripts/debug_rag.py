@@ -45,8 +45,9 @@ async def run_debug_search(
     include_full_content: bool,
 ) -> None:
     """Run debug search and print results."""
+    from hdsp_agent_core.models.rag import get_default_rag_config
+
     from agent_server.core.rag_manager import get_rag_manager
-    from agent_server.schemas.rag import get_default_rag_config
 
     # Initialize RAG manager
     config = get_default_rag_config()

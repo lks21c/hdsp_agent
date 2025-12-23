@@ -5,9 +5,7 @@ Python 파일 분석 및 에러 수정용 LLM 프롬프트
 
 
 def format_file_fix_prompt(
-    main_file: dict,
-    error_output: str,
-    related_files: list = None
+    main_file: dict, error_output: str, related_files: list = None
 ) -> str:
     """Python 파일 에러 수정용 프롬프트 생성
 
@@ -20,7 +18,7 @@ def format_file_fix_prompt(
     if related_files:
         related_context = "\n## 관련 파일들\n"
         for rf in related_files:
-            if rf.get('content'):
+            if rf.get("content"):
                 related_context += f"""
 ### {rf['path']}
 ```python
@@ -90,16 +88,14 @@ def format_file_explain_prompt(file_path: str, file_content: str) -> str:
 
 
 def format_file_custom_prompt(
-    main_file: dict,
-    custom_prompt: str,
-    related_files: list = None
+    main_file: dict, custom_prompt: str, related_files: list = None
 ) -> str:
     """커스텀 질문용 프롬프트 생성"""
     related_context = ""
     if related_files:
         related_context = "\n## 관련 파일들\n"
         for rf in related_files:
-            if rf.get('content'):
+            if rf.get("content"):
                 related_context += f"""
 ### {rf['path']}
 ```python

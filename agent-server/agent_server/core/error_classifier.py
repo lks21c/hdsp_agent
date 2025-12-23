@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from agent_server.prompts.auto_agent_prompts import PIP_INDEX_OPTION
+from hdsp_agent_core.prompts.auto_agent_prompts import PIP_INDEX_OPTION
 
 
 class ReplanDecision(Enum):
@@ -155,8 +155,10 @@ class ErrorClassifier:
         installed_lower = {pkg.lower() for pkg in installed_packages}
 
         # Step 0: 일반 타입('runtime' 등)일 경우 traceback에서 실제 에러 추출
-        if error_type in ('runtime', 'timeout', 'safety', 'validation', 'environment'):
-            actual_error_type = self._extract_error_type_from_traceback(traceback, error_message)
+        if error_type in ("runtime", "timeout", "safety", "validation", "environment"):
+            actual_error_type = self._extract_error_type_from_traceback(
+                traceback, error_message
+            )
             if actual_error_type:
                 error_type = actual_error_type
 
@@ -201,7 +203,9 @@ class ErrorClassifier:
 
         return error_type
 
-    def _extract_error_type_from_traceback(self, traceback: str, error_message: str) -> Optional[str]:
+    def _extract_error_type_from_traceback(
+        self, traceback: str, error_message: str
+    ) -> Optional[str]:
         """
         traceback에서 실제 Python 에러 타입 추출
 
@@ -220,18 +224,18 @@ class ErrorClassifier:
 
         # traceback의 마지막 줄에서 에러 타입 추출
         # 형식: "ModuleNotFoundError: No module named 'matplotlib'"
-        lines = traceback.strip().split('\n')
+        lines = traceback.strip().split("\n")
 
         # 뒤에서부터 에러 타입 라인 찾기
         for line in reversed(lines):
             line = line.strip()
 
             # ANSI 색상 코드 제거
-            line = re.sub(r'\x1b\[[0-9;]*m', '', line)
+            line = re.sub(r"\x1b\[[0-9;]*m", "", line)
 
             # Python 에러 타입 패턴 매칭
             # 예: "ModuleNotFoundError: ..." 또는 "ModuleNotFoundError                       Traceback..."
-            error_pattern = r'^([A-Z][a-zA-Z0-9]*Error|[A-Z][a-zA-Z0-9]*Exception)[\s:]'
+            error_pattern = r"^([A-Z][a-zA-Z0-9]*Error|[A-Z][a-zA-Z0-9]*Exception)[\s:]"
             match = re.match(error_pattern, line)
 
             if match:
@@ -485,7 +489,9 @@ class ErrorClassifier:
         model: str,
     ) -> ErrorAnalysis:
         """LLM을 사용한 에러 분석"""
-        from agent_server.prompts.auto_agent_prompts import format_error_analysis_prompt
+        from hdsp_agent_core.prompts.auto_agent_prompts import (
+            format_error_analysis_prompt,
+        )
 
         prompt = format_error_analysis_prompt(
             error_type=error_type,

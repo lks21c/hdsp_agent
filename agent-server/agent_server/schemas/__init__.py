@@ -1,16 +1,10 @@
 """
 Agent Server API Schemas
 
-Pydantic models for request/response validation.
+Re-export from hdsp_agent_core.models for backward compatibility.
 """
 
-from .common import (
-    APIResponse,
-    ErrorInfo,
-    NotebookContext,
-    ToolCall,
-)
-from .agent import (
+from hdsp_agent_core.models.agent import (
     ExecutionPlan,
     PlanRequest,
     PlanResponse,
@@ -26,10 +20,16 @@ from .agent import (
     VerifyStateRequest,
     VerifyStateResponse,
 )
-from .chat import (
+from hdsp_agent_core.models.chat import (
     ChatRequest,
     ChatResponse,
     StreamChunk,
+)
+from hdsp_agent_core.models.common import (
+    APIResponse,
+    ErrorInfo,
+    NotebookContext,
+    ToolCall,
 )
 
 __all__ = [

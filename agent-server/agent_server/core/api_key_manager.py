@@ -12,14 +12,15 @@ Features:
 import asyncio
 import re
 import uuid
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple
 
 
 class KeyStatus(Enum):
     """Status of an API key"""
+
     ACTIVE = "active"
     COOLDOWN = "cooldown"
     DISABLED = "disabled"
@@ -28,6 +29,7 @@ class KeyStatus(Enum):
 @dataclass
 class KeyState:
     """Runtime state for an API key"""
+
     key: str
     id: str
     enabled: bool = True
@@ -59,10 +61,12 @@ class KeyState:
             "key": self.key,
             "id": self.id,
             "enabled": self.enabled,
-            "cooldownUntil": self.cooldown_until.isoformat() if self.cooldown_until else None,
+            "cooldownUntil": self.cooldown_until.isoformat()
+            if self.cooldown_until
+            else None,
             "lastUsed": self.last_used.isoformat() if self.last_used else None,
             "failureCount": self.failure_count,
-            "addedAt": self.added_at.isoformat()
+            "addedAt": self.added_at.isoformat(),
         }
 
     @classmethod
@@ -72,10 +76,16 @@ class KeyState:
             key=data["key"],
             id=data.get("id", f"key_{uuid.uuid4().hex[:8]}"),
             enabled=data.get("enabled", True),
-            cooldown_until=datetime.fromisoformat(data["cooldownUntil"]) if data.get("cooldownUntil") else None,
-            last_used=datetime.fromisoformat(data["lastUsed"]) if data.get("lastUsed") else None,
+            cooldown_until=datetime.fromisoformat(data["cooldownUntil"])
+            if data.get("cooldownUntil")
+            else None,
+            last_used=datetime.fromisoformat(data["lastUsed"])
+            if data.get("lastUsed")
+            else None,
             failure_count=data.get("failureCount", 0),
-            added_at=datetime.fromisoformat(data["addedAt"]) if data.get("addedAt") else datetime.utcnow()
+            added_at=datetime.fromisoformat(data["addedAt"])
+            if data.get("addedAt")
+            else datetime.utcnow(),
         )
 
 
@@ -131,10 +141,9 @@ class GeminiKeyManager:
             single_key = gemini_config["apiKey"]
             # Don't migrate masked keys
             if not single_key.startswith("****"):
-                self._keys = [KeyState(
-                    key=single_key,
-                    id=f"key_{uuid.uuid4().hex[:8]}"
-                )]
+                self._keys = [
+                    KeyState(key=single_key, id=f"key_{uuid.uuid4().hex[:8]}")
+                ]
                 self._current_index = 0
                 # Migrate to new format
                 self._save_keys()
@@ -156,7 +165,7 @@ class GeminiKeyManager:
             "model": model,
             "keys": [k.to_dict() for k in self._keys],
             "activeKeyIndex": self._current_index,
-            "rotationStrategy": "round-robin"
+            "rotationStrategy": "round-robin",
         }
 
         # Also set legacy apiKey for backward compatibility
@@ -218,9 +227,7 @@ class GeminiKeyManager:
             return None, None
 
         # Sort by cooldown expiry
-        available_keys.sort(
-            key=lambda k: k.cooldown_until or datetime.min
-        )
+        available_keys.sort(key=lambda k: k.cooldown_until or datetime.min)
 
         return available_keys[0].key, available_keys[0].id
 
@@ -247,7 +254,7 @@ class GeminiKeyManager:
         self,
         key_id: str,
         retry_after: Optional[int] = None,
-        error_message: Optional[str] = None
+        error_message: Optional[str] = None,
     ):
         """
         Mark a key as rate limited and set cooldown.
@@ -258,9 +265,7 @@ class GeminiKeyManager:
             error_message: Error message to parse for cooldown duration
         """
         async with self._lock:
-            cooldown_seconds = self._parse_cooldown_duration(
-                retry_after, error_message
-            )
+            cooldown_seconds = self._parse_cooldown_duration(retry_after, error_message)
 
             for key_state in self._keys:
                 if key_state.id == key_id:
@@ -273,13 +278,13 @@ class GeminiKeyManager:
                     self._current_index = (self._current_index + 1) % len(self._keys)
 
                     self._save_keys()
-                    print(f"[KeyManager] Key {key_id} rate limited. Cooldown: {cooldown_seconds}s. Rotating to next key.")
+                    print(
+                        f"[KeyManager] Key {key_id} rate limited. Cooldown: {cooldown_seconds}s. Rotating to next key."
+                    )
                     break
 
     def _parse_cooldown_duration(
-        self,
-        retry_after: Optional[int],
-        error_message: Optional[str]
+        self, retry_after: Optional[int], error_message: Optional[str]
     ) -> int:
         """
         Parse cooldown duration from various sources.
@@ -324,10 +329,7 @@ class GeminiKeyManager:
             if k.key == api_key:
                 return False, "Key already exists"
 
-        new_key = KeyState(
-            key=api_key,
-            id=f"key_{uuid.uuid4().hex[:8]}"
-        )
+        new_key = KeyState(key=api_key, id=f"key_{uuid.uuid4().hex[:8]}")
         self._keys.append(new_key)
         self._save_keys()
 
@@ -367,16 +369,18 @@ class GeminiKeyManager:
         result = []
         for i, k in enumerate(self._keys):
             masked_key = f"****{k.key[-4:]}" if len(k.key) > 4 else "****"
-            result.append({
-                "id": k.id,
-                "maskedKey": masked_key,
-                "status": k.status.value,
-                "cooldownRemaining": k.cooldown_remaining_seconds,
-                "lastUsed": k.last_used.isoformat() if k.last_used else None,
-                "failureCount": k.failure_count,
-                "isActive": i == self._current_index,
-                "enabled": k.enabled
-            })
+            result.append(
+                {
+                    "id": k.id,
+                    "maskedKey": masked_key,
+                    "status": k.status.value,
+                    "cooldownRemaining": k.cooldown_remaining_seconds,
+                    "lastUsed": k.last_used.isoformat() if k.last_used else None,
+                    "failureCount": k.failure_count,
+                    "isActive": i == self._current_index,
+                    "enabled": k.enabled,
+                }
+            )
 
         return result
 
@@ -405,7 +409,9 @@ class GeminiKeyManager:
         wait_seconds = shortest.cooldown_remaining_seconds
 
         if wait_seconds > 0:
-            print(f"[KeyManager] All keys in cooldown. Waiting {wait_seconds}s for key {shortest.id}...")
+            print(
+                f"[KeyManager] All keys in cooldown. Waiting {wait_seconds}s for key {shortest.id}..."
+            )
             await asyncio.sleep(wait_seconds + 1)  # +1 for safety margin
 
         return await self.get_available_key()

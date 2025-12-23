@@ -10,20 +10,9 @@ import re
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException
-
-from agent_server.core.code_validator import CodeValidator
-from agent_server.core.config_manager import ConfigManager
-from agent_server.core.error_classifier import get_error_classifier
-from agent_server.core.llm_service import LLMService
-from agent_server.core.rag_manager import get_rag_manager
-from agent_server.core.state_verifier import get_state_verifier
-from agent_server.knowledge.loader import get_knowledge_base, get_library_detector
-from agent_server.prompts.auto_agent_prompts import (
-    format_plan_prompt,
-    format_refine_prompt,
-    format_reflection_prompt,
-)
-from agent_server.schemas.agent import (
+from hdsp_agent_core.knowledge.loader import get_knowledge_base, get_library_detector
+from hdsp_agent_core.managers.config_manager import ConfigManager
+from hdsp_agent_core.models.agent import (
     PlanRequest,
     PlanResponse,
     RefineRequest,
@@ -39,6 +28,17 @@ from agent_server.schemas.agent import (
     VerifyStateRequest,
     VerifyStateResponse,
 )
+from hdsp_agent_core.prompts.auto_agent_prompts import (
+    format_plan_prompt,
+    format_refine_prompt,
+    format_reflection_prompt,
+)
+
+from agent_server.core.code_validator import CodeValidator
+from agent_server.core.error_classifier import get_error_classifier
+from agent_server.core.llm_service import LLMService
+from agent_server.core.rag_manager import get_rag_manager
+from agent_server.core.state_verifier import get_state_verifier
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -504,7 +504,9 @@ async def validate_code(request: ValidateRequest) -> Dict[str, Any]:
         return {
             "valid": result.is_valid,
             "issues": [issue.to_dict() for issue in result.issues],
-            "dependencies": result.dependencies.to_dict() if result.dependencies else None,
+            "dependencies": result.dependencies.to_dict()
+            if result.dependencies
+            else None,
             "hasErrors": result.has_errors,
             "hasWarnings": result.has_warnings,
             "summary": result.summary,
@@ -527,7 +529,9 @@ async def reflect_on_step(request: ReflectRequest) -> Dict[str, Any]:
 
     This is called after each step execution to guide adaptive planning.
     """
-    logger.info(f"Reflect request for step {request.stepNumber}: {request.stepDescription[:50]}...")
+    logger.info(
+        f"Reflect request for step {request.stepNumber}: {request.stepDescription[:50]}..."
+    )
 
     try:
         # Build reflection prompt
@@ -567,7 +571,9 @@ async def reflect_on_step(request: ReflectRequest) -> Dict[str, Any]:
                     "impact_on_remaining": {
                         "affected_steps": [],
                         "severity": "none" if is_success else "minor",
-                        "description": "영향 없음" if is_success else "다음 단계 확인 필요",
+                        "description": "영향 없음"
+                        if is_success
+                        else "다음 단계 확인 필요",
                     },
                     "recommendations": {
                         "action": "continue" if is_success else "retry",

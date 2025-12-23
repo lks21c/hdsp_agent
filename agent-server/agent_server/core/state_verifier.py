@@ -5,14 +5,15 @@ LLM 호출 없이 결정론적 검증 수행
 """
 
 import re
-from dataclasses import dataclass, field
-from enum import Enum
-from typing import Optional, List, Dict, Any
 import time
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Dict, List, Optional
 
 
 class MismatchType(Enum):
     """상태 불일치 유형"""
+
     VARIABLE_MISSING = "variable_missing"
     VARIABLE_TYPE_MISMATCH = "variable_type_mismatch"
     OUTPUT_MISSING = "output_missing"
@@ -25,6 +26,7 @@ class MismatchType(Enum):
 
 class Severity(Enum):
     """불일치 심각도"""
+
     CRITICAL = "critical"
     MAJOR = "major"
     MINOR = "minor"
@@ -32,10 +34,11 @@ class Severity(Enum):
 
 class Recommendation(Enum):
     """권장 사항"""
-    PROCEED = "proceed"      # confidence >= 0.8
-    WARNING = "warning"      # 0.6 <= confidence < 0.8
-    REPLAN = "replan"        # 0.4 <= confidence < 0.6
-    ESCALATE = "escalate"    # confidence < 0.4
+
+    PROCEED = "proceed"  # confidence >= 0.8
+    WARNING = "warning"  # 0.6 <= confidence < 0.8
+    REPLAN = "replan"  # 0.4 <= confidence < 0.6
+    ESCALATE = "escalate"  # confidence < 0.4
 
 
 # 신뢰도 임계값
@@ -58,6 +61,7 @@ DEFAULT_WEIGHTS = {
 @dataclass
 class StateMismatch:
     """개별 상태 불일치 상세 정보"""
+
     type: MismatchType
     severity: Severity
     description: str
@@ -79,6 +83,7 @@ class StateMismatch:
 @dataclass
 class ConfidenceScore:
     """신뢰도 계산 상세 정보"""
+
     overall: float
     factors: Dict[str, float]
     weights: Dict[str, float]
@@ -94,6 +99,7 @@ class ConfidenceScore:
 @dataclass
 class StateVerificationResult:
     """상태 검증 결과"""
+
     is_valid: bool
     confidence: float
     confidence_details: ConfidenceScore
@@ -188,18 +194,19 @@ class StateVerifier:
             # 에러 타입 추출
             error_type = self._extract_error_type(error_message or "")
             suggestion = self.ERROR_SUGGESTIONS.get(
-                error_type,
-                "에러 메시지를 확인하고 코드를 수정하세요"
+                error_type, "에러 메시지를 확인하고 코드를 수정하세요"
             )
 
-            mismatches.append(StateMismatch(
-                type=MismatchType.EXCEPTION_OCCURRED,
-                severity=Severity.CRITICAL,
-                description=f"실행 중 예외 발생: {error_type}",
-                expected="에러 없음",
-                actual=error_message[:200] if error_message else "Unknown error",
-                suggestion=suggestion,
-            ))
+            mismatches.append(
+                StateMismatch(
+                    type=MismatchType.EXCEPTION_OCCURRED,
+                    severity=Severity.CRITICAL,
+                    description=f"실행 중 예외 발생: {error_type}",
+                    expected="에러 없음",
+                    actual=error_message[:200] if error_message else "Unknown error",
+                    suggestion=suggestion,
+                )
+            )
 
             # Import 에러 특별 처리
             if error_type in ("ModuleNotFoundError", "ImportError"):
@@ -208,11 +215,13 @@ class StateVerifier:
                     mismatches.append(import_mismatch)
 
         # 2. 변수 생성 검증
-        if expected_variables and previous_variables is not None and current_variables is not None:
+        if (
+            expected_variables
+            and previous_variables is not None
+            and current_variables is not None
+        ):
             var_score, var_mismatches = self._verify_variables(
-                expected_variables,
-                previous_variables,
-                current_variables
+                expected_variables, previous_variables, current_variables
             )
             factors["variable_creation"] = var_score
             mismatches.extend(var_mismatches)
@@ -220,8 +229,7 @@ class StateVerifier:
         # 3. 출력 패턴 검증
         if expected_output_patterns:
             output_score, output_mismatches = self._verify_output_patterns(
-                expected_output_patterns,
-                execution_output
+                expected_output_patterns, execution_output
             )
             factors["output_match"] = output_score
             mismatches.extend(output_mismatches)
@@ -260,9 +268,16 @@ class StateVerifier:
 
         # 에러 메시지에서 키워드 검색
         error_keywords = [
-            "ModuleNotFoundError", "ImportError", "NameError",
-            "TypeError", "ValueError", "KeyError", "IndexError",
-            "FileNotFoundError", "AttributeError", "SyntaxError",
+            "ModuleNotFoundError",
+            "ImportError",
+            "NameError",
+            "TypeError",
+            "ValueError",
+            "KeyError",
+            "IndexError",
+            "FileNotFoundError",
+            "AttributeError",
+            "SyntaxError",
         ]
         for keyword in error_keywords:
             if keyword in error_message:
@@ -305,14 +320,16 @@ class StateVerifier:
             if expected in created_vars or expected in current_set:
                 match_count += 1
             else:
-                mismatches.append(StateMismatch(
-                    type=MismatchType.VARIABLE_MISSING,
-                    severity=Severity.MAJOR,
-                    description=f"예상 변수 '{expected}'가 생성되지 않음",
-                    expected=expected,
-                    actual="(없음)",
-                    suggestion=f"변수 '{expected}'를 생성하는 코드가 올바르게 실행되었는지 확인하세요",
-                ))
+                mismatches.append(
+                    StateMismatch(
+                        type=MismatchType.VARIABLE_MISSING,
+                        severity=Severity.MAJOR,
+                        description=f"예상 변수 '{expected}'가 생성되지 않음",
+                        expected=expected,
+                        actual="(없음)",
+                        suggestion=f"변수 '{expected}'를 생성하는 코드가 올바르게 실행되었는지 확인하세요",
+                    )
+                )
 
         score = match_count / len(expected_vars) if expected_vars else 1.0
         return score, mismatches
@@ -332,13 +349,15 @@ class StateVerifier:
                 if regex.search(output):
                     match_count += 1
                 else:
-                    mismatches.append(StateMismatch(
-                        type=MismatchType.OUTPUT_MISMATCH,
-                        severity=Severity.MINOR,
-                        description="출력에서 예상 패턴을 찾을 수 없음",
-                        expected=pattern,
-                        actual=output[:100] + ("..." if len(output) > 100 else ""),
-                    ))
+                    mismatches.append(
+                        StateMismatch(
+                            type=MismatchType.OUTPUT_MISMATCH,
+                            severity=Severity.MINOR,
+                            description="출력에서 예상 패턴을 찾을 수 없음",
+                            expected=pattern,
+                            actual=output[:100] + ("..." if len(output) > 100 else ""),
+                        )
+                    )
             except re.error:
                 # 정규식 오류 시 문자열 포함 검사
                 if pattern in output:
@@ -350,8 +369,7 @@ class StateVerifier:
     def _calculate_confidence(self, factors: Dict[str, float]) -> ConfidenceScore:
         """신뢰도 점수 계산"""
         overall = sum(
-            factors.get(key, 0) * self.weights.get(key, 0)
-            for key in self.weights
+            factors.get(key, 0) * self.weights.get(key, 0) for key in self.weights
         )
 
         # 0과 1 사이로 클램프
@@ -382,9 +400,13 @@ class StateVerifier:
         """신뢰도 트렌드 분석"""
         if len(self.verification_history) < 2:
             return {
-                "average": self.verification_history[0].confidence if self.verification_history else 1.0,
+                "average": self.verification_history[0].confidence
+                if self.verification_history
+                else 1.0,
                 "trend": "stable",
-                "critical_count": sum(1 for v in self.verification_history if not v.is_valid),
+                "critical_count": sum(
+                    1 for v in self.verification_history if not v.is_valid
+                ),
             }
 
         confidences = [v.confidence for v in self.verification_history]
@@ -392,7 +414,11 @@ class StateVerifier:
 
         # 최근 3개와 이전 비교
         recent_avg = sum(confidences[-3:]) / min(3, len(confidences))
-        previous_avg = sum(confidences[:-3]) / max(1, len(confidences) - 3) if len(confidences) > 3 else recent_avg
+        previous_avg = (
+            sum(confidences[:-3]) / max(1, len(confidences) - 3)
+            if len(confidences) > 3
+            else recent_avg
+        )
 
         if recent_avg > previous_avg + 0.1:
             trend = "improving"
@@ -404,7 +430,9 @@ class StateVerifier:
         return {
             "average": average,
             "trend": trend,
-            "critical_count": sum(1 for v in self.verification_history if not v.is_valid),
+            "critical_count": sum(
+                1 for v in self.verification_history if not v.is_valid
+            ),
         }
 
     def clear_history(self):

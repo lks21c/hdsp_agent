@@ -8,15 +8,15 @@ Features:
 - Pattern-based file filtering
 """
 
-import logging
 import asyncio
+import logging
 import threading
+from datetime import datetime
 from pathlib import Path
-from typing import Optional, Callable, Set, TYPE_CHECKING
-from datetime import datetime, timedelta
+from typing import TYPE_CHECKING, Callable, Optional, Set
 
 if TYPE_CHECKING:
-    from agent_server.schemas.rag import WatchdogConfig
+    from hdsp_agent_core.models.rag import WatchdogConfig
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ class WatchdogService:
     def __init__(
         self,
         config: "WatchdogConfig",
-        on_change_callback: Optional[Callable[[Set[Path]], None]] = None
+        on_change_callback: Optional[Callable[[Set[Path]], None]] = None,
     ):
         self._config = config
         self._on_change = on_change_callback
@@ -73,8 +73,8 @@ class WatchdogService:
             return True
 
         try:
+            from watchdog.events import FileSystemEvent, FileSystemEventHandler
             from watchdog.observers import Observer
-            from watchdog.events import FileSystemEventHandler, FileSystemEvent
         except ImportError:
             logger.warning(
                 "watchdog not installed, file monitoring disabled. "
@@ -236,7 +236,7 @@ class SimpleWatchdog:
         self,
         patterns: list[str] = None,
         check_interval: float = 10.0,
-        on_change_callback: Optional[Callable[[Set[Path]], None]] = None
+        on_change_callback: Optional[Callable[[Set[Path]], None]] = None,
     ):
         self._patterns = patterns or ["*.md", "*.py", "*.txt"]
         self._check_interval = check_interval
@@ -255,9 +255,7 @@ class SimpleWatchdog:
             return False
 
         self._running = True
-        self._check_task = asyncio.create_task(
-            self._poll_loop(watch_path)
-        )
+        self._check_task = asyncio.create_task(self._poll_loop(watch_path))
 
         logger.info(f"SimpleWatchdog started polling: {watch_path}")
         return True

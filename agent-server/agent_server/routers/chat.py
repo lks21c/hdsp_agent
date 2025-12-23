@@ -6,16 +6,15 @@ Handles conversational interactions with the LLM.
 
 import json
 import logging
-import uuid
 from typing import Any, AsyncGenerator, Dict
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
+from hdsp_agent_core.managers.config_manager import ConfigManager
+from hdsp_agent_core.managers.session_manager import get_session_manager
+from hdsp_agent_core.models.chat import ChatRequest, ChatResponse
 
-from agent_server.core.config_manager import ConfigManager
 from agent_server.core.llm_service import LLMService
-from agent_server.core.session_manager import get_session_manager
-from agent_server.schemas.chat import ChatRequest, ChatResponse
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -109,9 +108,7 @@ async def chat_message(request: ChatRequest) -> Dict[str, Any]:
 
         # Call LLM with client-provided config
         llm_service = LLMService(config)
-        response = await llm_service.generate_response(
-            request.message, context=context
-        )
+        response = await llm_service.generate_response(request.message, context=context)
 
         # Store messages
         _store_messages(conversation_id, request.message, response)
@@ -164,7 +161,9 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             llm_service = LLMService(config)
             full_response = ""
 
-            async for chunk in llm_service.generate_response_stream(request.message, context=context):
+            async for chunk in llm_service.generate_response_stream(
+                request.message, context=context
+            ):
                 full_response += chunk
                 yield f"data: {json.dumps({'content': chunk, 'done': False})}\n\n"
 

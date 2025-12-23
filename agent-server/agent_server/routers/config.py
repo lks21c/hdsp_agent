@@ -5,9 +5,8 @@ Config Router - Configuration management endpoints
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException
+from hdsp_agent_core.managers.config_manager import ConfigManager
 from pydantic import BaseModel
-
-from agent_server.core.config_manager import ConfigManager
 
 router = APIRouter()
 

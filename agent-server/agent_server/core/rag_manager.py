@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 if TYPE_CHECKING:
-    from agent_server.schemas.rag import RAGConfig
+    from hdsp_agent_core.models.rag import RAGConfig
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ class RAGManager:
             return
         self._initialized = True
 
-        from agent_server.schemas.rag import get_default_rag_config
+        from hdsp_agent_core.models.rag import get_default_rag_config
 
         self._config = config or get_default_rag_config()
         self._client = None
@@ -231,7 +231,7 @@ class RAGManager:
 
     async def _index_knowledge_base(self) -> Dict[str, Any]:
         """Index all documents in the knowledge base."""
-        from agent_server.knowledge.chunking import DocumentChunker
+        from hdsp_agent_core.knowledge.chunking import DocumentChunker
 
         knowledge_path = self._get_knowledge_path()
         if not knowledge_path.exists():
@@ -411,7 +411,7 @@ class RAGManager:
             return
 
         # Index new content
-        from agent_server.knowledge.chunking import DocumentChunker
+        from hdsp_agent_core.knowledge.chunking import DocumentChunker
 
         chunker = DocumentChunker(self._config.chunking)
 
@@ -596,7 +596,7 @@ class RAGManager:
 
         # 1. 라이브러리 감지 (agent.py와 동일 로직)
         try:
-            from agent_server.knowledge.loader import (
+            from hdsp_agent_core.knowledge.loader import (
                 get_knowledge_base,
                 get_library_detector,
             )

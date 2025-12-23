@@ -12,10 +12,10 @@ Default model: intfloat/multilingual-e5-small (384 dimensions, Korean support)
 """
 
 import logging
-from typing import List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, List, Optional
 
 if TYPE_CHECKING:
-    from agent_server.schemas.rag import EmbeddingConfig
+    from hdsp_agent_core.models.rag import EmbeddingConfig
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,8 @@ class EmbeddingService:
             return
         self._initialized = True
 
-        from agent_server.schemas.rag import EmbeddingConfig
+        from hdsp_agent_core.models.rag import EmbeddingConfig
+
         self._config = config or EmbeddingConfig()
         self._model = None
         self._dimension: Optional[int] = None
@@ -79,9 +80,7 @@ class EmbeddingService:
 
         try:
             self._model = SentenceTransformer(
-                model_name,
-                device=device,
-                cache_folder=self._config.cache_folder
+                model_name, device=device, cache_folder=self._config.cache_folder
             )
             self._dimension = self._model.get_sentence_embedding_dimension()
 
@@ -139,7 +138,7 @@ class EmbeddingService:
                 batch_size=self._config.batch_size,
                 show_progress_bar=len(texts) > 100,
                 convert_to_numpy=True,
-                normalize_embeddings=self._config.normalize_embeddings
+                normalize_embeddings=self._config.normalize_embeddings,
             )
             return embeddings.tolist()
         except Exception as e:
@@ -168,7 +167,7 @@ class EmbeddingService:
             embedding = self.model.encode(
                 prepared_query,
                 convert_to_numpy=True,
-                normalize_embeddings=self._config.normalize_embeddings
+                normalize_embeddings=self._config.normalize_embeddings,
             )
             return embedding.tolist()
         except Exception as e:
@@ -176,9 +175,7 @@ class EmbeddingService:
             raise
 
     def embed_batch(
-        self,
-        texts: List[str],
-        batch_size: Optional[int] = None
+        self, texts: List[str], batch_size: Optional[int] = None
     ) -> List[List[float]]:
         """
         Generate embeddings with custom batch size for large document sets.
@@ -202,7 +199,7 @@ class EmbeddingService:
                 batch_size=effective_batch_size,
                 show_progress_bar=True,
                 convert_to_numpy=True,
-                normalize_embeddings=self._config.normalize_embeddings
+                normalize_embeddings=self._config.normalize_embeddings,
             )
             return embeddings.tolist()
         except Exception as e:
@@ -217,7 +214,7 @@ class EmbeddingService:
             "device": self._config.get_device(),
             "is_e5_model": self._is_e5_model,
             "normalize_embeddings": self._config.normalize_embeddings,
-            "loaded": self._model is not None
+            "loaded": self._model is not None,
         }
 
 
@@ -226,7 +223,9 @@ class EmbeddingService:
 _embedding_service: Optional[EmbeddingService] = None
 
 
-def get_embedding_service(config: Optional["EmbeddingConfig"] = None) -> EmbeddingService:
+def get_embedding_service(
+    config: Optional["EmbeddingConfig"] = None,
+) -> EmbeddingService:
     """
     Get the singleton EmbeddingService instance.
 
