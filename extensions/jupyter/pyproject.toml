@@ -32,6 +32,11 @@ dependencies = [
     "sse-starlette>=2.2.0",
     "tabulate>=0.9.0",
     "certifi>=2024.0.0",
+    # RAG dependencies (for embedded mode)
+    "qdrant-client>=1.12.0",
+    "sentence-transformers>=2.7.0,<3.0.0",
+    "watchdog>=6.0.0",
+    "rank-bm25>=0.2.2",
 ]
 dynamic = ["version", "description", "authors", "urls"]
 
@@ -46,8 +51,8 @@ test = [
 # Embedded mode: Run agent logic in-process without external server
 embedded = [
     "qdrant-client>=1.12.0",
-    "sentence-transformers>=2.7.0",
-    "torch>=2.0.0,<2.3.0",
+    "sentence-transformers>=2.7.0,<3.0.0",
+    "torch>=2.4.0,<2.5.0",
     "watchdog>=6.0.0",
     "rank-bm25>=0.2.2",
 ]
@@ -66,8 +71,8 @@ exclude = [".github", "binder"]
 packages = ["jupyter_ext"]
 
 [tool.hatch.build.targets.wheel.force-include]
-# Include agent_server package from monorepo
-"../../agent-server/agent_server" = "agent_server"
+# Include agent_server package (copied by build.sh)
+"agent_server" = "agent_server"
 
 [tool.hatch.build.targets.wheel.shared-data]
 "jupyter_ext/labextension" = "share/jupyter/labextensions/hdsp-agent"
