@@ -2,12 +2,12 @@
 LLM Service - Handles interactions with different LLM providers
 """
 
-import os
+import asyncio
 import json
 import ssl
-import asyncio
-from typing import Dict, Any, Optional, Tuple
 from contextlib import asynccontextmanager
+from typing import Any, Dict, Optional
+
 import aiohttp
 import certifi
 
@@ -17,7 +17,7 @@ class LLMService:
 
     def __init__(self, config: Dict[str, Any], key_manager=None):
         self.config = config
-        self.provider = config.get('provider', 'gemini')
+        self.provider = config.get("provider", "gemini")
         self._key_manager = key_manager  # Optional injection for testing
         # Create SSL context with certifi certificates
         self._ssl_context = ssl.create_default_context(cafile=certifi.where())
@@ -26,10 +26,12 @@ class LLMService:
         """Get key manager if using Gemini provider"""
         if self._key_manager:
             return self._key_manager
-        if self.provider == 'gemini':
+        if self.provider == "gemini":
             try:
+                from hdsp_agent_core.managers.config_manager import ConfigManager
+
                 from agent_server.core.api_key_manager import get_key_manager
-                from agent_server.core.config_manager import ConfigManager
+
                 return get_key_manager(ConfigManager.get_instance())
             except ImportError:
                 # Fallback for standalone usage
@@ -44,33 +46,36 @@ class LLMService:
         NOTE: Server receives SINGLE API key from client per request.
         Key rotation is managed by the frontend (financial security compliance).
         """
-        cfg = self.config.get('gemini', {})
-        api_key = cfg.get('apiKey')
+        cfg = self.config.get("gemini", {})
+        api_key = cfg.get("apiKey")
         if not api_key:
             raise ValueError("Gemini API key not configured")
-        model = cfg.get('model', 'gemini-2.5-pro')
+        model = cfg.get("model", "gemini-2.5-pro")
         base_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}"
         return api_key, model, base_url
 
     def _get_openai_config(self) -> tuple[str, str, Dict[str, str]]:
         """Get OpenAI config: (model, url, headers). Raises if api_key missing."""
-        cfg = self.config.get('openai', {})
-        api_key = cfg.get('apiKey')
+        cfg = self.config.get("openai", {})
+        api_key = cfg.get("apiKey")
         if not api_key:
             raise ValueError("OpenAI API key not configured")
-        model = cfg.get('model', 'gpt-4')
+        model = cfg.get("model", "gpt-4")
         url = "https://api.openai.com/v1/chat/completions"
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
         return model, url, headers
 
     def _get_vllm_config(self) -> tuple[str, str, Dict[str, str]]:
         """Get vLLM config: (model, url, headers)."""
-        cfg = self.config.get('vllm', {})
-        endpoint = cfg.get('endpoint', 'http://localhost:8000')
-        model = cfg.get('model', 'default')
+        cfg = self.config.get("vllm", {})
+        endpoint = cfg.get("endpoint", "http://localhost:8000")
+        model = cfg.get("model", "default")
         url = f"{endpoint}/v1/chat/completions"
         headers = {"Content-Type": "application/json"}
-        if cfg.get('apiKey'):
+        if cfg.get("apiKey"):
             headers["Authorization"] = f"Bearer {cfg['apiKey']}"
         return model, url, headers
 
@@ -82,7 +87,9 @@ class LLMService:
             return f"Context:\n{context}\n\nUser Request:\n{prompt}"
         return prompt
 
-    def _build_openai_messages(self, prompt: str, context: Optional[str] = None) -> list:
+    def _build_openai_messages(
+        self, prompt: str, context: Optional[str] = None
+    ) -> list:
         """Build OpenAI-style messages array"""
         messages = []
         if context:
@@ -95,7 +102,7 @@ class LLMService:
         operation,
         max_retries: int = 3,
         provider: str = "API",
-        retryable_statuses: tuple = (503, 429)
+        retryable_statuses: tuple = (503, 429),
     ):
         """Execute operation with exponential backoff retry logic"""
         for attempt in range(max_retries):
@@ -103,8 +110,10 @@ class LLMService:
                 return await operation()
             except asyncio.TimeoutError:
                 if attempt < max_retries - 1:
-                    wait_time = (2 ** attempt) * 3
-                    print(f"[LLMService] Request timeout. Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                    wait_time = (2**attempt) * 3
+                    print(
+                        f"[LLMService] Request timeout. Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})"
+                    )
                     await asyncio.sleep(wait_time)
                     continue
                 raise Exception(f"Request timeout after {max_retries} retries")
@@ -115,15 +124,21 @@ class LLMService:
                     if attempt < max_retries - 1:
                         # 429 에러는 더 긴 대기 시간 사용 (40-80초)
                         wait_time = 40 + (attempt * 20)
-                        print(f"[LLMService] Rate limit hit. Waiting {wait_time}s before retry... (attempt {attempt + 1}/{max_retries})")
+                        print(
+                            f"[LLMService] Rate limit hit. Waiting {wait_time}s before retry... (attempt {attempt + 1}/{max_retries})"
+                        )
                         await asyncio.sleep(wait_time)
                         continue
-                    raise Exception(f"Rate limit exceeded after {max_retries} retries. Please wait a minute and try again.")
+                    raise Exception(
+                        f"Rate limit exceeded after {max_retries} retries. Please wait a minute and try again."
+                    )
                 # ★ 서버 과부하 (503) 에러도 재시도 가능
                 if "overloaded" in error_msg.lower() or "(503)" in error_msg:
                     if attempt < max_retries - 1:
-                        wait_time = (2 ** attempt) * 5
-                        print(f"[LLMService] Server overloaded. Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                        wait_time = (2**attempt) * 5
+                        print(
+                            f"[LLMService] Server overloaded. Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})"
+                        )
                         await asyncio.sleep(wait_time)
                         continue
                     raise
@@ -134,8 +149,10 @@ class LLMService:
                     raise
                 # 네트워크 에러 재시도
                 if attempt < max_retries - 1:
-                    wait_time = (2 ** attempt) * 2
-                    print(f"[LLMService] Network error: {e}. Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                    wait_time = (2**attempt) * 2
+                    print(
+                        f"[LLMService] Network error: {e}. Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})"
+                    )
                     await asyncio.sleep(wait_time)
                     continue
                 raise
@@ -147,12 +164,14 @@ class LLMService:
         payload: Dict[str, Any],
         headers: Optional[Dict[str, str]] = None,
         timeout_seconds: int = 60,
-        provider: str = "API"
+        provider: str = "API",
     ):
         """Context manager for HTTP POST requests with automatic session cleanup"""
         timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         connector = aiohttp.TCPConnector(ssl=self._ssl_context)
-        async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+        async with aiohttp.ClientSession(
+            timeout=timeout, connector=connector
+        ) as session:
             async with session.post(url, json=payload, headers=headers) as response:
                 if response.status != 200:
                     error_text = await response.text()
@@ -166,17 +185,28 @@ class LLMService:
         payload: Dict[str, Any],
         headers: Optional[Dict[str, str]] = None,
         timeout_seconds: int = 60,
-        provider: str = "API"
+        provider: str = "API",
     ) -> Dict[str, Any]:
         """Make request and return JSON response"""
-        async with self._request(url, payload, headers, timeout_seconds, provider) as response:
+        async with self._request(
+            url, payload, headers, timeout_seconds, provider
+        ) as response:
             return await response.json()
 
-    async def _stream_response(self, url: str, payload: Dict[str, Any], headers: Optional[Dict[str, str]], provider: str, line_parser):
+    async def _stream_response(
+        self,
+        url: str,
+        payload: Dict[str, Any],
+        headers: Optional[Dict[str, str]],
+        provider: str,
+        line_parser,
+    ):
         """Stream response and yield parsed content"""
-        async with self._request(url, payload, headers, timeout_seconds=120, provider=provider) as response:
+        async with self._request(
+            url, payload, headers, timeout_seconds=120, provider=provider
+        ) as response:
             async for line in response.content:
-                line_text = line.decode('utf-8').strip()
+                line_text = line.decode("utf-8").strip()
                 content = line_parser(line_text)
                 if content:
                     yield content
@@ -185,22 +215,22 @@ class LLMService:
 
     def _parse_openai_response(self, data: Dict[str, Any]) -> str:
         """Parse OpenAI-compatible response format (used by OpenAI and vLLM)"""
-        if 'choices' in data and len(data['choices']) > 0:
-            choice = data['choices'][0]
-            if 'message' in choice and 'content' in choice['message']:
-                return choice['message']['content']
-            elif 'text' in choice:
-                return choice['text']
+        if "choices" in data and len(data["choices"]) > 0:
+            choice = data["choices"][0]
+            if "message" in choice and "content" in choice["message"]:
+                return choice["message"]["content"]
+            elif "text" in choice:
+                return choice["text"]
         raise Exception("No valid response from API")
 
     def _extract_gemini_text(self, data: Dict[str, Any]) -> Optional[str]:
         """Extract text from Gemini response data (shared by response and stream parsing)"""
-        if 'candidates' in data and len(data['candidates']) > 0:
-            candidate = data['candidates'][0]
-            if 'content' in candidate and 'parts' in candidate['content']:
-                parts = candidate['content']['parts']
-                if len(parts) > 0 and 'text' in parts[0]:
-                    return parts[0]['text']
+        if "candidates" in data and len(data["candidates"]) > 0:
+            candidate = data["candidates"][0]
+            if "content" in candidate and "parts" in candidate["content"]:
+                parts = candidate["content"]["parts"]
+                if len(parts) > 0 and "text" in parts[0]:
+                    return parts[0]["text"]
         return None
 
     def _parse_gemini_response(self, data: Dict[str, Any]) -> str:
@@ -212,10 +242,10 @@ class LLMService:
 
     def _parse_sse_line(self, line_text: str, extractor) -> Optional[str]:
         """Parse SSE line with given extractor function"""
-        if not line_text.startswith('data: '):
+        if not line_text.startswith("data: "):
             return None
         data_str = line_text[6:]
-        if data_str == '[DONE]':
+        if data_str == "[DONE]":
             return None
         try:
             data = json.loads(data_str)
@@ -225,9 +255,9 @@ class LLMService:
 
     def _extract_openai_delta(self, data: Dict[str, Any]) -> Optional[str]:
         """Extract content delta from OpenAI stream data"""
-        if 'choices' in data and len(data['choices']) > 0:
-            delta = data['choices'][0].get('delta', {})
-            return delta.get('content', '') or None
+        if "choices" in data and len(data["choices"]) > 0:
+            delta = data["choices"][0].get("delta", {})
+            return delta.get("content", "") or None
         return None
 
     def _parse_openai_stream_line(self, line_text: str) -> Optional[str]:
@@ -244,7 +274,7 @@ class LLMService:
         messages: list,
         max_tokens: int = 4096,
         temperature: float = 0.0,  # 0.0 = 결정적 출력 (일관성 최대화)
-        stream: bool = False
+        stream: bool = False,
     ) -> Dict[str, Any]:
         """Build OpenAI-compatible request payload"""
         return {
@@ -252,14 +282,14 @@ class LLMService:
             "messages": messages,
             "max_tokens": max_tokens,
             "temperature": temperature,
-            "stream": stream
+            "stream": stream,
         }
 
     def _build_gemini_payload(
         self,
         prompt: str,
         max_output_tokens: int = 32768,  # Gemini 2.5 supports up to 65535, increased for thinking overhead
-        temperature: Optional[float] = None
+        temperature: Optional[float] = None,
     ) -> Dict[str, Any]:
         """Build Gemini API request payload
 
@@ -269,9 +299,9 @@ class LLMService:
             temperature: 0.0 for deterministic, higher for creativity (default from config)
         """
         # temperature 기본값: config에서 가져오거나 0.0 (일관성 우선)
-        cfg = self.config.get('gemini', {})
-        temp = temperature if temperature is not None else cfg.get('temperature', 0.0)
-        model = cfg.get('model', 'gemini-2.5-flash')
+        cfg = self.config.get("gemini", {})
+        temp = temperature if temperature is not None else cfg.get("temperature", 0.0)
+        model = cfg.get("model", "gemini-2.5-flash")
 
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
@@ -279,52 +309,70 @@ class LLMService:
                 "temperature": temp,  # 0.0 = 결정적 출력 (일관성 최대화)
                 "topK": 1,  # 가장 확률 높은 토큰만 선택 (일관성)
                 "topP": 0.95,
-                "maxOutputTokens": max_output_tokens
+                "maxOutputTokens": max_output_tokens,
             },
             "safetySettings": [
-                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"}
-            ]
+                {
+                    "category": "HARM_CATEGORY_HARASSMENT",
+                    "threshold": "BLOCK_MEDIUM_AND_ABOVE",
+                },
+                {
+                    "category": "HARM_CATEGORY_HATE_SPEECH",
+                    "threshold": "BLOCK_MEDIUM_AND_ABOVE",
+                },
+                {
+                    "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                    "threshold": "BLOCK_MEDIUM_AND_ABOVE",
+                },
+                {
+                    "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                    "threshold": "BLOCK_MEDIUM_AND_ABOVE",
+                },
+            ],
         }
 
         # Gemini 2.5 models have built-in "thinking" that consumes output tokens
         # Set thinkingConfig to allocate budget appropriately
-        if '2.5' in model or '2-5' in model:
+        if "2.5" in model or "2-5" in model:
             payload["generationConfig"]["thinkingConfig"] = {
                 "thinkingBudget": 8192  # Reserve 8K tokens for thinking, rest for output
             }
 
         return payload
 
-    async def generate_response_stream(self, prompt: str, context: Optional[str] = None):
+    async def generate_response_stream(
+        self, prompt: str, context: Optional[str] = None
+    ):
         """Generate a streaming response from the configured LLM provider (async generator)"""
-        if self.provider == 'gemini':
+        if self.provider == "gemini":
             async for chunk in self._call_gemini_stream(prompt, context):
                 yield chunk
-        elif self.provider == 'vllm':
+        elif self.provider == "vllm":
             async for chunk in self._call_vllm_stream(prompt, context):
                 yield chunk
-        elif self.provider == 'openai':
+        elif self.provider == "openai":
             async for chunk in self._call_openai_stream(prompt, context):
                 yield chunk
         else:
             raise ValueError(f"Unsupported provider: {self.provider}")
 
-    async def generate_response(self, prompt: str, context: Optional[str] = None) -> str:
+    async def generate_response(
+        self, prompt: str, context: Optional[str] = None
+    ) -> str:
         """Generate a response from the configured LLM provider"""
 
-        if self.provider == 'gemini':
+        if self.provider == "gemini":
             return await self._call_gemini(prompt, context)
-        elif self.provider == 'vllm':
+        elif self.provider == "vllm":
             return await self._call_vllm(prompt, context)
-        elif self.provider == 'openai':
+        elif self.provider == "openai":
             return await self._call_openai(prompt, context)
         else:
             raise ValueError(f"Unsupported provider: {self.provider}")
 
-    async def _call_gemini(self, prompt: str, context: Optional[str] = None, max_retries: int = 3) -> str:
+    async def _call_gemini(
+        self, prompt: str, context: Optional[str] = None, max_retries: int = 3
+    ) -> str:
         """Call Google Gemini API with single API key.
 
         NOTE: Server does NOT manage key rotation (financial security compliance).
@@ -341,21 +389,29 @@ class LLMService:
             try:
                 timeout = aiohttp.ClientTimeout(total=60)
                 connector = aiohttp.TCPConnector(ssl=self._ssl_context)
-                async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+                async with aiohttp.ClientSession(
+                    timeout=timeout, connector=connector
+                ) as session:
                     async with session.post(url, json=payload) as response:
                         # 429 Rate limit - return to client for key rotation
                         if response.status == 429:
                             error_text = await response.text()
-                            print(f"[LLMService] Rate limit (429): {error_text[:100]}...")
+                            print(
+                                f"[LLMService] Rate limit (429): {error_text[:100]}..."
+                            )
                             raise Exception(f"RATE_LIMIT_EXCEEDED: {error_text}")
 
                         # 503 Server overload - retry with backoff
                         if response.status == 503:
                             error_text = await response.text()
-                            print(f"[LLMService] Server overloaded (503): {error_text[:100]}...")
+                            print(
+                                f"[LLMService] Server overloaded (503): {error_text[:100]}..."
+                            )
                             if attempt < max_retries - 1:
-                                wait_time = (2 ** attempt) * 5
-                                print(f"[LLMService] Waiting {wait_time}s before retry...")
+                                wait_time = (2**attempt) * 5
+                                print(
+                                    f"[LLMService] Waiting {wait_time}s before retry..."
+                                )
                                 await asyncio.sleep(wait_time)
                                 continue
                             raise Exception(f"Server overloaded: {error_text}")
@@ -367,24 +423,30 @@ class LLMService:
 
                         # Success
                         data = await response.json()
-                        print(f"[LLMService] Gemini API Response Status: {response.status}")
+                        print(
+                            f"[LLMService] Gemini API Response Status: {response.status}"
+                        )
 
                         # Debug: finishReason 확인
-                        if 'candidates' in data and len(data['candidates']) > 0:
-                            candidate = data['candidates'][0]
-                            finish_reason = candidate.get('finishReason', 'UNKNOWN')
+                        if "candidates" in data and len(data["candidates"]) > 0:
+                            candidate = data["candidates"][0]
+                            finish_reason = candidate.get("finishReason", "UNKNOWN")
                             print(f"[LLMService] Gemini finishReason: {finish_reason}")
-                            if finish_reason not in ['STOP', 'UNKNOWN']:
-                                print(f"[LLMService] WARNING: Response may be incomplete! finishReason={finish_reason}")
+                            if finish_reason not in ["STOP", "UNKNOWN"]:
+                                print(
+                                    f"[LLMService] WARNING: Response may be incomplete! finishReason={finish_reason}"
+                                )
 
                         response_text = self._parse_gemini_response(data)
-                        print(f"[LLMService] Successfully received response from {model} (length: {len(response_text)} chars)")
+                        print(
+                            f"[LLMService] Successfully received response from {model} (length: {len(response_text)} chars)"
+                        )
 
                         return response_text
 
             except asyncio.TimeoutError:
                 if attempt < max_retries - 1:
-                    wait_time = (2 ** attempt) * 3
+                    wait_time = (2**attempt) * 3
                     print(f"[LLMService] Timeout. Retrying in {wait_time}s...")
                     await asyncio.sleep(wait_time)
                     continue
@@ -400,8 +462,10 @@ class LLMService:
                     raise
                 # Network error - retry with delay
                 if attempt < max_retries - 1:
-                    wait_time = (2 ** attempt) * 2
-                    print(f"[LLMService] Network error: {e}. Retrying in {wait_time}s...")
+                    wait_time = (2**attempt) * 2
+                    print(
+                        f"[LLMService] Network error: {e}. Retrying in {wait_time}s..."
+                    )
                     await asyncio.sleep(wait_time)
                     continue
                 raise
@@ -422,12 +486,16 @@ class LLMService:
         """Call OpenAI API"""
         model, url, headers = self._get_openai_config()
         messages = self._build_openai_messages(prompt, context)
-        payload = self._build_openai_payload(model, messages, max_tokens=2000, stream=False)
+        payload = self._build_openai_payload(
+            model, messages, max_tokens=2000, stream=False
+        )
 
         data = await self._request_json(url, payload, headers, provider="OpenAI")
         return self._parse_openai_response(data)
 
-    async def _call_gemini_stream(self, prompt: str, context: Optional[str] = None, max_retries: int = 3):
+    async def _call_gemini_stream(
+        self, prompt: str, context: Optional[str] = None, max_retries: int = 3
+    ):
         """Call Google Gemini API with streaming using single API key.
 
         NOTE: Server does NOT manage key rotation (financial security compliance).
@@ -444,21 +512,29 @@ class LLMService:
             try:
                 timeout = aiohttp.ClientTimeout(total=120)
                 connector = aiohttp.TCPConnector(ssl=self._ssl_context)
-                async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+                async with aiohttp.ClientSession(
+                    timeout=timeout, connector=connector
+                ) as session:
                     async with session.post(url, json=payload) as response:
                         # 429 Rate limit - return to client for key rotation
                         if response.status == 429:
                             error_text = await response.text()
-                            print(f"[LLMService] Rate limit (429) stream: {error_text[:100]}...")
+                            print(
+                                f"[LLMService] Rate limit (429) stream: {error_text[:100]}..."
+                            )
                             raise Exception(f"RATE_LIMIT_EXCEEDED: {error_text}")
 
                         # 503 Server overload - retry with backoff
                         if response.status == 503:
                             error_text = await response.text()
-                            print(f"[LLMService] Server overloaded (503) stream: {error_text[:100]}...")
+                            print(
+                                f"[LLMService] Server overloaded (503) stream: {error_text[:100]}..."
+                            )
                             if attempt < max_retries - 1:
-                                wait_time = (2 ** attempt) * 5
-                                print(f"[LLMService] Waiting {wait_time}s before retry...")
+                                wait_time = (2**attempt) * 5
+                                print(
+                                    f"[LLMService] Waiting {wait_time}s before retry..."
+                                )
                                 await asyncio.sleep(wait_time)
                                 continue
                             raise Exception(f"Server overloaded: {error_text}")
@@ -469,9 +545,9 @@ class LLMService:
                             raise Exception(f"Gemini API error: {error_text}")
 
                         # Success - stream the response
-                        print(f"[LLMService] Successfully connected to Gemini stream")
+                        print("[LLMService] Successfully connected to Gemini stream")
                         async for line in response.content:
-                            line_text = line.decode('utf-8').strip()
+                            line_text = line.decode("utf-8").strip()
                             content = self._parse_gemini_stream_line(line_text)
                             if content:
                                 yield content
@@ -479,7 +555,7 @@ class LLMService:
 
             except asyncio.TimeoutError:
                 if attempt < max_retries - 1:
-                    wait_time = (2 ** attempt) * 3
+                    wait_time = (2**attempt) * 3
                     print(f"[LLMService] Timeout. Retrying in {wait_time}s...")
                     await asyncio.sleep(wait_time)
                     continue
@@ -495,8 +571,10 @@ class LLMService:
                     raise
                 # Network error - retry with delay
                 if attempt < max_retries - 1:
-                    wait_time = (2 ** attempt) * 2
-                    print(f"[LLMService] Network error: {e}. Retrying in {wait_time}s...")
+                    wait_time = (2**attempt) * 2
+                    print(
+                        f"[LLMService] Network error: {e}. Retrying in {wait_time}s..."
+                    )
                     await asyncio.sleep(wait_time)
                     continue
                 raise
@@ -510,16 +588,22 @@ class LLMService:
         messages = [{"role": "user", "content": full_prompt}]
         payload = self._build_openai_payload(model, messages, stream=True)
 
-        async for content in self._stream_response(url, payload, headers, "vLLM", self._parse_openai_stream_line):
+        async for content in self._stream_response(
+            url, payload, headers, "vLLM", self._parse_openai_stream_line
+        ):
             yield content
 
     async def _call_openai_stream(self, prompt: str, context: Optional[str] = None):
         """Call OpenAI API with streaming"""
         model, url, headers = self._get_openai_config()
         messages = self._build_openai_messages(prompt, context)
-        payload = self._build_openai_payload(model, messages, max_tokens=2000, stream=True)
+        payload = self._build_openai_payload(
+            model, messages, max_tokens=2000, stream=True
+        )
 
-        async for content in self._stream_response(url, payload, headers, "OpenAI", self._parse_openai_stream_line):
+        async for content in self._stream_response(
+            url, payload, headers, "OpenAI", self._parse_openai_stream_line
+        ):
             yield content
 
 
@@ -527,7 +611,10 @@ class LLMService:
 # Module-level helper functions for Auto-Agent
 # ═══════════════════════════════════════════════════════════════════════════
 
-async def call_llm(prompt: str, config: Dict[str, Any], context: Optional[str] = None) -> str:
+
+async def call_llm(
+    prompt: str, config: Dict[str, Any], context: Optional[str] = None
+) -> str:
     """
     Convenience function to call LLM with the given config.
 
@@ -543,7 +630,9 @@ async def call_llm(prompt: str, config: Dict[str, Any], context: Optional[str] =
     return await service.generate_response(prompt, context)
 
 
-async def call_llm_stream(prompt: str, config: Dict[str, Any], context: Optional[str] = None):
+async def call_llm_stream(
+    prompt: str, config: Dict[str, Any], context: Optional[str] = None
+):
     """
     Convenience function to stream LLM response with the given config.
 

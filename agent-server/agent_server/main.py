@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from agent_server.routers import health, config, agent, chat, rag, file_resolver
+from agent_server.routers import agent, chat, config, file_resolver, health, rag
 
 # Configure logging
 logging.basicConfig(
@@ -79,7 +79,8 @@ async def _legacy_startup():
     logger.info("Using legacy startup (hdsp_agent_core not available)")
 
     try:
-        from agent_server.core.config_manager import ConfigManager
+        from hdsp_agent_core.managers.config_manager import ConfigManager
+
         ConfigManager.get_instance()
         logger.info("Configuration loaded successfully")
     except Exception as e:
@@ -87,8 +88,9 @@ async def _legacy_startup():
 
     # Initialize RAG system
     try:
+        from hdsp_agent_core.models.rag import get_default_rag_config
+
         from agent_server.core.rag_manager import get_rag_manager
-        from agent_server.schemas.rag import get_default_rag_config
 
         rag_config = get_default_rag_config()
         if rag_config.is_enabled():

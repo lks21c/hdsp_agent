@@ -158,14 +158,6 @@ class RAGConfig(BaseModel):
         default=0.3,
         description="Minimum similarity score threshold"
     )
-    use_hybrid_search: bool = Field(
-        default=True,
-        description="Enable BM25 + dense vector hybrid search"
-    )
-    hybrid_alpha: float = Field(
-        default=0.5,
-        description="Weight for dense vectors (1-alpha for BM25)"
-    )
     max_context_tokens: int = Field(
         default=1500,
         description="Maximum tokens for RAG context injection"
@@ -295,6 +287,68 @@ class ReindexResponse(BaseModel):
         default=[],
         description="List of indexing errors"
     )
+
+
+# ============ Debug Models ============
+
+
+class ChunkDebugInfo(BaseModel):
+    """Chunk detail score information for debugging"""
+
+    chunk_id: str
+    content_preview: str  # First 200 chars
+    score: float  # Vector similarity score (0-1)
+    rank: int  # Ranking
+    metadata: Dict[str, Any]  # source, section etc.
+    passed_threshold: bool  # Whether threshold passed
+
+
+class LibraryDetectionDebug(BaseModel):
+    """Library detection phase debug information"""
+
+    input_query: str
+    imported_libraries: List[str]
+    available_libraries: List[str]
+    detected_libraries: List[str]
+    detection_method: str
+
+
+class SearchConfigDebug(BaseModel):
+    """Search configuration information"""
+
+    top_k: int
+    score_threshold: float
+    max_context_tokens: int
+
+
+class DebugSearchRequest(BaseModel):
+    """Debug search request"""
+
+    query: str = Field(description="Search query for debugging")
+    imported_libraries: List[str] = Field(
+        default=[], description="List of imported libraries to filter search"
+    )
+    top_k: Optional[int] = Field(default=None, description="Override default top_k")
+    include_full_content: bool = Field(
+        default=False, description="Include full content instead of preview"
+    )
+    simulate_plan_context: bool = Field(
+        default=True, description="Generate formatted context as in plan generation"
+    )
+
+
+class DebugSearchResponse(BaseModel):
+    """Debug search response"""
+
+    library_detection: LibraryDetectionDebug
+    config: SearchConfigDebug
+    chunks: List[ChunkDebugInfo]
+    total_candidates: int
+    total_passed_threshold: int
+    search_ms: float  # Vector search time in milliseconds
+    formatted_context: str
+    context_char_count: int
+    estimated_context_tokens: int
 
 
 # ============ Factory Functions ============

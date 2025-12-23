@@ -10,8 +10,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List, NamedTuple, Optional
 
 if TYPE_CHECKING:
+    from hdsp_agent_core.models.rag import RAGConfig
+
     from agent_server.core.embedding_service import EmbeddingService
-    from agent_server.schemas.rag import RAGConfig
 
 logger = logging.getLogger(__name__)
 

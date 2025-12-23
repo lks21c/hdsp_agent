@@ -5,10 +5,10 @@ Provides token-aware context management with multiple compression strategies
 to optimize LLM input while preserving important information.
 """
 
-from dataclasses import dataclass
-from typing import List, Optional, Dict, Tuple
-from enum import Enum
 import logging
+from dataclasses import dataclass
+from enum import Enum
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 

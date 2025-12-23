@@ -10,9 +10,7 @@ Provides:
 import logging
 
 from fastapi import APIRouter, HTTPException
-
-from agent_server.core.rag_manager import get_rag_manager
-from agent_server.schemas.rag import (
+from hdsp_agent_core.models.rag import (
     ChunkDebugInfo,
     DebugSearchRequest,
     DebugSearchResponse,
@@ -25,6 +23,8 @@ from agent_server.schemas.rag import (
     SearchResponse,
     SearchResult,
 )
+
+from agent_server.core.rag_manager import get_rag_manager
 
 logger = logging.getLogger(__name__)
 

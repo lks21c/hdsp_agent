@@ -3,11 +3,11 @@ Prompt Builder - Construct prompts for different actions
 프롬프트 템플릿은 prompts 모듈에서 관리됨
 """
 
-from agent_server.prompts.cell_action_prompts import (
+from hdsp_agent_core.prompts.cell_action_prompts import (
+    format_chat_prompt,
+    format_custom_prompt,
     format_explain_prompt,
     format_fix_prompt,
-    format_custom_prompt,
-    format_chat_prompt,
 )
 
 

@@ -2,13 +2,12 @@
 File Resolution Router - Handle ambiguous file path resolution
 """
 
-import os
 import glob as glob_module
+import os
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-
 
 router = APIRouter()
 
@@ -17,9 +16,7 @@ router = APIRouter()
 
 
 def find_files_by_name(
-    filename: str,
-    search_paths: List[str],
-    max_depth: int = 5
+    filename: str, search_paths: List[str], max_depth: int = 5
 ) -> List[dict]:
     """
     Find all files matching the given filename in search paths.
@@ -41,7 +38,7 @@ def find_files_by_name(
         # Walk through directory tree with depth limit
         for root, dirs, files in os.walk(search_path):
             # Calculate current depth
-            depth = root[len(search_path):].count(os.sep)
+            depth = root[len(search_path) :].count(os.sep)
             if depth > max_depth:
                 continue
 
@@ -49,20 +46,19 @@ def find_files_by_name(
                 full_path = os.path.join(root, filename)
                 relative = os.path.relpath(full_path, base_path)
 
-                matches.append({
-                    "path": full_path,
-                    "relative": relative,
-                    "dir": os.path.dirname(relative) or "."
-                })
+                matches.append(
+                    {
+                        "path": full_path,
+                        "relative": relative,
+                        "dir": os.path.dirname(relative) or ".",
+                    }
+                )
 
     return matches
 
 
 def find_files_by_pattern(
-    pattern: str,
-    search_paths: List[str],
-    recursive: bool = True,
-    max_depth: int = 5
+    pattern: str, search_paths: List[str], recursive: bool = True, max_depth: int = 5
 ) -> List[dict]:
     """
     Find all files matching the given pattern (supports glob).
@@ -83,9 +79,9 @@ def find_files_by_pattern(
         search_path = os.path.abspath(search_path)
 
         # Construct search pattern
-        if recursive and '**' not in pattern:
+        if recursive and "**" not in pattern:
             # Recursive search: auto-add ** if not present
-            search_pattern = os.path.join(search_path, '**', pattern)
+            search_pattern = os.path.join(search_path, "**", pattern)
         else:
             search_pattern = os.path.join(search_path, pattern)
 
@@ -96,26 +92,27 @@ def find_files_by_pattern(
         for file_path in files[:500]:  # Max 500 files
             try:
                 relative = os.path.relpath(file_path, base_path)
-                matches.append({
-                    "path": os.path.abspath(file_path),
-                    "relative": relative,
-                    "dir": os.path.dirname(relative) or "."
-                })
+                matches.append(
+                    {
+                        "path": os.path.abspath(file_path),
+                        "relative": relative,
+                        "dir": os.path.dirname(relative) or ".",
+                    }
+                )
             except ValueError:
                 # Handle case where file_path and base_path are on different drives (Windows)
-                matches.append({
-                    "path": os.path.abspath(file_path),
-                    "relative": file_path,
-                    "dir": os.path.dirname(file_path) or "."
-                })
+                matches.append(
+                    {
+                        "path": os.path.abspath(file_path),
+                        "relative": file_path,
+                        "dir": os.path.dirname(file_path) or ".",
+                    }
+                )
 
     return matches
 
 
-def parse_user_selection(
-    selection_text: str,
-    options: List[dict]
-) -> Optional[dict]:
+def parse_user_selection(selection_text: str, options: List[dict]) -> Optional[dict]:
     """
     Parse user's selection input and return the chosen file.
 
@@ -144,7 +141,7 @@ class ResolveFileRequest(BaseModel):
     """Request to resolve a file path or pattern"""
 
     filename: Optional[str] = None  # Exact filename (backward compatible)
-    pattern: Optional[str] = None   # Glob pattern (new)
+    pattern: Optional[str] = None  # Glob pattern (new)
     recursive: bool = True
     notebook_dir: Optional[str] = Field(None, alias="notebookDir")
     cwd: Optional[str] = None

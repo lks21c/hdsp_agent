@@ -58,7 +58,7 @@ class TestEmbeddingService:
             EmbeddingService,
             reset_embedding_service,
         )
-        from agent_server.schemas.rag import EmbeddingConfig
+        from hdsp_agent_core.models.rag import EmbeddingConfig
 
         reset_embedding_service()
 
@@ -120,8 +120,8 @@ class TestDocumentChunker:
 
     def test_markdown_chunking_by_headers(self):
         """Markdown should be split by headers."""
-        from agent_server.knowledge.chunking import DocumentChunker
-        from agent_server.schemas.rag import ChunkingConfig
+        from hdsp_agent_core.knowledge.chunking import DocumentChunker
+        from hdsp_agent_core.models.rag import ChunkingConfig
 
         config = ChunkingConfig(split_by_header=True, min_chunk_size=10)
         chunker = DocumentChunker(config)
@@ -148,8 +148,8 @@ Here are the results.
 
     def test_python_chunking_by_definitions(self):
         """Python code should be split by class/function definitions."""
-        from agent_server.knowledge.chunking import DocumentChunker
-        from agent_server.schemas.rag import ChunkingConfig
+        from hdsp_agent_core.knowledge.chunking import DocumentChunker
+        from hdsp_agent_core.models.rag import ChunkingConfig
 
         config = ChunkingConfig(min_chunk_size=10)
         chunker = DocumentChunker(config)
@@ -184,8 +184,8 @@ def function_two():
 
     def test_text_chunking_with_overlap(self):
         """Text should be chunked with overlap."""
-        from agent_server.knowledge.chunking import DocumentChunker
-        from agent_server.schemas.rag import ChunkingConfig
+        from hdsp_agent_core.knowledge.chunking import DocumentChunker
+        from hdsp_agent_core.models.rag import ChunkingConfig
 
         config = ChunkingConfig(
             chunk_size=100, chunk_overlap=20, min_chunk_size=10, max_chunk_size=200
@@ -203,7 +203,7 @@ def function_two():
 
     def test_file_type_inference(self):
         """File type should be inferred from source path."""
-        from agent_server.knowledge.chunking import DocumentChunker
+        from hdsp_agent_core.knowledge.chunking import DocumentChunker
 
         chunker = DocumentChunker()
 
@@ -215,8 +215,8 @@ def function_two():
 
     def test_min_chunk_size_filter(self):
         """Chunks below min_chunk_size should be filtered."""
-        from agent_server.knowledge.chunking import DocumentChunker
-        from agent_server.schemas.rag import ChunkingConfig
+        from hdsp_agent_core.knowledge.chunking import DocumentChunker
+        from hdsp_agent_core.models.rag import ChunkingConfig
 
         config = ChunkingConfig(min_chunk_size=50)
         chunker = DocumentChunker(config)
@@ -268,7 +268,7 @@ class TestRetriever:
     def test_dense_search(self, mock_qdrant_client, mock_embedding_service):
         """Test dense vector search."""
         from agent_server.core.retriever import Retriever
-        from agent_server.schemas.rag import QdrantConfig, RAGConfig
+        from hdsp_agent_core.models.rag import QdrantConfig, RAGConfig
 
         config = RAGConfig(
             qdrant=QdrantConfig(collection_name="test"),
@@ -287,7 +287,7 @@ class TestRetriever:
     def test_result_format(self, mock_qdrant_client, mock_embedding_service):
         """Results should have correct format."""
         from agent_server.core.retriever import Retriever
-        from agent_server.schemas.rag import QdrantConfig, RAGConfig
+        from hdsp_agent_core.models.rag import QdrantConfig, RAGConfig
 
         config = RAGConfig(
             qdrant=QdrantConfig(collection_name="test"),
@@ -310,7 +310,7 @@ class TestRetriever:
     ):
         """Results below threshold should be filtered."""
         from agent_server.core.retriever import Retriever
-        from agent_server.schemas.rag import QdrantConfig, RAGConfig
+        from hdsp_agent_core.models.rag import QdrantConfig, RAGConfig
 
         # Create results with varying scores
         mock_result_high = MagicMock()
@@ -343,7 +343,7 @@ class TestRetriever:
     def test_build_filter(self, mock_qdrant_client, mock_embedding_service):
         """Filter building should handle various formats."""
         from agent_server.core.retriever import Retriever
-        from agent_server.schemas.rag import QdrantConfig, RAGConfig
+        from hdsp_agent_core.models.rag import QdrantConfig, RAGConfig
 
         config = RAGConfig(qdrant=QdrantConfig(collection_name="test"))
         retriever = Retriever(mock_qdrant_client, mock_embedding_service, config)
@@ -372,7 +372,7 @@ class TestRAGManager:
     @pytest.fixture
     def mock_config(self):
         """Create mock RAG config."""
-        from agent_server.schemas.rag import QdrantConfig, RAGConfig
+        from hdsp_agent_core.models.rag import QdrantConfig, RAGConfig
 
         return RAGConfig(
             enabled=True,
@@ -455,7 +455,7 @@ class TestRAGManager:
     async def test_config_disabled_returns_empty(self):
         """When RAG is disabled, get_context should return empty."""
         from agent_server.core.rag_manager import RAGManager, reset_rag_manager
-        from agent_server.schemas.rag import QdrantConfig, RAGConfig
+        from hdsp_agent_core.models.rag import QdrantConfig, RAGConfig
 
         reset_rag_manager()
 
@@ -518,7 +518,7 @@ class TestWatchdogService:
     def test_should_process_matching_patterns(self):
         """Files matching patterns should be processed."""
         from agent_server.knowledge.watchdog_service import WatchdogService
-        from agent_server.schemas.rag import WatchdogConfig
+        from hdsp_agent_core.models.rag import WatchdogConfig
 
         config = WatchdogConfig(
             enabled=True,
@@ -539,7 +539,7 @@ class TestWatchdogService:
     def test_watchdog_disabled(self):
         """Watchdog should not start when disabled."""
         from agent_server.knowledge.watchdog_service import WatchdogService
-        from agent_server.schemas.rag import WatchdogConfig
+        from hdsp_agent_core.models.rag import WatchdogConfig
 
         config = WatchdogConfig(enabled=False)
         service = WatchdogService(config)
@@ -558,8 +558,8 @@ class TestRAGIntegration:
 
     def test_chunking_to_embedding_pipeline(self):
         """Test chunking output format is compatible with embedding input."""
-        from agent_server.knowledge.chunking import DocumentChunker
-        from agent_server.schemas.rag import ChunkingConfig
+        from hdsp_agent_core.knowledge.chunking import DocumentChunker
+        from hdsp_agent_core.models.rag import ChunkingConfig
 
         config = ChunkingConfig(min_chunk_size=10)
         chunker = DocumentChunker(config)
@@ -577,7 +577,7 @@ class TestRAGIntegration:
         """Test environment variable configuration override."""
         import os
 
-        from agent_server.schemas.rag import RAGConfig
+        from hdsp_agent_core.models.rag import RAGConfig
 
         # Set environment variable
         os.environ["HDSP_RAG_ENABLED"] = "false"
@@ -648,7 +648,7 @@ class TestRAGDebug:
         import asyncio
 
         from agent_server.core.retriever import Retriever
-        from agent_server.schemas.rag import QdrantConfig, RAGConfig
+        from hdsp_agent_core.models.rag import QdrantConfig, RAGConfig
 
         config = RAGConfig(
             score_threshold=0.3,
@@ -680,7 +680,7 @@ class TestRAGDebug:
         import asyncio
 
         from agent_server.core.retriever import Retriever
-        from agent_server.schemas.rag import QdrantConfig, RAGConfig
+        from hdsp_agent_core.models.rag import QdrantConfig, RAGConfig
 
         config = RAGConfig(
             score_threshold=0.3,
@@ -704,7 +704,7 @@ class TestRAGDebug:
         import asyncio
 
         from agent_server.core.retriever import Retriever
-        from agent_server.schemas.rag import QdrantConfig, RAGConfig
+        from hdsp_agent_core.models.rag import QdrantConfig, RAGConfig
 
         config = RAGConfig(
             score_threshold=0.5,  # Higher threshold
@@ -733,7 +733,7 @@ class TestRAGDebug:
         import asyncio
 
         from agent_server.core.retriever import Retriever
-        from agent_server.schemas.rag import QdrantConfig, RAGConfig
+        from hdsp_agent_core.models.rag import QdrantConfig, RAGConfig
 
         config = RAGConfig(
             qdrant=QdrantConfig(collection_name="test"),
@@ -755,7 +755,7 @@ class TestRAGManagerDebug:
     @pytest.fixture
     def mock_config(self):
         """Create mock RAG config for debug testing."""
-        from agent_server.schemas.rag import QdrantConfig, RAGConfig
+        from hdsp_agent_core.models.rag import QdrantConfig, RAGConfig
 
         return RAGConfig(
             enabled=True,
@@ -804,7 +804,7 @@ class TestDebugSchemas:
 
     def test_debug_search_request_validation(self):
         """DebugSearchRequest should validate correctly."""
-        from agent_server.schemas.rag import DebugSearchRequest
+        from hdsp_agent_core.models.rag import DebugSearchRequest
 
         # Valid request
         request = DebugSearchRequest(query="test query")
@@ -816,7 +816,7 @@ class TestDebugSchemas:
 
     def test_debug_search_request_defaults(self):
         """DebugSearchRequest should have correct defaults."""
-        from agent_server.schemas.rag import DebugSearchRequest
+        from hdsp_agent_core.models.rag import DebugSearchRequest
 
         request = DebugSearchRequest(query="test")
 
@@ -827,7 +827,7 @@ class TestDebugSchemas:
 
     def test_debug_search_request_with_libraries(self):
         """DebugSearchRequest should accept library list."""
-        from agent_server.schemas.rag import DebugSearchRequest
+        from hdsp_agent_core.models.rag import DebugSearchRequest
 
         request = DebugSearchRequest(
             query="test query",
@@ -840,7 +840,7 @@ class TestDebugSchemas:
 
     def test_chunk_debug_info_validation(self):
         """ChunkDebugInfo should validate correctly."""
-        from agent_server.schemas.rag import ChunkDebugInfo
+        from hdsp_agent_core.models.rag import ChunkDebugInfo
 
         chunk = ChunkDebugInfo(
             chunk_id="doc1",
@@ -857,7 +857,7 @@ class TestDebugSchemas:
 
     def test_library_detection_debug_validation(self):
         """LibraryDetectionDebug should validate correctly."""
-        from agent_server.schemas.rag import LibraryDetectionDebug
+        from hdsp_agent_core.models.rag import LibraryDetectionDebug
 
         detection = LibraryDetectionDebug(
             input_query="pandas dataframe",
@@ -872,7 +872,7 @@ class TestDebugSchemas:
 
     def test_search_config_debug_validation(self):
         """SearchConfigDebug should validate correctly."""
-        from agent_server.schemas.rag import SearchConfigDebug
+        from hdsp_agent_core.models.rag import SearchConfigDebug
 
         config = SearchConfigDebug(
             top_k=5,

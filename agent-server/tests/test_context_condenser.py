@@ -303,7 +303,7 @@ class TestSessionManagerIntegration:
 
     def test_build_context_without_compress(self, tmp_path):
         """build_context works without compression (backward compat)."""
-        from agent_server.core.session_manager import SessionManager
+        from hdsp_agent_core.managers.session_manager import SessionManager
 
         # Reset singleton
         SessionManager._instance = None
@@ -324,7 +324,7 @@ class TestSessionManagerIntegration:
 
     def test_build_context_with_compress(self, tmp_path):
         """build_context with compression enabled."""
-        from agent_server.core.session_manager import SessionManager
+        from hdsp_agent_core.managers.session_manager import SessionManager
         import agent_server.core.context_condenser as cc
 
         # Reset singletons

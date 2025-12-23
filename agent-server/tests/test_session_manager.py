@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 import tempfile
 
-from agent_server.core.session_manager import (
+from hdsp_agent_core.managers.session_manager import (
     SessionManager,
     Session,
     ChatMessage,
@@ -279,7 +279,7 @@ class TestSingletonAccessor:
         # Reset singleton and global accessor
         SessionManager._instance = None
 
-        import agent_server.core.session_manager as sm
+        import hdsp_agent_core.managers.session_manager as sm
 
         sm._session_manager = None
 
