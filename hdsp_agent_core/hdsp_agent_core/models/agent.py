@@ -24,6 +24,10 @@ class PlanStep(BaseModel):
     expectedOutput: Optional[str] = Field(
         default=None, description="Expected output description"
     )
+    requiredCollections: Optional[List[str]] = Field(
+        default=None,
+        description="Knowledge collections to query for this step (e.g., ['dask', 'matplotlib'])",
+    )
 
 
 class ExecutionPlan(BaseModel):
@@ -314,3 +318,71 @@ class ValidateResponse(BaseModel):
     hasErrors: bool = Field(description="Whether there are any errors")
     hasWarnings: bool = Field(description="Whether there are any warnings")
     summary: str = Field(description="Validation summary")
+
+
+# ============ Step Code Generation (Step-Level RAG) ============
+
+
+class StepCodeRequest(BaseModel):
+    """Request body for step-level code generation with RAG context."""
+
+    step: Dict[str, Any] = Field(
+        description="Step information (description, stepNumber, etc.)"
+    )
+    ragContext: str = Field(
+        default="",
+        description="RAG context retrieved from /rag/step-context",
+    )
+    notebookContext: NotebookContext = Field(
+        default_factory=NotebookContext,
+        description="Current notebook state for code generation",
+    )
+    llmConfig: Optional[LLMConfig] = Field(
+        default=None,
+        description="LLM configuration with API keys (client-provided)",
+    )
+
+
+class StepCodeResponse(BaseModel):
+    """Response body for step-level code generation."""
+
+    toolCalls: List[ToolCall] = Field(
+        description="Generated tool calls with actual code"
+    )
+    reasoning: str = Field(
+        default="",
+        description="LLM reasoning for code generation",
+    )
+
+
+# ============ Step RAG Context ============
+
+
+class StepRAGRequest(BaseModel):
+    """Request body for step-level RAG context retrieval."""
+
+    query: str = Field(description="Step description used as search query")
+    collections: List[str] = Field(
+        default_factory=list,
+        description="Collections to search (e.g., ['dask', 'matplotlib']). Empty = all collections.",
+    )
+    topK: int = Field(
+        default=3,
+        description="Number of documents to retrieve per collection",
+    )
+
+
+class StepRAGResponse(BaseModel):
+    """Response body for step-level RAG context retrieval."""
+
+    context: str = Field(
+        description="Formatted RAG context for step execution"
+    )
+    sources: List[str] = Field(
+        default_factory=list,
+        description="Source collection names used",
+    )
+    chunkCount: int = Field(
+        default=0,
+        description="Number of chunks retrieved",
+    )

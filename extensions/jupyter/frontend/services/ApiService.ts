@@ -42,6 +42,11 @@ import {
   PlanStep,
   ExecutionError,
   ToolCall,
+  // Step-Level RAG Types
+  StepRAGRequest,
+  StepRAGResponse,
+  StepCodeRequest,
+  StepCodeResponse,
 } from '../types/auto-agent';
 
 // ✅ 핵심 변경 1: ServerConnection 대신 PageConfig 임포트
@@ -532,6 +537,65 @@ export class ApiService {
       `${this.baseUrl}/auto-agent/verify-state`,
       request,
       { defaultErrorMessage: '상태 검증 실패' }
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Step-Level RAG API Methods
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Get RAG context for a specific step - Step-Level RAG 컨텍스트 조회
+   *
+   * Step-Level RAG Architecture:
+   * - Planning 단계에서 LLM이 각 step에 requiredCollections를 지정
+   * - Step 실행 전 이 메서드로 해당 collections만 검색
+   * - 결과를 generateStepCode()로 전달하여 최종 코드 생성
+   *
+   * @param request - query (step description), collections (requiredCollections), topK
+   * @returns context string, sources used, chunk count
+   */
+  async getStepContext(request: StepRAGRequest): Promise<StepRAGResponse> {
+    console.log('[ApiService] getStepContext request:', request);
+
+    const response = await fetch(`${this.baseUrl}/rag/step-context`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      credentials: 'include',
+      body: JSON.stringify(request)
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      // RAG 실패 시 빈 컨텍스트 반환 (graceful degradation)
+      console.warn('[ApiService] getStepContext failed, returning empty context:', error);
+      return { context: '', sources: [], chunkCount: 0 };
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Generate final code for a step using RAG context - Step별 최종 코드 생성
+   *
+   * Step-Level RAG Architecture:
+   * - getStepContext()로 조회한 RAG context를 받아
+   * - LLM이 step description + RAG context 기반으로 실제 코드 생성
+   * - Planning의 placeholder 코드를 실제 실행 가능한 코드로 변환
+   *
+   * @param request - step info, ragContext, notebookContext, llmConfig
+   * @param onKeyRotation - optional callback for API key rotation
+   * @returns final toolCalls with actual code
+   */
+  async generateStepCode(
+    request: StepCodeRequest,
+    onKeyRotation?: (keyIndex: number, totalKeys: number) => void
+  ): Promise<StepCodeResponse> {
+    console.log('[ApiService] generateStepCode request:', request);
+    return this.fetchWithKeyRotation<StepCodeResponse>(
+      `${this.baseUrl}/auto-agent/step-code`,
+      request,
+      { onKeyRotation, defaultErrorMessage: 'Step 코드 생성 실패' }
     );
   }
 

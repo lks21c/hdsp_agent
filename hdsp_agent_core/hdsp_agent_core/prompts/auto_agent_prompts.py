@@ -51,6 +51,8 @@ PIP_INDEX_OPTION = _get_pip_index_option()
 
 PLAN_GENERATION_PROMPT = """Jupyter 노트북 Python 전문가. 단계별 실행 계획을 JSON으로 생성.
 
+{collection_index}
+
 ## 도구
 ### 기본 도구 (셀 작업)
 1. **jupyter_cell**: {{"code": "Python코드"}} - 노트북 끝에 새 셀 추가
@@ -92,9 +94,15 @@ plt.rcParams['font.family'] = 'AppleGothic'
 plt.rcParams['axes.unicode_minus'] = False
 ```
 
+## requiredCollections 규칙
+- 각 step에서 필요한 라이브러리 가이드를 위 컬렉션 목록에서 선택
+- 해당 step 실행 시 선택된 컬렉션에서 관련 API 가이드를 조회
+- 필요 없으면 빈 배열 [] 또는 생략
+- **toolCalls의 code는 placeholder**: 실제 코드는 step 실행 시 RAG context와 함께 생성됨
+
 ## JSON 출력
 ```json
-{{"reasoning":"이유","plan":{{"totalSteps":N,"steps":[{{"stepNumber":1,"description":"설명","toolCalls":[{{"tool":"jupyter_cell","parameters":{{"code":"코드"}}}}],"dependencies":[]}}]}}}}
+{{"reasoning":"이유","plan":{{"totalSteps":N,"steps":[{{"stepNumber":1,"description":"설명","toolCalls":[{{"tool":"jupyter_cell","parameters":{{"code":"# placeholder - step 실행 시 생성됨"}}}}],"dependencies":[],"requiredCollections":["dask"]}}]}}}}
 ```
 JSON만 출력."""
 
@@ -877,16 +885,21 @@ def format_plan_prompt(
     defined_variables: list,
     recent_cells: list,
     available_libraries: list = None,
-    detected_libraries: list = None,  # LibraryDetector로 감지된 라이브러리
-    rag_context: str = None,  # RAG 검색 결과 컨텍스트 (primary)
 ) -> str:
     """
     실행 계획 생성 프롬프트 포맷팅
 
-    지식 주입 우선순위:
-    1. RAG 컨텍스트가 있으면 RAG 결과 사용 (시맨틱 검색)
-    2. RAG가 없으면 KnowledgeBase fallback (전체 API 가이드 로드)
+    Step-Level RAG 아키텍처:
+    - Planning 단계에서는 Collection TOC만 제공 (실제 문서 조회 없음)
+    - LLM이 각 step별로 필요한 requiredCollections를 선택
+    - 실제 RAG 조회는 step 실행 시점에 수행됨
     """
+    # Collection Index TOC 로드
+    from hdsp_agent_core.knowledge.collection_index import get_collection_index
+
+    collection_index = get_collection_index()
+    collection_index_text = collection_index.format_for_prompt()
+
     # 최근 셀 내용 포맷팅 (참고용으로만 표시) - 최대 5개 셀, 각 150자
     recent_cells_text = ""
     max_cells = min(5, len(recent_cells))  # 최대 5개 셀만
@@ -899,8 +912,9 @@ def format_plan_prompt(
             else f"\n[셀 {cell_index}]: {source}\n"
         )
 
-    # 기본 프롬프트 생성
-    base_prompt = PLAN_GENERATION_PROMPT.format(
+    # 프롬프트 생성 (Collection TOC 주입)
+    prompt = PLAN_GENERATION_PROMPT.format(
+        collection_index=collection_index_text,
         request=request,
         cell_count=cell_count,
         imported_libraries=", ".join(imported_libraries)
@@ -913,39 +927,9 @@ def format_plan_prompt(
         else "정보 없음",
     )
 
-    # 지식 주입: RAG primary, KnowledgeBase fallback
-    if rag_context:
-        # RAG 결과가 있으면 RAG 사용 (시맨틱 검색 기반)
-        print(f"[RAG] 컨텍스트 주입됨: {len(rag_context)} chars")
-        base_prompt = base_prompt.replace(
-            "## JSON 출력", f"{rag_context}\n\n## JSON 출력"
-        )
-    elif detected_libraries:
-        # RAG가 없으면 KnowledgeBase fallback (전체 API 가이드)
-        from hdsp_agent_core.knowledge.loader import get_knowledge_loader
+    print(f"[Planning] Collection TOC 주입됨: {len(collection_index_text)} chars")
 
-        knowledge_loader = get_knowledge_loader()
-        library_knowledge = knowledge_loader.format_knowledge_section(
-            detected_libraries
-        )
-
-        if library_knowledge:
-            if len(library_knowledge) > 2000:
-                library_knowledge = library_knowledge[:2000] + "\n... (생략)"
-            print(
-                f"[KnowledgeBase Fallback] 라이브러리 지식 주입됨: {detected_libraries} ({len(library_knowledge)} chars)"
-            )
-            base_prompt = base_prompt.replace(
-                "## JSON 출력", f"{library_knowledge}\n\n## JSON 출력"
-            )
-        else:
-            print(
-                f"[KnowledgeBase] 주입할 라이브러리 지식 없음. detected={detected_libraries}"
-            )
-    else:
-        print("[Knowledge] RAG 컨텍스트 없음, 감지된 라이브러리 없음")
-
-    return base_prompt
+    return prompt
 
 
 def format_refine_prompt(
@@ -1258,3 +1242,106 @@ PLAN_GENERATION_PROMPT = PLAN_GENERATION_PROMPT.replace(
 ADAPTIVE_REPLAN_PROMPT = ADAPTIVE_REPLAN_PROMPT.replace(
     "{PIP_INDEX_OPTION}", PIP_INDEX_OPTION
 )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Step-Level 코드 생성 프롬프트 (Step 실행 시 RAG context와 함께 사용)
+# ═══════════════════════════════════════════════════════════════════════════
+
+STEP_CODE_GENERATION_PROMPT = """주어진 Step을 실행할 Python 코드를 생성하세요.
+
+## Step 정보
+
+**Step {step_number}**: {step_description}
+
+## API 가이드 (반드시 참고)
+
+{rag_context}
+
+## 노트북 컨텍스트
+
+- 기존 import: {imported_libraries}
+- 정의된 변수: {defined_variables}
+- 최근 셀:
+{recent_cells}
+
+## 핵심 규칙
+
+1. **새 셀 독립 실행**: 기존 변수에 의존하지 않고 독립적으로 실행 가능해야 함
+2. **API 가이드 준수**: 위 API 가이드의 코드 패턴과 주의사항을 반드시 따르세요
+3. **한글 주석**: 코드 내 주석과 문자열은 한글 또는 영어로만 (한자 금지)
+4. **에러 방지**: API 가이드에 언급된 일반적인 실수를 피하세요
+5. **시각화 시 한글 폰트**:
+```python
+import matplotlib.pyplot as plt
+plt.rcParams['font.family'] = 'AppleGothic'
+plt.rcParams['axes.unicode_minus'] = False
+```
+
+## 출력 형식
+
+```json
+{{
+  "toolCalls": [
+    {{
+      "tool": "jupyter_cell",
+      "parameters": {{
+        "code": "실제 Python 코드"
+      }}
+    }}
+  ],
+  "reasoning": "코드 생성 이유 (1-2문장)"
+}}
+```
+
+JSON만 출력하세요."""
+
+
+def format_step_code_prompt(
+    step_number: int,
+    step_description: str,
+    rag_context: str,
+    imported_libraries: list,
+    defined_variables: list,
+    recent_cells: list,
+) -> str:
+    """
+    Step-Level 코드 생성 프롬프트 포맷팅
+
+    Args:
+        step_number: 현재 step 번호
+        step_description: step 설명
+        rag_context: /rag/step-context 에서 조회한 RAG 컨텍스트
+        imported_libraries: 노트북에서 import된 라이브러리 목록
+        defined_variables: 노트북에서 정의된 변수 목록
+        recent_cells: 최근 실행된 셀 목록
+
+    Returns:
+        포맷팅된 프롬프트 문자열
+    """
+    # 최근 셀 내용 포맷팅 (참고용으로만 표시) - 최대 3개 셀, 각 100자
+    recent_cells_text = ""
+    max_cells = min(3, len(recent_cells))
+    for i, cell in enumerate(recent_cells[-max_cells:]):
+        source = cell.get("source", "")[:100]
+        cell_index = cell.get("index", i)
+        recent_cells_text += (
+            f"\n[셀 {cell_index}]: {source[:80]}...\n"
+            if len(source) > 80
+            else f"\n[셀 {cell_index}]: {source}\n"
+        )
+
+    # RAG context가 없는 경우 기본 메시지
+    if not rag_context or not rag_context.strip():
+        rag_context = "(API 가이드 없음 - 일반적인 Python 베스트 프랙티스를 따르세요)"
+
+    return STEP_CODE_GENERATION_PROMPT.format(
+        step_number=step_number,
+        step_description=step_description,
+        rag_context=rag_context,
+        imported_libraries=", ".join(imported_libraries)
+        if imported_libraries
+        else "없음",
+        defined_variables=", ".join(defined_variables) if defined_variables else "없음",
+        recent_cells=recent_cells_text if recent_cells_text else "없음",
+    )

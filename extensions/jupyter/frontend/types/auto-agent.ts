@@ -248,6 +248,8 @@ export interface PlanStep {
   isReplaced?: boolean;       // 완전히 교체된 스텝인지 여부
   cellOperation?: CellOperation;  // 이 스텝의 셀 작업 유형 (UI 표시용)
   targetCellIndex?: number;   // 대상 셀 인덱스 (UI 표시용)
+  // Step-Level RAG Architecture
+  requiredCollections?: string[];  // 이 step에서 필요한 knowledge collections (e.g., ['dask', 'matplotlib'])
 }
 
 export interface StepResult {
@@ -258,6 +260,8 @@ export interface StepResult {
   isFinalAnswer?: boolean;
   finalAnswer?: string;
   error?: string;
+  // Step-Level RAG: 실제 실행된 toolCalls (RAG에 의해 코드가 변경된 경우)
+  effectiveToolCalls?: ToolCall[];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -274,6 +278,8 @@ export type AgentPhase =
   | 'verifying'       // 상태 검증 중 (Phase 1: State Verification)
   | 'replanning'      // Adaptive Replanning (Fast Fail 후 계획 수정)
   | 'reflecting'      // Reflection 분석 중
+  | 'fetching_rag'    // Step-Level RAG: 컨텍스트 조회 중
+  | 'generating_code' // Step-Level RAG: 코드 생성 중
   | 'completed'
   | 'failed';
 
@@ -395,6 +401,42 @@ export interface AutoAgentRefineResponse {
 export interface AutoAgentToolCallRequest {
   toolCall: ToolCall;
   context?: NotebookContext;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Step-Level RAG Types (Step 실행 시 RAG context 조회 및 코드 생성)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Step-Level RAG 컨텍스트 조회 요청
+ * Planning에서 LLM이 지정한 requiredCollections를 기반으로 RAG 조회
+ */
+export interface StepRAGRequest {
+  query: string;              // Step description (검색 쿼리로 사용)
+  collections: string[];      // requiredCollections (e.g., ['dask', 'matplotlib'])
+  topK?: number;              // 각 collection당 반환할 청크 수 (기본: 3)
+}
+
+export interface StepRAGResponse {
+  context: string;            // 포맷팅된 RAG 컨텍스트 문자열
+  sources: string[];          // 사용된 collection 목록
+  chunkCount: number;         // 조회된 청크 수
+}
+
+/**
+ * Step-Level 코드 생성 요청
+ * RAG context + Step 설명을 기반으로 최종 코드 생성
+ */
+export interface StepCodeRequest {
+  step: PlanStep;             // Step 정보 (description, toolCalls 등)
+  ragContext: string;         // /rag/step-context 결과
+  notebookContext: NotebookContext;  // 현재 노트북 상태
+  llmConfig?: ILLMConfig;     // LLM 설정
+}
+
+export interface StepCodeResponse {
+  toolCalls: ToolCall[];      // 최종 코드가 포함된 toolCalls
+  reasoning?: string;         // 코드 생성 이유
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

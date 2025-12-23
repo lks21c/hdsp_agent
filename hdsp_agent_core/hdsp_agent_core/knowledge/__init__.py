@@ -17,6 +17,12 @@ from .chunking import (
     DocumentChunker,
     chunk_file,
 )
+from .collection_index import (
+    CollectionIndex,
+    CollectionInfo,
+    get_collection_index,
+    reset_collection_index,
+)
 
 __all__ = [
     "KnowledgeBase",
@@ -28,4 +34,8 @@ __all__ = [
     "LIBRARY_DESCRIPTIONS",
     "DocumentChunker",
     "chunk_file",
+    "CollectionIndex",
+    "CollectionInfo",
+    "get_collection_index",
+    "reset_collection_index",
 ]

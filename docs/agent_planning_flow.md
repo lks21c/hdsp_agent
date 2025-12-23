@@ -72,18 +72,24 @@ flowchart LR
 ```mermaid
 flowchart TD
     Start([🎯 사용자 요청])
-    Start --> RAG
+    Start --> Planning
 
-    RAG["<b>1. Knowledge Base 동적 로딩</b><br/>🔍 Local RAG (Qdrant + E5)<br/><code>[LLM: ✗]</code>"]
-    RAG --> Planning
+    Planning["<b>1. Planning (계획 수립)</b><br/>✦ PLAN_GENERATION_PROMPT<br/>+ Collection TOC (문서 목차만)<br/>POST /agent/plan<br/><code>[LLM: ✓]</code>"]
+    Planning --> StepLoop
 
-    Planning["<b>2. Planning (계획 수립)</b><br/>✦ PLAN_GENERATION_PROMPT<br/>POST /agent/plan<br/><code>[LLM: ✓]</code>"]
-    Planning --> Validation
+    subgraph StepLoop["2. Step-by-Step Execution"]
+        direction TB
+        RAG["<b>2a. Step-Level RAG</b><br/>POST /rag/step-context<br/>requiredCollections 기반 검색<br/><code>[LLM: ✗]</code>"]
+        RAG --> CodeGen
 
-    Validation["<b>3. Pre-Validation</b><br/>🔧 Ruff --fix → Ruff check<br/><code>[LLM: ✗]</code>"]
-    Validation --> Execution
+        CodeGen["<b>2b. Code Generation</b><br/>✦ STEP_CODE_GENERATION_PROMPT<br/>POST /agent/step-code<br/><code>[LLM: ✓]</code>"]
+        CodeGen --> Validation
 
-    Execution["<b>4. Step-by-Step Execution</b><br/>🔧 ToolExecutor (18개 도구)<br/>⚠️ 도구는 여기서만 호출!<br/><code>[LLM: ✗]</code>"]
+        Validation["<b>2c. Pre-Validation</b><br/>🔧 Ruff --fix → Ruff check<br/><code>[LLM: ✗]</code>"]
+        Validation --> Execution
+
+        Execution["<b>2d. Execution</b><br/>🔧 ToolExecutor<br/><code>[LLM: ✗]</code>"]
+    end
 
     Execution --> Success
     Execution --> Error
@@ -91,18 +97,19 @@ flowchart TD
     Success{{"✅ 성공"}}
     Error{{"❌ 오류"}}
 
-    Success --> StateVerify["<b>5a. State Verification</b><br/>결정론적 검증<br/><code>[LLM: ✗]</code>"]
-    Error --> ErrorClass["<b>5b. Error Classification</b><br/>패턴 매칭 우선<br/>필요시 ERROR_ANALYSIS_PROMPT<br/><code>[LLM: △]</code>"]
+    Success --> StateVerify["<b>3a. State Verification</b><br/>결정론적 검증<br/><code>[LLM: ✗]</code>"]
+    Error --> ErrorClass["<b>3b. Error Classification</b><br/>패턴 매칭 우선<br/>필요시 ERROR_ANALYSIS_PROMPT<br/><code>[LLM: △]</code>"]
 
-    ErrorClass --> Replan["<b>6. Adaptive Replanning</b><br/>✦ ADAPTIVE_REPLAN_PROMPT<br/>refine / insert / replace / replan<br/><code>[LLM: ✓]</code>"]
+    ErrorClass --> Replan["<b>4. Adaptive Replanning</b><br/>✦ ADAPTIVE_REPLAN_PROMPT<br/>refine / insert / replace / replan<br/><code>[LLM: ✓]</code>"]
 
-    Replan -->|"수정된 step"| Execution
+    Replan -->|"수정된 step"| StepLoop
     StateVerify --> NextStep{{"다음 Step?"}}
-    NextStep -->|"있음"| Execution
+    NextStep -->|"있음"| StepLoop
     NextStep -->|"완료"| End([🏁 완료])
 
     %% Styling
     style Planning fill:#bbdefb,stroke:#1565c0
+    style CodeGen fill:#bbdefb,stroke:#1565c0
     style Replan fill:#bbdefb,stroke:#1565c0
     style ErrorClass fill:#fff9c4,stroke:#f9a825
     style Execution fill:#c8e6c9,stroke:#2e7d32
@@ -145,38 +152,135 @@ flowchart TD
 
 ---
 
-## Knowledge Base 동적 로딩 (Local RAG)
+## Knowledge Base (Step-Level RAG)
 
-사용자 요청에서 특정 라이브러리 키워드를 감지하면, 해당 라이브러리의 API 가이드를 자동으로 로드합니다.
+Step-Level RAG 아키텍처를 사용하여 **계획 단계에서는 문서 목차(TOC)만 제공**하고, **실제 문서 검색은 각 Step 실행 직전**에 수행합니다.
+
+### 핵심 설계 원칙
+
+| 단계 | RAG 사용 | 제공되는 정보 |
+|------|----------|--------------|
+| **Planning** | ❌ 없음 | Collection TOC (목차만) |
+| **Step Execution** | ✅ 있음 | requiredCollections 기반 문서 검색 |
+
+**장점:**
+- 계획 단계에서 불필요한 문서 로딩 방지 (토큰 절약)
+- 각 Step에 필요한 문서만 정확히 검색 (정밀도 향상)
+- LLM이 어떤 문서가 필요한지 직접 결정 (`requiredCollections`)
 
 ### 아키텍처
 
 ```mermaid
 flowchart TD
-    Request["📝 사용자 요청<br/><i>'dask로 대용량 CSV 병렬 처리해줘'</i>"]
-    Request --> Detect
+    subgraph Planning["1. Planning Phase (NO RAG)"]
+        Request["📝 사용자 요청<br/><i>'dask로 대용량 CSV 병렬 처리해줘'</i>"]
+        Request --> TOC["<b>Collection TOC 로드</b><br/>collection_index.yaml<br/>문서 목록/설명만 제공"]
+        TOC --> Plan["<b>LLM Planning</b><br/>각 Step에 requiredCollections 지정<br/><code>toolCalls는 placeholder</code>"]
+    end
 
-    Detect["<b>1. 키워드 감지</b><br/>LibraryDetector<br/>'dask' 키워드 매칭"]
-    Detect --> Embed
+    Plan --> StepExec
 
-    Embed["<b>2. 임베딩 생성</b><br/>multilingual-e5-small<br/>요청 텍스트 → 384차원 벡터<br/><i>CPU 로컬 inference</i>"]
-    Embed --> Search
+    subgraph StepExec["2. Step Execution (per-step RAG)"]
+        RAG["<b>Step-Level RAG</b><br/>POST /rag/step-context<br/>requiredCollections 기반 검색"]
+        RAG --> CodeGen["<b>코드 생성</b><br/>POST /agent/step-code<br/>RAG context + step description"]
+        CodeGen --> Execute["<b>실행</b><br/>ToolExecutor"]
+    end
 
-    Search["<b>3. 벡터 검색</b><br/>Qdrant<br/>코사인 유사도 기반<br/>Top-K 유사 문서 반환"]
-    Search --> Context
+    style Planning fill:#e3f2fd,stroke:#1565c0
+    style StepExec fill:#e8f5e9,stroke:#2e7d32
+    style RAG fill:#f3e5f5,stroke:#7b1fa2
+    style CodeGen fill:#bbdefb,stroke:#1565c0
+```
 
-    Context["<b>4. 컨텍스트 구성</b><br/>검색된 청크 + 라이브러리 가이드<br/>→ 플래닝 프롬프트에 주입"]
+### Collection Index (TOC)
 
-    style Detect fill:#e3f2fd,stroke:#1565c0
-    style Embed fill:#fce4ec,stroke:#c2185b
-    style Search fill:#e8f5e9,stroke:#2e7d32
-    style Context fill:#fff3e0,stroke:#ef6c00
+Planning 단계에서 LLM에 제공되는 문서 목차입니다. **실제 문서 내용은 포함하지 않고** 어떤 Collection이 있는지만 알려줍니다.
+
+**파일 위치:** `hdsp_agent_core/knowledge/collection_index.yaml`
+
+```yaml
+# 예시
+collections:
+  - name: "dask"
+    display_name: "Dask DataFrame"
+    description: "대용량 데이터 처리, 분산 컴퓨팅, lazy evaluation"
+    key_topics: ["dd.read_csv", "compute()", "distributed"]
+    use_cases: ["메모리 초과 데이터", "병렬 처리"]
+
+  - name: "matplotlib"
+    display_name: "Matplotlib Visualization"
+    description: "데이터 시각화, 차트, 그래프"
+    key_topics: ["plt.figure", "한글 폰트", "차트 종류"]
+    use_cases: ["시각화", "EDA"]
+```
+
+**LLM에 주입되는 형식:**
+```markdown
+## 📚 Available Knowledge Collections
+
+각 step에서 필요한 collection을 `requiredCollections`에 지정하세요:
+
+### Dask DataFrame (`dask`)
+- **설명**: 대용량 데이터 처리, 분산 컴퓨팅
+- **주요 API**: dd.read_csv, compute()
+- **사용 시**: 메모리 초과 데이터, 병렬 처리
+
+### Matplotlib Visualization (`matplotlib`)
+...
+```
+
+### Step Schema: requiredCollections
+
+Planning 단계에서 LLM이 각 Step에 필요한 Collection을 지정합니다.
+
+```json
+{
+  "plan": {
+    "steps": [
+      {
+        "stepNumber": 1,
+        "description": "Dask로 대용량 CSV 파일 로드",
+        "toolCalls": [{"tool": "jupyter_cell", "parameters": {"code": "# placeholder"}}],
+        "requiredCollections": ["dask"]
+      },
+      {
+        "stepNumber": 2,
+        "description": "데이터 시각화",
+        "toolCalls": [{"tool": "jupyter_cell", "parameters": {"code": "# placeholder"}}],
+        "requiredCollections": ["matplotlib"]
+      }
+    ]
+  }
+}
+```
+
+> **Note:** `toolCalls.code`는 placeholder입니다. 실제 코드는 Step 실행 시 RAG 컨텍스트와 함께 생성됩니다.
+
+### Step Execution Flow
+
+각 Step 실행 전 수행되는 RAG + 코드 생성 흐름:
+
+```
+Step 1: "Dask로 대용량 CSV 로드" (requiredCollections: ["dask"])
+  ↓
+1. POST /rag/step-context
+   - query: "Dask로 대용량 CSV 로드"
+   - collections: ["dask"]
+   → context: dask.md의 관련 청크들
+  ↓
+2. POST /agent/step-code
+   - step description + RAG context + notebook context
+   → final toolCalls (실제 Python 코드)
+  ↓
+3. ToolExecutor.executeTool()
+   - 생성된 코드 실행
 ```
 
 ### 구성 요소
 
 | 컴포넌트 | 기술 | 역할 |
 |----------|------|------|
+| **Collection Index** | YAML | Planning용 문서 목차 (TOC) |
 | **임베딩 모델** | `intfloat/multilingual-e5-small` | 텍스트 → 384차원 벡터 (한국어 지원) |
 | **벡터 DB** | Qdrant (Docker 또는 In-Memory) | 벡터 저장 및 유사도 검색 |
 | **문서 청킹** | LangChain RecursiveCharacterTextSplitter | 마크다운 문서 분할 (1000자, 200 overlap) |
@@ -201,38 +305,28 @@ flowchart TD
 
 > 📝 **참고**: 임베딩 모델은 **GPU 없이 CPU에서 실행**됩니다. 초기 모델 로드에 약 5~10초 소요되며, 이후 요청당 50~200ms의 지연시간을 보입니다.
 
-### 지원 라이브러리
+### 지원 Collection
 
-| 트리거 키워드 | 로드되는 가이드 |
-|--------------|----------------|
-| `dask`, `dask.dataframe`, `dd.read` | `dask.md` |
-| `polars`, `pl.read` | `polars.md` |
-| `pyspark`, `spark` | `pyspark.md` |
-| `vaex` | `vaex.md` |
-| `modin` | `modin.md` |
-| `ray` | `ray.md` |
-
-### 예시: Dask 요청 처리
-
-```
-사용자: "dask로 대용량 CSV 파일을 병렬 처리해줘"
-         ↓
-1. "dask" 키워드 감지
-2. 요청 텍스트 임베딩 생성 (multilingual-e5-small)
-3. Qdrant에서 유사 문서 청크 검색
-4. dask.md 가이드 + 검색된 청크 결합
-5. 플래닝 프롬프트에 컨텍스트 주입
-6. LLM이 올바른 Dask 문법으로 계획 생성
-```
+| Collection 이름 | 설명 | 주요 API |
+|----------------|------|----------|
+| `dask` | 대용량 데이터 처리, 분산 컴퓨팅 | `dd.read_csv`, `compute()` |
+| `polars` | 고성능 DataFrame, Rust 기반 | `pl.read_csv`, Expression API |
+| `pyspark` | 분산 데이터 처리, Spark DataFrame | `SparkSession`, `spark.read` |
+| `vaex` | Out-of-core DataFrame, 메모리 효율 | `vaex.open`, lazy expressions |
+| `modin` | Pandas 가속화, 멀티코어 활용 | `modin.pandas`, ray backend |
+| `ray` | 분산 컴퓨팅 프레임워크 | `ray.init`, `@ray.remote` |
+| `matplotlib` | 데이터 시각화, 차트 | `plt.figure`, 한글 폰트 |
 
 ### 코드 위치
 
 | 파일 | 역할 |
 |------|------|
-| `agent-server/agent_server/knowledge/loader.py` | 지식 로더 |
-| `agent-server/agent_server/rag/embedding_manager.py` | 임베딩 생성 |
-| `agent-server/agent_server/rag/qdrant_manager.py` | 벡터 DB 관리 |
-| `agent-server/agent_server/knowledge/libraries/*.md` | 라이브러리 가이드 |
+| `hdsp_agent_core/knowledge/collection_index.yaml` | Collection 목차 정의 |
+| `hdsp_agent_core/knowledge/collection_index.py` | TOC 로더 클래스 |
+| `agent-server/routers/rag.py` | `/rag/step-context` 엔드포인트 |
+| `agent-server/routers/agent.py` | `/agent/step-code` 엔드포인트 |
+| `agent-server/core/rag_manager.py` | RAG 검색 관리 |
+| `hdsp_agent_core/knowledge/libraries/*.md` | 라이브러리 API 가이드 |
 
 ---
 
@@ -242,11 +336,21 @@ flowchart TD
 
 | 엔드포인트 | 메서드 | 설명 | LLM 호출 |
 |------------|--------|------|----------|
-| `/agent/plan` | POST | 실행 계획 생성 | ✓ |
+| `/agent/plan` | POST | 실행 계획 생성 (Collection TOC 포함) | ✓ |
+| `/agent/step-code` | POST | **Step-Level 코드 생성 (RAG context 기반)** | ✓ |
 | `/agent/refine` | POST | 코드 수정 (Self-Healing) | ✓ |
 | `/agent/replan` | POST | 적응적 재계획 결정 | △ (패턴+LLM Fallback) |
 | `/agent/verify-state` | POST | 상태 검증 | ✗ (결정론적) |
 | `/agent/report-execution` | POST | 실행 결과 보고 | ✗ |
+
+### RAG API (`/rag/*`)
+
+| 엔드포인트 | 메서드 | 설명 | LLM 호출 |
+|------------|--------|------|----------|
+| `/rag/step-context` | POST | **Step-Level RAG 컨텍스트 조회** | ✗ |
+| `/rag/search` | POST | 명시적 RAG 검색 | ✗ |
+| `/rag/status` | GET | RAG 시스템 상태 | ✗ |
+| `/rag/debug` | POST | RAG 검색 디버깅 (리니지 추적) | ✗ |
 
 ### Chat API (`/chat/*`)
 
@@ -258,9 +362,9 @@ flowchart TD
 ### 요청 예시
 
 ```json
-// POST /agent/plan
+// POST /agent/plan - 계획 생성 (Collection TOC 포함, RAG 없음)
 {
-  "request": "pandas로 CSV 파일을 읽어서 데이터 분석해줘",
+  "request": "dask로 대용량 CSV 파일을 병렬 처리하고 시각화해줘",
   "notebookContext": {
     "cellCount": 5,
     "importedLibraries": ["pandas", "numpy"],
@@ -274,6 +378,73 @@ flowchart TD
       "model": "gemini-2.5-flash"
     }
   }
+}
+
+// 응답: requiredCollections가 포함된 계획
+{
+  "plan": {
+    "steps": [
+      {
+        "stepNumber": 1,
+        "description": "Dask로 대용량 CSV 파일 로드",
+        "toolCalls": [{"tool": "jupyter_cell", "parameters": {"code": "# placeholder"}}],
+        "requiredCollections": ["dask"]
+      },
+      {
+        "stepNumber": 2,
+        "description": "데이터 시각화",
+        "toolCalls": [{"tool": "jupyter_cell", "parameters": {"code": "# placeholder"}}],
+        "requiredCollections": ["matplotlib"]
+      }
+    ]
+  }
+}
+```
+
+```json
+// POST /rag/step-context - Step-Level RAG 컨텍스트 조회
+{
+  "query": "Dask로 대용량 CSV 파일 로드",
+  "collections": ["dask"],
+  "topK": 3
+}
+
+// 응답: 검색된 문서 컨텍스트
+{
+  "context": "### DASK API Guide\n\ndd.read_csv()를 사용하여...",
+  "sources": ["dask"],
+  "chunkCount": 3
+}
+```
+
+```json
+// POST /agent/step-code - Step-Level 코드 생성
+{
+  "step": {
+    "stepNumber": 1,
+    "description": "Dask로 대용량 CSV 파일 로드",
+    "toolCalls": [{"tool": "jupyter_cell", "parameters": {"code": "# placeholder"}}],
+    "requiredCollections": ["dask"]
+  },
+  "ragContext": "### DASK API Guide\n\ndd.read_csv()를 사용하여...",
+  "notebookContext": {
+    "cellCount": 5,
+    "importedLibraries": ["pandas"],
+    "definedVariables": []
+  },
+  "llmConfig": { ... }
+}
+
+// 응답: 실제 코드가 포함된 toolCalls
+{
+  "toolCalls": [
+    {
+      "tool": "jupyter_cell",
+      "parameters": {
+        "code": "import dask.dataframe as dd\n\n# 대용량 CSV 파일 로드\ndf = dd.read_csv('data/*.csv')\ndf.head()"
+      }
+    }
+  ]
 }
 ```
 
@@ -385,7 +556,7 @@ class ValidateResponse:
 
 ## 데이터 흐름
 
-### A. 계획 생성 흐름 (REST API 경유)
+### A. 계획 생성 흐름 (NO RAG, TOC만 사용)
 
 ```mermaid
 flowchart LR
@@ -398,7 +569,7 @@ flowchart LR
     end
 
     subgraph Server["Agent Server"]
-        Router["Router"] --> RAG["RAG"] --> Knowledge["Knowledge"] --> LLM["LLM"]
+        Router["Router"] --> TOC["Collection TOC"] --> LLM["LLM"]
     end
 
     Api -->|"A"| Handler -->|":8000"| Router
@@ -407,11 +578,37 @@ flowchart LR
     style Frontend fill:#fff3e0,stroke:#e65100
     style Proxy fill:#f3e5f5,stroke:#7b1fa2
     style Server fill:#e1f5fe,stroke:#01579b
+    style TOC fill:#f3e5f5,stroke:#7b1fa2
 ```
 
-> **상세**: 입력(AutoAgentPanel) → 컨텍스트(ContextManager) → API → Proxy(handlers.py) → Router(agent.py) → RAG(임베딩+검색) → Knowledge(loader.py) → LLM(llm_service.py) → 계획 반환
+> **상세**: 입력(AutoAgentPanel) → 컨텍스트(ContextManager) → API → Proxy → Router(agent.py) → **Collection TOC 로드 (RAG 없음)** → LLM → 계획 반환 (각 Step에 `requiredCollections` 포함)
 
-### B. 도구 실행 흐름 (Jupyter API)
+### B. Step-Level RAG + 코드 생성 흐름
+
+```mermaid
+flowchart LR
+    subgraph Orch["Orchestrator"]
+        Step["executeStepWithRetry"]
+    end
+
+    subgraph AgentServer["Agent Server"]
+        RAG["RAG<br/>/rag/step-context"]
+        CodeGen["코드 생성<br/>/agent/step-code"]
+    end
+
+    Step -->|"1. requiredCollections"| RAG
+    RAG -->|"2. context"| Step
+    Step -->|"3. context + step"| CodeGen
+    CodeGen -->|"4. toolCalls"| Step
+
+    style Orch fill:#fff3e0,stroke:#e65100
+    style RAG fill:#f3e5f5,stroke:#7b1fa2
+    style CodeGen fill:#bbdefb,stroke:#1565c0
+```
+
+> **상세**: Step 실행 전 → `requiredCollections` 확인 → `/rag/step-context` (RAG 검색) → `/agent/step-code` (LLM 코드 생성) → 생성된 코드로 toolCalls 교체 → 실행
+
+### C. 도구 실행 흐름 (Jupyter API)
 
 ```mermaid
 flowchart LR
@@ -481,13 +678,14 @@ flowchart LR
 
 1. **Self-Healing**: 오류 발생 시 자동으로 코드 수정 시도
 2. **Context-Aware**: 노트북 상태를 지속적으로 추적
-3. **Knowledge-Enhanced**: 라이브러리별 전문 지식 동적 로딩
+3. **Step-Level RAG**: 계획 단계에서는 문서 목차(TOC)만, 실행 시 필요한 문서만 검색 (토큰 절약, 정밀도 향상)
 4. **Fail-Fast Validation**: 실행 전 코드 품질 사전 검증 + Ruff 자동 수정
 5. **Adaptive Planning**: 상황에 따른 유연한 계획 수정
 6. **Deterministic Subsystems**: 에러 분류/상태 검증은 LLM 없이 처리
 7. **LLM Fallback**: 패턴 매칭 실패 시 LLM 기반 에러 분석
 8. **Extended Toolset**: 18개 내장 도구 (파일, 셸, Git, 테스트, 리팩토링 등)
 9. **Rate Limit Resilience**: 자동 API 키 교체로 서비스 연속성 보장
+10. **Deferred Code Generation**: Planning 시 placeholder, Step 실행 시 RAG 컨텍스트로 실제 코드 생성
 
 ---
 

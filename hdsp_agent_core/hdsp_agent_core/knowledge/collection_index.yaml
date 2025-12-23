@@ -1,0 +1,71 @@
+# Knowledge Collection Index (Table of Contents)
+# This file is included in planning prompts to help LLM select relevant collections per step.
+# Last updated: 2024-12
+
+version: "1.0"
+
+collections:
+  - name: "dask"
+    display_name: "Dask DataFrame"
+    description: "대용량 데이터 처리, lazy evaluation, 분산 컴퓨팅. pandas 대체용 빅데이터 처리 라이브러리"
+    key_topics:
+      - "dd.read_csv, dd.read_parquet"
+      - ".compute() 호출 시점"
+      - "head()는 pandas 반환 (compute 불필요)"
+      - "lazy evaluation 패턴"
+    use_cases:
+      - "메모리 초과 대용량 CSV/Parquet 처리"
+      - "분산 병렬 데이터 처리"
+      - "lazy evaluation 기반 최적화"
+    keywords:
+      - "dask"
+      - "dd."
+      - "lazy evaluation"
+      - "대용량"
+      - "빅데이터"
+      - "분산"
+
+  - name: "polars"
+    display_name: "Polars DataFrame"
+    description: "Rust 기반 고성능 DataFrame. pandas와 다른 API 문법 주의 필요"
+    key_topics:
+      - "pl.read_csv, pl.scan_csv (lazy)"
+      - "df.select(), df.filter() 문법"
+      - "pl.col() expression 기반 API"
+      - "pandas와 다른 groupby 문법"
+    use_cases:
+      - "고속 단일 머신 데이터 처리"
+      - "메모리 효율적 DataFrame 연산"
+      - "Rust 기반 최적화 활용"
+    keywords:
+      - "polars"
+      - "pl."
+      - "rust"
+      - "고성능"
+
+  - name: "matplotlib"
+    display_name: "Matplotlib Visualization"
+    description: "데이터 시각화, 차트, 그래프. tick_params() 제약사항과 한글 폰트 설정 가이드 포함"
+    key_topics:
+      - "Figure/Axes 기본 패턴"
+      - "tick_params()에서 ha/va 금지 - plt.setp() 사용"
+      - "한글 폰트 설정 방법"
+      - "차트 종류별 API (bar, line, scatter, hist)"
+    use_cases:
+      - "탐색적 데이터 분석 (EDA) 시각화"
+      - "막대/라인/산점도/히스토그램"
+      - "x축 레이블 회전 및 정렬"
+    keywords:
+      - "matplotlib"
+      - "plt."
+      - "시각화"
+      - "차트"
+      - "그래프"
+      - "plot"
+      - "visualization"
+
+# Future collections (guides not yet available):
+# - pyspark: Spark 기반 분산 처리
+# - vaex: Out-of-core 대용량 탐색
+# - modin: pandas 가속화
+# - ray: 분산 컴퓨팅 프레임워크

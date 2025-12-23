@@ -93,6 +93,9 @@ export class AgentOrchestrator {
   // ★ 실행된 변수의 실제 값 추적 (finalAnswer 변수 치환용)
   private executedStepVariableValues: Record<string, string> = {};
 
+  // ★ Step-Level RAG: 현재 실행 중인 LLM 설정 저장
+  private currentLlmConfig: ILLMConfig | undefined;
+
   constructor(
     notebook: NotebookPanel,
     sessionContext: ISessionContext,
@@ -149,6 +152,8 @@ export class AgentOrchestrator {
 
     this.isRunning = true;
     this.abortController = new AbortController();
+    // ★ Step-Level RAG: LLM 설정 저장
+    this.currentLlmConfig = llmConfig;
     // ★ 새 실행 시작 시 이전 실행에서 추적된 변수/import 초기화
     this.executedStepVariables.clear();
     this.executedStepImports.clear();
@@ -399,14 +404,20 @@ export class AgentOrchestrator {
         executedSteps.push(stepResult);
         replanAttempts = 0; // 성공 시 재계획 시도 횟수 리셋
 
+        // ★ Step-Level RAG: 실제 실행된 toolCalls가 있으면 그것을 사용
+        const actualToolCalls = stepResult.effectiveToolCalls || step.toolCalls;
+        const effectiveStep: PlanStep = stepResult.effectiveToolCalls
+          ? { ...step, toolCalls: stepResult.effectiveToolCalls }
+          : step;
+
         // ★ 성공한 Step에서 정의된 변수 추적 (cross-step validation용)
-        this.trackVariablesFromStep(step);
+        this.trackVariablesFromStep(effectiveStep);
 
         // ═══════════════════════════════════════════════════════════════════════
         // CHECKPOINT CREATION (Phase 3): 성공 스텝 후 체크포인트 저장
         // ═══════════════════════════════════════════════════════════════════════
         const newVars = this.extractVariablesFromCode(
-          step.toolCalls
+          actualToolCalls
             .filter(tc => tc.tool === 'jupyter_cell')
             .map(tc => (tc.parameters as JupyterCellParams).code)
             .join('\n')
@@ -666,10 +677,79 @@ export class AgentOrchestrator {
 
     const toolResults: ToolResult[] = [];
 
+    // ★ Step-Level RAG로 코드가 변경될 수 있으므로 mutable step 복사
+    let effectiveStep = step;
+
     try {
+      // ═══════════════════════════════════════════════════════════════════════
+      // STEP-LEVEL RAG: 실행 전 RAG 컨텍스트 조회 및 코드 생성
+      // ═══════════════════════════════════════════════════════════════════════
+      if (step.requiredCollections && step.requiredCollections.length > 0) {
+        console.log('[Orchestrator] Step-Level RAG: Fetching context for collections:', step.requiredCollections);
+
+        onProgress({
+          phase: 'fetching_rag',
+          message: `RAG 컨텍스트 조회 중... (${step.requiredCollections.join(', ')})`,
+          currentStep: step.stepNumber,
+        });
+
+        // 1. RAG 컨텍스트 조회
+        const ragResponse = await this.apiService.getStepContext({
+          query: step.description,
+          collections: step.requiredCollections,
+          topK: 3,
+        });
+
+        console.log('[Orchestrator] Step-Level RAG: Context retrieved', {
+          chunkCount: ragResponse.chunkCount,
+          sources: ragResponse.sources,
+        });
+
+        // 2. RAG 컨텍스트가 있으면 코드 생성
+        if (ragResponse.context && ragResponse.chunkCount > 0) {
+          onProgress({
+            phase: 'generating_code',
+            message: '코드 생성 중...',
+            currentStep: step.stepNumber,
+          });
+
+          const notebookContext = this.extractNotebookContext(notebook);
+          const codeResponse = await this.apiService.generateStepCode({
+            step: {
+              stepNumber: step.stepNumber,
+              description: step.description,
+              toolCalls: step.toolCalls,
+              dependencies: step.dependencies || [],
+              requiredCollections: step.requiredCollections,
+            },
+            ragContext: ragResponse.context,
+            notebookContext,
+            llmConfig: this.currentLlmConfig,
+          });
+
+          console.log('[Orchestrator] Step-Level RAG: Code generated', {
+            toolCallCount: codeResponse.toolCalls.length,
+          });
+
+          // 3. placeholder toolCalls를 실제 생성된 코드로 교체
+          effectiveStep = {
+            ...step,
+            toolCalls: codeResponse.toolCalls,
+          };
+
+          onProgress({
+            phase: 'executing',
+            message: '코드 실행 중...',
+            currentStep: step.stepNumber,
+          });
+        } else {
+          console.log('[Orchestrator] Step-Level RAG: No context found, using original code');
+        }
+      }
+
       // Tool Calling 실행
-      console.log('[Orchestrator] Processing', step.toolCalls.length, 'tool calls');
-      for (const toolCall of step.toolCalls) {
+      console.log('[Orchestrator] Processing', effectiveStep.toolCalls.length, 'tool calls');
+      for (const toolCall of effectiveStep.toolCalls) {
         console.log('[Orchestrator] Processing toolCall:', toolCall.tool);
 
         // 중단 요청 확인
@@ -840,6 +920,8 @@ export class AgentOrchestrator {
             attempts: 1,
             isFinalAnswer: true,
             finalAnswer: finalAnswerText,
+            // Step-Level RAG: 실제 실행된 toolCalls 반환
+            effectiveToolCalls: effectiveStep !== step ? effectiveStep.toolCalls : undefined,
           };
         }
       }
@@ -892,6 +974,8 @@ export class AgentOrchestrator {
           stepNumber: step.stepNumber,
           toolResults,
           attempts: 1,
+          // Step-Level RAG: 실제 실행된 toolCalls 반환
+          effectiveToolCalls: effectiveStep !== step ? effectiveStep.toolCalls : undefined,
         };
       }
 

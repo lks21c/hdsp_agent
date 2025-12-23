@@ -10,6 +10,7 @@ Provides:
 import logging
 
 from fastapi import APIRouter, HTTPException
+from hdsp_agent_core.models.agent import StepRAGRequest, StepRAGResponse
 from hdsp_agent_core.models.rag import (
     ChunkDebugInfo,
     DebugSearchRequest,
@@ -161,3 +162,88 @@ async def debug_search(request: DebugSearchRequest) -> DebugSearchResponse:
     except Exception as e:
         logger.error(f"Debug search failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Debug search failed: {str(e)}")
+
+
+@router.post("/step-context", response_model=StepRAGResponse)
+async def get_step_context(request: StepRAGRequest) -> StepRAGResponse:
+    """
+    Step-Level RAG 컨텍스트 조회.
+
+    Step-Level RAG Architecture:
+    - Planning 시 LLM이 각 step에 requiredCollections를 지정
+    - Step 실행 전 이 endpoint로 해당 collections만 검색
+    - 결과를 /agent/step-code로 전달하여 최종 코드 생성
+
+    Args:
+        query: Step description (검색 쿼리로 사용)
+        collections: requiredCollections 목록 (e.g., ["dask", "matplotlib"])
+        topK: 각 collection당 반환할 청크 수 (기본: 3)
+
+    Returns:
+        context: 포맷팅된 RAG 컨텍스트 문자열
+        sources: 사용된 collection 목록
+        chunkCount: 조회된 청크 수
+    """
+    rag_manager = get_rag_manager()
+
+    if not rag_manager.is_ready:
+        # RAG가 준비되지 않으면 빈 컨텍스트 반환 (fallback)
+        logger.warning("RAG system not ready, returning empty context")
+        return StepRAGResponse(context="", sources=[], chunkCount=0)
+
+    try:
+        # requiredCollections가 비어있으면 빈 컨텍스트 반환
+        if not request.collections:
+            logger.info("No collections specified, returning empty context")
+            return StepRAGResponse(context="", sources=[], chunkCount=0)
+
+        # Collection 기반 필터링 검색
+        # metadata의 source 필드가 "{collection}.md" 형태로 저장되어 있음
+        source_filters = [f"{c}.md" for c in request.collections]
+
+        results = await rag_manager.search(
+            query=request.query,
+            top_k=request.topK * len(request.collections),  # collection당 topK개
+            filters={"source": {"$in": source_filters}},
+        )
+
+        if not results:
+            logger.info(f"No results found for collections: {request.collections}")
+            return StepRAGResponse(
+                context="", sources=request.collections, chunkCount=0
+            )
+
+        # 결과를 컨텍스트 문자열로 포맷팅
+        context_parts = []
+        sources_used = set()
+
+        for r in results:
+            source = r.get("metadata", {}).get("source", "unknown")
+            content = r.get("content", "")
+            score = r.get("score", 0)
+
+            # Collection 이름 추출 (e.g., "dask.md" -> "dask")
+            collection_name = source.replace(".md", "") if source.endswith(".md") else source
+            sources_used.add(collection_name)
+
+            # 컨텍스트에 추가
+            context_parts.append(
+                f"### {collection_name.upper()} API Guide (score: {score:.3f})\n{content}"
+            )
+
+        formatted_context = "\n\n---\n\n".join(context_parts)
+
+        logger.info(
+            f"Step context retrieved: {len(results)} chunks from {list(sources_used)}"
+        )
+
+        return StepRAGResponse(
+            context=formatted_context,
+            sources=list(sources_used),
+            chunkCount=len(results),
+        )
+
+    except Exception as e:
+        logger.error(f"Step context retrieval failed: {e}", exc_info=True)
+        # 에러 시에도 빈 컨텍스트 반환 (코드 생성은 계속 진행)
+        return StepRAGResponse(context="", sources=[], chunkCount=0)

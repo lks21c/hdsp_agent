@@ -10,7 +10,6 @@ import re
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException
-from hdsp_agent_core.knowledge.loader import get_knowledge_base, get_library_detector
 from hdsp_agent_core.managers.config_manager import ConfigManager
 from hdsp_agent_core.models.agent import (
     PlanRequest,
@@ -23,6 +22,8 @@ from hdsp_agent_core.models.agent import (
     ReplanResponse,
     ReportExecutionRequest,
     ReportExecutionResponse,
+    StepCodeRequest,
+    StepCodeResponse,
     ValidateRequest,
     ValidateResponse,
     VerifyStateRequest,
@@ -32,12 +33,12 @@ from hdsp_agent_core.prompts.auto_agent_prompts import (
     format_plan_prompt,
     format_refine_prompt,
     format_reflection_prompt,
+    format_step_code_prompt,
 )
 
 from agent_server.core.code_validator import CodeValidator
 from agent_server.core.error_classifier import get_error_classifier
 from agent_server.core.llm_service import LLMService
-from agent_server.core.rag_manager import get_rag_manager
 from agent_server.core.state_verifier import get_state_verifier
 
 router = APIRouter()
@@ -148,29 +149,6 @@ def _sanitize_tool_calls(data: Dict[str, Any]) -> Dict[str, Any]:
     return data
 
 
-def _detect_required_libraries(
-    request: str, imported_libraries: List[str]
-) -> List[str]:
-    """
-    Deterministic library detection (no LLM call).
-    Detects libraries needed based on keywords and patterns.
-    """
-    knowledge_base = get_knowledge_base()
-    library_detector = get_library_detector()
-
-    available = knowledge_base.list_available_libraries()
-    if not available:
-        return []
-
-    detected = library_detector.detect(
-        request=request,
-        available_libraries=available,
-        imported_libraries=imported_libraries,
-    )
-
-    return detected
-
-
 def _get_installed_packages() -> List[str]:
     """Get list of installed Python packages"""
     import subprocess
@@ -202,7 +180,10 @@ async def generate_plan(request: PlanRequest) -> Dict[str, Any]:
     Takes a user request and notebook context, returns a structured plan
     with steps and tool calls.
 
-    RAG context is automatically injected if available.
+    Step-Level RAG Architecture:
+    - Planning phase: Collection TOC only (no RAG query)
+    - LLM outputs requiredCollections per step
+    - Actual RAG query happens at step execution time via /step-code
     """
     logger.info(f"Plan request received: {request.request[:100]}...")
 
@@ -210,38 +191,14 @@ async def generate_plan(request: PlanRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail="request is required")
 
     try:
-        # Deterministic library detection
-        imported_libs = request.notebookContext.importedLibraries
-        detected_libraries = _detect_required_libraries(request.request, imported_libs)
-        logger.info(f"Detected libraries: {detected_libraries}")
-
-        # Get RAG context if available (with library prioritization)
-        rag_context = None
-        try:
-            rag_manager = get_rag_manager()
-            if rag_manager.is_ready:
-                # Pass detected_libraries to prioritize relevant API guides
-                rag_context = await rag_manager.get_context_for_query(
-                    query=request.request, detected_libraries=detected_libraries
-                )
-                if rag_context:
-                    logger.info(
-                        f"RAG context injected: {len(rag_context)} chars (libs: {detected_libraries})"
-                    )
-        except Exception as e:
-            logger.warning(f"RAG context retrieval failed: {e}")
-            # Continue without RAG context
-
-        # Build prompt
+        # Build prompt (Collection TOC is injected by format_plan_prompt)
         prompt = format_plan_prompt(
             request=request.request,
             cell_count=request.notebookContext.cellCount,
-            imported_libraries=imported_libs,
+            imported_libraries=request.notebookContext.importedLibraries,
             defined_variables=request.notebookContext.definedVariables,
             recent_cells=request.notebookContext.recentCells,
             available_libraries=_get_installed_packages(),
-            detected_libraries=detected_libraries,
-            rag_context=rag_context,
         )
 
         # Call LLM with client-provided config
@@ -588,4 +545,75 @@ async def reflect_on_step(request: ReflectRequest) -> Dict[str, Any]:
 
     except Exception as e:
         logger.error(f"Reflection failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/step-code", response_model=StepCodeResponse)
+async def generate_step_code(request: StepCodeRequest) -> Dict[str, Any]:
+    """
+    Generate final code for a step using RAG context.
+
+    Step-Level RAG Architecture:
+    - Called after /rag/step-context retrieves relevant API guides
+    - Receives step description + RAG context + notebook context
+    - Returns final toolCalls with actual executable code
+
+    Flow:
+    1. Frontend calls /rag/step-context with step.description and requiredCollections
+    2. Frontend calls /step-code with step + ragContext + notebookContext
+    3. This endpoint generates final code using the RAG context
+    """
+    step_number = request.step.get("stepNumber", "?")
+    step_description = request.step.get("description", "")
+    logger.info(f"Step code generation for step {step_number}: {step_description[:50]}...")
+
+    try:
+        # Build prompt with RAG context
+        prompt = format_step_code_prompt(
+            step_number=step_number,
+            step_description=step_description,
+            rag_context=request.ragContext,
+            imported_libraries=request.notebookContext.importedLibraries,
+            defined_variables=request.notebookContext.definedVariables,
+            recent_cells=request.notebookContext.recentCells,
+        )
+
+        # Call LLM with client-provided config
+        response = await _call_llm(prompt, request.llmConfig)
+        logger.info(f"Step code LLM response length: {len(response)}")
+
+        # Parse response
+        code_data = _parse_json_response(response)
+
+        if not code_data or "toolCalls" not in code_data:
+            # Try extracting code directly from response
+            code_match = re.search(r"```(?:python)?\s*([\s\S]*?)\s*```", response)
+            if code_match:
+                code_data = {
+                    "toolCalls": [
+                        {
+                            "tool": "jupyter_cell",
+                            "parameters": {"code": code_match.group(1).strip()},
+                        }
+                    ],
+                    "reasoning": "",
+                }
+            else:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to parse step code from LLM response: {response[:200]}",
+                )
+
+        # Sanitize code blocks
+        code_data = _sanitize_tool_calls(code_data)
+
+        return {
+            "toolCalls": code_data["toolCalls"],
+            "reasoning": code_data.get("reasoning", ""),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Step code generation failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
