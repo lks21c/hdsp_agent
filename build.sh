@@ -106,8 +106,8 @@ cp -r "$ROOT_DIR/agent-server/agent_server" .
 cp -r "$ROOT_DIR/hdsp_agent_core/hdsp_agent_core" .
 
 # Build whl
-echo "Building whl with python -m build..."
-python -m build
+echo "Building whl with python3 -m build..."
+python3 -m build
 
 # Cleanup copied modules
 rm -rf agent_server hdsp_agent_core

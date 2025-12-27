@@ -71,7 +71,7 @@ def _ensure_config_files():
                 "agent_server_url": "http://localhost:8000",
                 "agent_server_port": 8000,
                 "agent_server_timeout": 120.0,
-                "embed_agent_server": False,
+                "embed_agent_server": True,
                 "gemini": {"apiKey": "", "model": "gemini-2.5-pro"},
                 "vllm": {
                     "endpoint": "http://localhost:8000",
@@ -189,6 +189,14 @@ def load_jupyter_server_extension(server_app):
     config = get_agent_server_config()
     embed_agent_server = config.embed_agent_server
 
+    # Set HDSP_AGENT_MODE environment variable based on embed_agent_server config
+    if embed_agent_server:
+        os.environ["HDSP_AGENT_MODE"] = "embedded"
+        server_app.log.info("Setting HDSP_AGENT_MODE=embedded")
+    else:
+        os.environ["HDSP_AGENT_MODE"] = "proxy"
+        server_app.log.info("Setting HDSP_AGENT_MODE=proxy")
+
     if embed_agent_server:
         try:
             _start_embedded_agent_server(server_app, config.agent_server_port)
@@ -197,6 +205,8 @@ def load_jupyter_server_extension(server_app):
             server_app.log.warning(traceback.format_exc())
             server_app.log.warning("Falling back to proxy mode")
             embed_agent_server = False
+            # Update env var to match fallback
+            os.environ["HDSP_AGENT_MODE"] = "proxy"
 
     try:
         from .handlers import setup_handlers
@@ -207,8 +217,8 @@ def load_jupyter_server_extension(server_app):
         server_app.log.info("HDSP Jupyter Extension loaded (v%s)", __version__)
         if embed_agent_server:
             server_app.log.info("Running in EMBEDDED mode (single process)")
-            # In embedded mode, ServiceFactory is initialized by agent_server's lifespan
-            # Don't initialize here to avoid race condition
+            # Initialize ServiceFactory in embedded mode
+            _schedule_initialization(server_app)
         else:
             server_app.log.info(
                 "Proxying requests to Agent Server at: %s",
