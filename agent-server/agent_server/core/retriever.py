@@ -91,14 +91,16 @@ class Retriever:
 
         # Dense vector search
         try:
-            results = self._client.search(
+            response = self._client.query_points(
                 collection_name=self._config.qdrant.collection_name,
-                query_vector=query_embedding,
+                query=query_embedding,
                 query_filter=qdrant_filter,
                 limit=effective_top_k,
-                score_threshold=effective_threshold
-                * 0.5,  # Lower for initial retrieval
+                score_threshold=effective_threshold * 0.5,  # Lower for initial retrieval
+                with_payload=True,
+                with_vectors=False,
             )
+            results = response.points
         except Exception as e:
             logger.error(f"Search failed: {e}")
             return []
@@ -201,13 +203,16 @@ class Retriever:
         # Vector search with timing
         try:
             # 디버그용으로 더 많은 결과 (3배)를 낮은 threshold로 가져옴
-            results = self._client.search(
+            response = self._client.query_points(
                 collection_name=self._config.qdrant.collection_name,
-                query_vector=query_embedding,
+                query=query_embedding,
                 query_filter=qdrant_filter,
                 limit=effective_top_k * 3,
                 score_threshold=effective_threshold * 0.3,
+                with_payload=True,
+                with_vectors=False,
             )
+            results = response.points
         except Exception as e:
             logger.error(f"Search failed: {e}")
             return DebugSearchResult(
