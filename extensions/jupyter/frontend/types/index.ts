@@ -78,6 +78,7 @@ export interface ILLMConfig {
   gemini?: IGeminiConfig;
   openai?: IOpenAIConfig;
   vllm?: IVLLMConfig;
+  systemPrompt?: string;
 }
 
 export interface IChatRequest {

@@ -255,6 +255,18 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
   // Todo list state (from TodoListMiddleware)
   const [todos, setTodos] = useState<Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>>([]);
   const [isTodoExpanded, setIsTodoExpanded] = useState(false);
+
+  // Agent thread ID for context persistence across cycles (SummarizationMiddleware support)
+  const [agentThreadId, setAgentThreadId] = useState<string | null>(null);
+
+  // Rejection feedback mode - when user clicks reject, wait for optional feedback
+  const [isRejectionMode, setIsRejectionMode] = useState(false);
+  const [pendingRejectionInterrupt, setPendingRejectionInterrupt] = useState<{
+    threadId: string;
+    action: string;
+    args: any;
+    description: string;
+  } | null>(null);
   const interruptMessageIdRef = useRef<string | null>(null);
   const approvalPendingRef = useRef<boolean>(false);
   const pendingToolCallsRef = useRef<Array<{ tool: string; code?: string; content?: string; cellIndex?: number }>>([]);
@@ -287,6 +299,21 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
     });
     notebook.content.activeCellIndex = insertIndex;
     return insertIndex;
+  };
+
+  const deleteCell = (notebook: NotebookPanel, cellIndex: number): boolean => {
+    const model = notebook.content?.model;
+    if (!model?.sharedModel) {
+      console.warn('[AgentPanel] Notebook model not ready for delete');
+      return false;
+    }
+    if (cellIndex < 0 || cellIndex >= model.cells.length) {
+      console.warn('[AgentPanel] Invalid cell index for delete:', cellIndex);
+      return false;
+    }
+    model.sharedModel.deleteCell(cellIndex);
+    console.log('[AgentPanel] Deleted rejected cell at index:', cellIndex);
+    return true;
   };
 
   const executeCell = async (notebook: NotebookPanel, cellIndex: number): Promise<void> => {
@@ -1867,7 +1894,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
     });
   };
 
-  const clearInterruptMessage = () => {
+  const clearInterruptMessage = (decision?: 'approve' | 'reject') => {
     if (!interruptMessageIdRef.current) return;
     const messageId = interruptMessageIdRef.current;
     interruptMessageIdRef.current = null;
@@ -1882,7 +1909,8 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
               ...chatMsg.metadata,
               interrupt: {
                 ...(chatMsg.metadata?.interrupt || {}),
-                resolved: true
+                resolved: true,
+                decision: decision || 'approve'  // Track approve/reject decision
               }
             }
           };
@@ -1894,12 +1922,13 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
 
   const resumeFromInterrupt = async (
     interrupt: { threadId: string; action: string; args: any; description: string },
-    decision: 'approve' | 'reject'
+    decision: 'approve' | 'reject',
+    feedback?: string  // Optional feedback message for rejection
   ) => {
     const { threadId } = interrupt;
     setInterruptData(null);
     setDebugStatus(null);
-    clearInterruptMessage();
+    clearInterruptMessage(decision);  // Pass decision to track approve/reject
     let resumeDecision: 'approve' | 'edit' | 'reject' = decision;
     let resumeArgs: any = undefined;
     if (decision === 'approve') {
@@ -1917,6 +1946,14 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
         };
       }
     } else {
+      // Reject: delete the pending cell from notebook
+      const pendingCall = pendingToolCallsRef.current[0];
+      if (pendingCall && pendingCall.cellIndex !== undefined) {
+        const notebook = getActiveNotebookPanel();
+        if (notebook) {
+          deleteCell(notebook, pendingCall.cellIndex);
+        }
+      }
       pendingToolCallsRef.current.shift();
       approvalPendingRef.current = pendingToolCallsRef.current.length > 0;
     }
@@ -1941,12 +1978,17 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
 
     let streamedContent = '';
 
+    // Build feedback message for rejection
+    const rejectionFeedback = resumeDecision === 'reject'
+      ? (feedback ? `사용자 피드백: ${feedback}` : 'User rejected this action')
+      : undefined;
+
     try {
       await apiService.resumeAgent(
         threadId,
         resumeDecision,
         resumeArgs,
-        resumeDecision === 'reject' ? 'User rejected this action' : undefined,
+        rejectionFeedback,
         llmConfig || undefined,
         (chunk: string) => {
           streamedContent += chunk;
@@ -2008,6 +2050,29 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
   };
 
   const handleSendMessage = async () => {
+    // Handle rejection mode - resume with optional feedback
+    if (isRejectionMode && pendingRejectionInterrupt) {
+      const feedback = input.trim() || undefined;  // Empty input means no feedback
+
+      // Add user message bubble if there's feedback
+      if (feedback) {
+        const userMessage: IChatMessage = {
+          id: makeMessageId(),
+          role: 'user',
+          content: feedback,
+          timestamp: Date.now(),
+        };
+        setMessages(prev => [...prev, userMessage]);
+      }
+
+      setInput('');
+      setIsRejectionMode(false);
+      const interruptToResume = pendingRejectionInterrupt;
+      setPendingRejectionInterrupt(null);
+      await resumeFromInterrupt(interruptToResume, 'reject', feedback);
+      return;
+    }
+
     // Check if there's an LLM prompt stored (from cell action)
     const textarea = messagesEndRef.current?.parentElement?.querySelector('.jp-agent-input') as HTMLTextAreaElement;
     const llmPrompt = pendingLlmPromptRef.current || textarea?.getAttribute('data-llm-prompt');
@@ -2215,6 +2280,13 @@ SyntaxError: '(' was never closed
     }
     setIsLoading(true);
     setIsStreaming(true);
+    // Clear todos only when starting a new task (all completed or no todos)
+    // Keep todos if there are pending/in_progress items (continuation of current task)
+    const hasActiveTodos = todos.some(t => t.status === 'pending' || t.status === 'in_progress');
+    if (!hasActiveTodos) {
+      setTodos([]);
+    }
+    setDebugStatus(null);
 
     // Clear the data attribute and ref after using it
     if (textarea && llmPrompt) {
@@ -2240,6 +2312,8 @@ SyntaxError: '(' was never closed
     try {
       // Use LLM prompt if available, otherwise use the display content
       const messageToSend = llmPrompt || displayContent;
+
+      console.log('[AgentPanel] Sending message with agentThreadId:', agentThreadId);
 
       await apiService.sendMessageStream(
         {
@@ -2288,6 +2362,13 @@ SyntaxError: '(' was never closed
         (interrupt) => {
           interrupted = true;
           approvalPendingRef.current = true;
+
+          // Capture threadId from interrupt for context persistence
+          if (interrupt.threadId && !agentThreadId) {
+            setAgentThreadId(interrupt.threadId);
+            console.log('[AgentPanel] Captured agentThreadId from interrupt:', interrupt.threadId);
+          }
+
           if (interrupt.action === 'jupyter_cell_tool' && interrupt.args?.code) {
             if (isAutoApprovedCode(interrupt.args.code)) {
               queueApprovalCell(interrupt.args.code);
@@ -2310,7 +2391,16 @@ SyntaxError: '(' was never closed
           setDebugStatus(null);
         },
         // onToolCall callback - add cells to notebook
-        handleToolCall
+        handleToolCall,
+        // onComplete callback - capture thread_id for context persistence
+        (data) => {
+          if (data.threadId) {
+            setAgentThreadId(data.threadId);
+            console.log('[AgentPanel] Captured agentThreadId for context persistence:', data.threadId);
+          }
+        },
+        // threadId - pass existing thread_id to continue context
+        agentThreadId || undefined
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to send message';
@@ -2337,6 +2427,22 @@ SyntaxError: '(' was never closed
   // Handle resume after user approval/rejection
   const handleResumeAgent = async (decision: 'approve' | 'reject') => {
     if (!interruptData) return;
+
+    if (decision === 'reject') {
+      // Enter rejection mode - wait for user feedback before resuming
+      setIsRejectionMode(true);
+      setPendingRejectionInterrupt(interruptData);
+      // Clear the interrupt UI but keep the data for later, mark as rejected
+      setInterruptData(null);
+      clearInterruptMessage('reject');  // Pass 'reject' to show "거부됨"
+      // Focus on input for user to provide feedback
+      const textarea = document.querySelector('.jp-agent-input') as HTMLTextAreaElement;
+      if (textarea) {
+        textarea.focus();
+      }
+      return;
+    }
+
     await resumeFromInterrupt(interruptData, decision);
   };
 
@@ -2531,9 +2637,6 @@ SyntaxError: '(' was never closed
     if (normalized.includes('resuming execution')) {
       return '승인 반영 후 실행 재개 중...';
     }
-    if (normalized.includes('tool')) {
-      return '도구 실행 중...';
-    }
     return raw;
   };
 
@@ -2546,12 +2649,13 @@ SyntaxError: '(' was never closed
     }
     if (isLoading || isStreaming) {
       // 기본 상태 메시지 - todo 내용은 compact todo UI에서 표시
-      return '요청 처리 중...';
+      return '요청 처리 중';
     }
     return null;
   };
 
   const statusText = getStatusText();
+  const hasActiveTodos = todos.some(todo => todo.status === 'pending' || todo.status === 'in_progress');
 
   return (
     <div className="jp-agent-panel">
@@ -2653,8 +2757,11 @@ SyntaxError: '(' was never closed
                               const preview = lines.slice(0, 8).join('\n');
                               const suffix = lines.length > 8 ? '\n...' : '';
                               const resolved = msg.metadata?.interrupt?.resolved;
+                              const decision = msg.metadata?.interrupt?.decision;
+                              const resolvedText = decision === 'reject' ? '거부됨' : '승인됨';
+                              const resolvedClass = decision === 'reject' ? 'jp-agent-interrupt-actions--rejected' : 'jp-agent-interrupt-actions--resolved';
                               const actionHtml = resolved
-                                ? '<div class="jp-agent-interrupt-actions jp-agent-interrupt-actions--resolved">승인됨</div>'
+                                ? `<div class="jp-agent-interrupt-actions ${resolvedClass}">${resolvedText}</div>`
                                 : `
 <div class="code-block-actions jp-agent-interrupt-actions">
   <button class="jp-agent-interrupt-approve-btn" data-action="approve">승인</button>
@@ -2792,21 +2899,6 @@ SyntaxError: '(' was never closed
         <div ref={messagesEndRef} />
       </div>
 
-      {statusText && (
-        <div
-          className={`jp-agent-message jp-agent-message-debug${
-            statusText.startsWith('오류:') ? ' jp-agent-message-debug-error' : ''
-          }`}
-        >
-          <div className="jp-agent-debug-content">
-            {!statusText.startsWith('오류:') && (
-              <div className="jp-agent-debug-spinner" />
-            )}
-            <span className="jp-agent-debug-text">{statusText}</span>
-          </div>
-        </div>
-      )}
-
       {/* Compact Todo Progress - Above Input */}
       {todos.length > 0 && (
         <div className="jp-agent-todo-compact">
@@ -2841,6 +2933,22 @@ SyntaxError: '(' was never closed
             </span>
           </div>
 
+          {statusText && hasActiveTodos && (
+            <div
+              className={`jp-agent-message jp-agent-message-debug jp-agent-message-debug--inline${
+                statusText.startsWith('오류:') ? ' jp-agent-message-debug-error' : ''
+              }`}
+            >
+              <div className="jp-agent-debug-content">
+                <div className="jp-agent-debug-branch" aria-hidden="true" />
+                <span className="jp-agent-debug-text">{statusText}</span>
+                {!statusText.startsWith('오류:') && (
+                  <span className="jp-agent-debug-ellipsis" aria-hidden="true" />
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Expanded Todo List */}
           {isTodoExpanded && (
             <div className="jp-agent-todo-expanded">
@@ -2868,17 +2976,34 @@ SyntaxError: '(' was never closed
         </div>
       )}
 
+      {statusText && !hasActiveTodos && (
+        <div
+          className={`jp-agent-message jp-agent-message-debug jp-agent-message-debug--above-input${
+            statusText.startsWith('오류:') ? ' jp-agent-message-debug-error' : ''
+          }`}
+        >
+          <div className="jp-agent-debug-content">
+            <span className="jp-agent-debug-text">{statusText}</span>
+            {!statusText.startsWith('오류:') && (
+              <span className="jp-agent-debug-ellipsis" aria-hidden="true" />
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Unified Input Container - Cursor AI Style */}
       <div className="jp-agent-input-container">
         <div className="jp-agent-input-wrapper">
           <textarea
-            className={`jp-agent-input ${inputMode === 'agent' ? 'jp-agent-input--agent-mode' : ''}`}
+            className={`jp-agent-input ${inputMode === 'agent' ? 'jp-agent-input--agent-mode' : ''} ${isRejectionMode ? 'jp-agent-input--rejection-mode' : ''}`}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={inputMode === 'agent'
-              ? '노트북 작업을 입력하세요... (예: 데이터 시각화 해줘)'
-              : '메시지를 입력하세요...'
+            placeholder={isRejectionMode
+              ? '다른 방향 제시'
+              : (inputMode === 'agent'
+                ? '노트북 작업을 입력하세요... (예: 데이터 시각화 해줘)'
+                : '메시지를 입력하세요...')
             }
             rows={3}
             disabled={isLoading || isAgentRunning}
@@ -2886,10 +3011,10 @@ SyntaxError: '(' was never closed
           <button
             className="jp-agent-send-button"
             onClick={handleSendMessage}
-            disabled={!input.trim() || isLoading || isStreaming || isAgentRunning}
-            title="전송 (Enter)"
+            disabled={(!input.trim() && !isRejectionMode) || isLoading || isStreaming || isAgentRunning}
+            title={isRejectionMode ? "거부 전송 (Enter)" : "전송 (Enter)"}
           >
-            {isAgentRunning ? '실행 중...' : '전송'}
+            {isAgentRunning ? '실행 중...' : (isRejectionMode ? '거부' : '전송')}
           </button>
         </div>
 

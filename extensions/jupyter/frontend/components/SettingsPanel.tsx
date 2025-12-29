@@ -13,6 +13,7 @@ import {
   hasValidApiKey,
   testApiKey,
   getDefaultLLMConfig,
+  DEFAULT_LANGCHAIN_SYSTEM_PROMPT,
   LLMConfig
 } from '../services/ApiKeyManager';
 
@@ -85,6 +86,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [openaiModel, setOpenaiModel] = useState(
     initConfig.openai?.model || 'gpt-4'
   );
+  const [systemPrompt, setSystemPrompt] = useState(
+    initConfig.systemPrompt || ''
+  );
 
   // Update state when currentConfig changes
   useEffect(() => {
@@ -104,6 +108,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
       setVllmModel(currentConfig.vllm?.model || 'meta-llama/Llama-2-7b-chat-hf');
       setOpenaiApiKey(currentConfig.openai?.apiKey || '');
       setOpenaiModel(currentConfig.openai?.model || 'gpt-4');
+      setSystemPrompt(
+        currentConfig.systemPrompt || getDefaultLLMConfig().systemPrompt || ''
+      );
     }
   }, [currentConfig]);
 
@@ -123,7 +130,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     openai: {
       apiKey: openaiApiKey,
       model: openaiModel
-    }
+    },
+    systemPrompt: systemPrompt && systemPrompt.trim() ? systemPrompt : undefined
   });
 
   // Handlers for multiple API keys
@@ -415,6 +423,30 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               </div>
             </div>
           )}
+
+          <div className="jp-agent-settings-group">
+            <label className="jp-agent-settings-label">
+              System Prompt (LangChain)
+              <small style={{ fontWeight: 'normal', marginLeft: '8px', color: '#666' }}>
+                LangChain 기반 에이전트에만 적용됩니다.
+              </small>
+            </label>
+            <textarea
+              className="jp-agent-settings-input jp-agent-settings-textarea"
+              value={systemPrompt}
+              onChange={(e) => setSystemPrompt(e.target.value)}
+              rows={8}
+            />
+            <div className="jp-agent-settings-inline-actions">
+              <button
+                type="button"
+                className="jp-agent-settings-button jp-agent-settings-button-secondary jp-agent-settings-button-compact"
+                onClick={() => setSystemPrompt(DEFAULT_LANGCHAIN_SYSTEM_PROMPT)}
+              >
+                기본값으로 되돌리기
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="jp-agent-settings-footer">

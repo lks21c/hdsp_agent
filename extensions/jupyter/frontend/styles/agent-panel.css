@@ -24,7 +24,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
+  padding: 2px 16px;
   border-bottom: 1px solid var(--jp-border-color2);
   background: var(--jp-layout-color2);
 }
@@ -46,14 +46,14 @@
 
 /* Header Logo (SVG inline) */
 .jp-agent-header-logo {
-  height: 40px;
+  height: 20px;
   width: auto;
   display: flex;
   align-items: center;
 }
 
 .jp-agent-header-logo svg {
-  height: 40px;
+  height: 20px;
   width: auto;
 }
 
@@ -393,7 +393,7 @@ body[data-jp-theme-light="false"] .jp-agent-input {
 .jp-agent-message-content .code-block-container,
 .jp-agent-message-content .jp-RenderedHTMLCommon .code-block-container,
 .jp-RenderedHTMLCommon .jp-agent-message-content .code-block-container {
-  margin: 12px 0 !important;
+  margin: 0 !important;
   border-radius: 6px !important;
   overflow: hidden !important;
   background: #1e1e1e !important;
@@ -406,7 +406,7 @@ body[data-jp-theme-light="false"] .jp-agent-input {
   display: flex !important;
   justify-content: space-between !important;
   align-items: center !important;
-  padding: 8px 12px !important;
+  padding: 0 12px !important;
   background: #2d2d2d !important;
   border-bottom: 1px solid #3d3d3d !important;
 }
@@ -1327,6 +1327,21 @@ body[data-jp-theme-light="false"] .jp-agent-input-hint code {
   box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3) !important;
 }
 
+/* Rejection Mode - Red border for feedback input */
+.jp-agent-input--rejection-mode {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.2) !important;
+}
+
+.jp-agent-input--rejection-mode:focus {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.3) !important;
+}
+
+.jp-agent-input--rejection-mode::placeholder {
+  color: #ef4444 !important;
+}
+
 /* Dark Theme */
 body[data-jp-theme-light="false"] .jp-agent-mode-toggle {
   background: var(--jp-layout-color2);
@@ -1661,7 +1676,7 @@ body[data-jp-theme-light="false"] .jp-agent-console-error-dismiss-btn:hover {
 }
 
 .jp-agent-interrupt-description {
-  margin-bottom: 16px;
+  margin-bottom: -26px;
   color: var(--jp-ui-font-color2);
   font-size: 14px;
   line-height: 1.5;
@@ -1697,7 +1712,7 @@ body[data-jp-theme-light="false"] .jp-agent-console-error-dismiss-btn:hover {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  margin-top: 20px;
+  margin: 5px;
 }
 
 .jp-agent-interrupt-approve-btn:hover {
@@ -1742,6 +1757,13 @@ body[data-jp-theme-light="false"] .jp-agent-console-error-dismiss-btn:hover {
   font-size: 12px;
   font-weight: 600;
   color: #2e7d32;
+  justify-content: flex-end;
+}
+
+.jp-agent-interrupt-actions--rejected {
+  font-size: 12px;
+  font-weight: 600;
+  color: #d32f2f;
   justify-content: flex-end;
 }
 
@@ -1791,6 +1813,36 @@ body[data-jp-theme-light="false"] .jp-agent-interrupt-action-args pre {
   font-style: italic;
 }
 
+.jp-agent-message-debug--inline {
+  margin: 0 0 8px 0;
+  padding: 0 12px 0px 12px;
+}
+
+.jp-agent-message-debug--above-input {
+  margin: 0 12px 4px 12px;
+  padding: 0 12px 4px 12px;
+}
+
+.jp-agent-debug-branch {
+  width: 10px;
+  height: 12px;
+  border-left: 2px solid var(--jp-border-color2);
+  border-bottom: 2px solid var(--jp-border-color2);
+  border-radius: 0 0 0 3px;
+  flex-shrink: 0;
+  margin-left: 26px;
+  margin-top: -12px;
+}
+
+.jp-agent-debug-ellipsis::after {
+  content: '...';
+  display: inline-block;
+  width: 0;
+  overflow: hidden;
+  margin-left: -2px;
+  animation: jp-agent-debug-ellipsis 1.2s steps(4, end) infinite;
+}
+
 .jp-agent-debug-spinner {
   width: 12px;
   height: 12px;
@@ -1805,8 +1857,15 @@ body[data-jp-theme-light="false"] .jp-agent-interrupt-action-args pre {
   to { transform: rotate(360deg); }
 }
 
+@keyframes jp-agent-debug-ellipsis {
+  0% { width: 0; }
+  33% { width: 1ch; }
+  66% { width: 2ch; }
+  100% { width: 3ch; }
+}
+
 .jp-agent-debug-text {
-  flex: 1;
+  flex: 0 1 auto;
 }
 
 .jp-agent-message-debug-error .jp-agent-debug-text {

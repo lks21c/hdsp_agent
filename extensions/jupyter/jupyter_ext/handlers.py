@@ -414,7 +414,7 @@ class HealthHandler(APIHandler):
 
             status = {
                 "status": "healthy",
-                "extension_version": "2.0.0",
+                "extension_version": "2.0.2",
                 "mode": mode,
             }
 

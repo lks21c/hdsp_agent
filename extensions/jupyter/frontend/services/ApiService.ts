@@ -241,7 +241,9 @@ export class ApiService {
     onInterrupt?: (interrupt: { threadId: string; action: string; args: any; description: string }) => void,
     onTodos?: (todos: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>) => void,
     onDebugClear?: () => void,
-    onToolCall?: (toolCall: { tool: string; code?: string; content?: string }) => void
+    onToolCall?: (toolCall: { tool: string; code?: string; content?: string }) => void,
+    onComplete?: (data: { threadId: string }) => void,  // Callback to capture thread_id for context persistence
+    threadId?: string  // Optional thread_id to continue existing conversation
   ): Promise<void> {
     // Maximum retry attempts (should match number of keys)
     const MAX_RETRIES = 10;
@@ -255,7 +257,7 @@ export class ApiService {
         : request;
 
       try {
-        await this.sendMessageStreamInternal(requestToSend, onChunk, onMetadata, onDebug, onInterrupt, onTodos, onDebugClear, onToolCall);
+        await this.sendMessageStreamInternal(requestToSend, onChunk, onMetadata, onDebug, onInterrupt, onTodos, onDebugClear, onToolCall, onComplete, threadId);
         // Success - reset key rotation state
         resetKeyRotation();
         return;
@@ -320,12 +322,15 @@ export class ApiService {
     onInterrupt?: (interrupt: { threadId: string; action: string; args: any; description: string }) => void,
     onTodos?: (todos: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>) => void,
     onDebugClear?: () => void,
-    onToolCall?: (toolCall: { tool: string; code?: string; content?: string }) => void
+    onToolCall?: (toolCall: { tool: string; code?: string; content?: string }) => void,
+    onComplete?: (data: { threadId: string }) => void,
+    threadId?: string
   ): Promise<void> {
     // Convert IChatRequest to LangChain AgentRequest format
     // Frontend's context has limited fields, map what's available
     const langchainRequest = {
       request: request.message,
+      threadId: threadId,  // Include threadId for context persistence across cycles
       notebookContext: request.context ? {
         notebook_path: request.context.notebookPath,
         cell_count: 0,
@@ -398,6 +403,14 @@ export class ApiService {
               if (currentEventType === 'complete') {
                 if (onDebugClear) {
                   onDebugClear();
+                }
+                // Capture thread_id for context persistence across cycles
+                console.log('[ApiService] Complete event received, data:', data);
+                if (onComplete && data.thread_id) {
+                  console.log('[ApiService] Calling onComplete with threadId:', data.thread_id);
+                  onComplete({ threadId: data.thread_id });
+                } else {
+                  console.log('[ApiService] onComplete not called - onComplete:', !!onComplete, 'thread_id:', data.thread_id);
                 }
                 return;
               }

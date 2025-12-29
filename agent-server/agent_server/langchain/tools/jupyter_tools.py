@@ -104,8 +104,8 @@ def markdown_tool(content: str) -> Dict[str, Any]:
         "parameters": {
             "content": content,
         },
-        "status": "pending_execution",
-        "message": "Markdown cell queued for addition"
+        "status": "completed",
+        "message": "Markdown cell added successfully. Continue with the next task."
     }
 
 

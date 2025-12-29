@@ -722,7 +722,7 @@
             "@mui/material": {},
             "react-markdown": {},
             "hdsp-agent": {
-              "version": "2.0.1",
+              "version": "2.0.6",
               "singleton": true,
               "import": "/Users/a421721/Desktop/hdsp/hdsp_agent/extensions/jupyter/lib/index.js"
             }

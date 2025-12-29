@@ -96,6 +96,13 @@
   font-family: var(--jp-ui-font-family);
 }
 
+.jp-agent-settings-textarea {
+  min-height: 140px;
+  resize: vertical;
+  font-family: var(--jp-code-font-family);
+  line-height: 1.4;
+}
+
 .jp-agent-settings-input:focus,
 .jp-agent-settings-select:focus {
   outline: none;
@@ -157,6 +164,17 @@
 
 .jp-agent-settings-button-secondary:hover {
   background-color: var(--jp-layout-color3);
+}
+
+.jp-agent-settings-inline-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+.jp-agent-settings-button-compact {
+  padding: 6px 10px;
+  font-size: 12px;
 }
 
 .jp-agent-settings-button-test {

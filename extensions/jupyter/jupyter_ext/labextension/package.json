@@ -1,6 +1,6 @@
 {
   "name": "hdsp-agent",
-  "version": "2.0.1",
+  "version": "2.0.6",
   "description": "HDSP Agent JupyterLab Extension - Thin client for Agent Server",
   "keywords": [
     "jupyter",
@@ -126,7 +126,7 @@
       }
     },
     "_build": {
-      "load": "static/remoteEntry.4ba18b084787fb52bcdd.js",
+      "load": "static/remoteEntry.28114ab3ba2efcb425ab.js",
       "extension": "./extension",
       "style": "./style"
     }

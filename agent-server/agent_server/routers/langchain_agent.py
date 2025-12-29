@@ -33,10 +33,17 @@ router = APIRouter(prefix="/langchain", tags=["langchain-agent"])
 class LLMConfig(BaseModel):
     """LLM configuration"""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     provider: str = Field(default="gemini", description="LLM provider")
     gemini: Optional[Dict[str, Any]] = Field(default=None)
     openai: Optional[Dict[str, Any]] = Field(default=None)
     vllm: Optional[Dict[str, Any]] = Field(default=None)
+    system_prompt: Optional[str] = Field(
+        default=None,
+        alias="systemPrompt",
+        description="Override system prompt for LangChain agent",
+    )
 
 
 class NotebookContext(BaseModel):
@@ -189,6 +196,7 @@ def _extract_todos(payload: Any) -> Optional[List[Dict[str, Any]]]:
     return None
 
 
+
 def _emit_todos_from_tool_calls(
     tool_calls: List[Dict[str, Any]],
 ) -> Optional[List[Dict[str, Any]]]:
@@ -267,6 +275,43 @@ def _complete_todos(todos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     ]
 
 
+async def _async_stream_wrapper(agent, input_data, config, stream_mode="values"):
+    """
+    Wrap synchronous agent.stream() in an async generator using asyncio.Queue.
+
+    This prevents blocking the event loop, allowing SSE events to be flushed
+    immediately instead of being buffered until the stream completes.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    queue: asyncio.Queue = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+
+    def run_stream():
+        try:
+            for step in agent.stream(input_data, config, stream_mode=stream_mode):
+                # Put step into queue from sync thread
+                asyncio.run_coroutine_threadsafe(queue.put(("step", step)), loop).result()
+        except Exception as e:
+            asyncio.run_coroutine_threadsafe(queue.put(("error", e)), loop).result()
+        finally:
+            asyncio.run_coroutine_threadsafe(queue.put(("done", None)), loop).result()
+
+    # Run sync stream in a separate thread
+    executor = ThreadPoolExecutor(max_workers=1)
+    loop.run_in_executor(executor, run_stream)
+
+    # Async yield steps from queue
+    while True:
+        event_type, data = await queue.get()
+        if event_type == "done":
+            break
+        elif event_type == "error":
+            raise data
+        else:
+            yield data
+
+
 async def _generate_fallback_code(
     llm: Any,
     tool_name: str,
@@ -337,6 +382,11 @@ async def stream_agent(request: AgentRequest):
 
     # Generate thread_id if not provided
     thread_id = request.threadId or str(uuid.uuid4())
+    logger.info(
+        "Stream request - threadId from request: %s, using thread_id: %s",
+        request.threadId,
+        thread_id
+    )
 
     async def event_generator():
         try:
@@ -364,18 +414,47 @@ async def stream_agent(request: AgentRequest):
                     config_dict["openai"] = request.llmConfig.openai
                 if request.llmConfig.vllm:
                     config_dict["vllm"] = request.llmConfig.vllm
+            system_prompt_override = (
+                request.llmConfig.system_prompt if request.llmConfig else None
+            )
+
+            # Get or create checkpointer for this thread
+            is_existing_thread = thread_id in _simple_agent_checkpointers
+            checkpointer = _simple_agent_checkpointers.setdefault(
+                thread_id, InMemorySaver()
+            )
+            logger.info(
+                "Checkpointer for thread %s: existing=%s, total_threads=%d",
+                thread_id,
+                is_existing_thread,
+                len(_simple_agent_checkpointers)
+            )
 
             agent = create_simple_chat_agent(
                 llm_config=config_dict,
                 workspace_root=request.workspaceRoot or ".",
                 enable_hitl=True,
-                checkpointer=_simple_agent_checkpointers.setdefault(
-                    thread_id, InMemorySaver()
-                ),
+                checkpointer=checkpointer,
+                system_prompt_override=system_prompt_override,
             )
 
             # Prepare config with thread_id
             config = {"configurable": {"thread_id": thread_id}}
+
+            # Debug: Check if there's existing state for this thread
+            try:
+                existing_state = checkpointer.get(config)
+                if existing_state:
+                    existing_messages = existing_state.get("channel_values", {}).get("messages", [])
+                    logger.info(
+                        "Existing state for thread %s: %d messages found",
+                        thread_id,
+                        len(existing_messages)
+                    )
+                else:
+                    logger.info("No existing state for thread %s", thread_id)
+            except Exception as e:
+                logger.warning("Could not check existing state: %s", e)
 
             # Prepare input
             agent_input = {"messages": [{"role": "user", "content": request.request}]}
@@ -390,58 +469,20 @@ async def stream_agent(request: AgentRequest):
             latest_todos: Optional[List[Dict[str, Any]]] = None
 
             # Initial status: waiting for LLM
+            logger.info("SSE: Sending initial debug status '🤔 LLM 응답 대기 중'")
             yield {
                 "event": "debug",
-                "data": json.dumps({"status": "🤔 LLM 응답 대기 중..."}),
+                "data": json.dumps({"status": "🤔 LLM 응답 대기 중"}),
             }
 
-            for step in agent.stream(agent_input, config, stream_mode="values"):
+            async for step in _async_stream_wrapper(agent, agent_input, config, stream_mode="values"):
                 if isinstance(step, dict):
                     logger.info(
                         "SimpleAgent step keys: %s", ",".join(sorted(step.keys()))
                     )
-                # Check for interrupt
-                if isinstance(step, dict) and "__interrupt__" in step:
-                    interrupts = step["__interrupt__"]
 
-                    yield {
-                        "event": "debug",
-                        "data": json.dumps({"status": "⏸️ 사용자 승인 대기 중..."}),
-                    }
-
-                    # Process interrupts
-                    for interrupt in interrupts:
-                        interrupt_value = (
-                            interrupt.value
-                            if hasattr(interrupt, "value")
-                            else interrupt
-                        )
-
-                        # Extract action requests
-                        action_requests = interrupt_value.get("action_requests", [])
-                        normalized_actions = [
-                            _normalize_action_request(a) for a in action_requests
-                        ]
-                        if normalized_actions:
-                            _simple_agent_pending_actions[thread_id] = (
-                                normalized_actions
-                            )
-
-                        for action in normalized_actions:
-                            yield {
-                                "event": "interrupt",
-                                "data": json.dumps(
-                                    {
-                                        "thread_id": thread_id,
-                                        "action": action.get("name", "unknown"),
-                                        "args": action.get("arguments", {}),
-                                        "description": action.get("description", ""),
-                                    }
-                                ),
-                            }
-
-                    # Stop streaming - wait for resume
-                    return
+                # IMPORTANT: Process todos and messages BEFORE checking for interrupt
+                # This ensures todos/debug events are emitted even in interrupt steps
 
                 # Check for todos in state and stream them
                 if isinstance(step, dict) and "todos" in step:
@@ -461,107 +502,108 @@ async def stream_agent(request: AgentRequest):
                             "data": json.dumps({"todos": todos}),
                         }
 
-                # Process messages
+                # Process messages (no continue statements to ensure interrupt check always runs)
                 if isinstance(step, dict) and "messages" in step:
                     messages = step["messages"]
+                    should_process_message = False
                     if messages:
                         last_message = messages[-1]
                         signature = _message_signature(last_message)
-                        if signature == last_signature:
-                            continue
-                        last_signature = signature
-                    logger.info(
-                        "SimpleAgent last_message type=%s has_content=%s tool_calls=%s",
-                        type(last_message).__name__,
-                        bool(getattr(last_message, "content", None)),
-                        bool(getattr(last_message, "tool_calls", None)),
-                    )
-
-                    # Skip HumanMessage - don't echo user's input back
-                    if isinstance(last_message, HumanMessage):
-                        continue
-
-                    # Handle ToolMessage - extract final_answer result
-                    if isinstance(last_message, ToolMessage):
-                        logger.info(
-                            "SimpleAgent ToolMessage content: %s",
-                            last_message.content,
-                        )
-                        todos = _extract_todos(last_message.content)
-                        if todos:
-                            latest_todos = todos
-                            yield {
-                                "event": "todos",
-                                "data": json.dumps({"todos": todos}),
-                            }
-                        tool_name = getattr(last_message, "name", "") or ""
-                        logger.info(
-                            "SimpleAgent ToolMessage name attribute: %s", tool_name
-                        )
-
-                        # Also check content for tool name if name attribute is empty
-                        if not tool_name:
-                            try:
-                                content_json = json.loads(last_message.content)
-                                tool_name = content_json.get("tool", "")
+                        # Only process if this is a new message (not duplicate)
+                        if signature != last_signature:
+                            last_signature = signature
+                            # Skip HumanMessage
+                            if not isinstance(last_message, HumanMessage):
+                                should_process_message = True
                                 logger.info(
-                                    "SimpleAgent ToolMessage tool from content: %s",
-                                    tool_name,
+                                    "SimpleAgent last_message type=%s has_content=%s tool_calls=%s",
+                                    type(last_message).__name__,
+                                    bool(getattr(last_message, "content", None)),
+                                    bool(getattr(last_message, "tool_calls", None)),
                                 )
-                            except (json.JSONDecodeError, TypeError):
-                                pass
 
-                        if tool_name in ("final_answer_tool", "final_answer"):
-                            # Extract the final answer from the tool result
-                            try:
-                                tool_result = json.loads(last_message.content)
-                                # Check both direct "answer" and "parameters.answer"
-                                final_answer = tool_result.get(
-                                    "answer"
-                                ) or tool_result.get("parameters", {}).get("answer")
-                                if final_answer:
-                                    yield {
-                                        "event": "token",
-                                        "data": json.dumps({"content": final_answer}),
-                                    }
-                                else:
-                                    # Fallback to raw content if no answer found
-                                    yield {
-                                        "event": "token",
-                                        "data": json.dumps(
-                                            {"content": last_message.content}
-                                        ),
-                                    }
-                            except json.JSONDecodeError:
-                                # If not JSON, use content directly
-                                if last_message.content:
-                                    yield {
-                                        "event": "token",
-                                        "data": json.dumps(
-                                            {"content": last_message.content}
-                                        ),
-                                    }
-                            if latest_todos:
+                    # Process message only if it's new and not HumanMessage
+                    if should_process_message:
+                        # Handle ToolMessage - extract final_answer result
+                        if isinstance(last_message, ToolMessage):
+                            logger.info(
+                                "SimpleAgent ToolMessage content: %s",
+                                last_message.content,
+                            )
+                            todos = _extract_todos(last_message.content)
+                            if todos:
+                                latest_todos = todos
                                 yield {
                                     "event": "todos",
+                                    "data": json.dumps({"todos": todos}),
+                                }
+                            tool_name = getattr(last_message, "name", "") or ""
+                            logger.info(
+                                "SimpleAgent ToolMessage name attribute: %s", tool_name
+                            )
+
+                            # Also check content for tool name if name attribute is empty
+                            if not tool_name:
+                                try:
+                                    content_json = json.loads(last_message.content)
+                                    tool_name = content_json.get("tool", "")
+                                    logger.info(
+                                        "SimpleAgent ToolMessage tool from content: %s",
+                                        tool_name,
+                                    )
+                                except (json.JSONDecodeError, TypeError):
+                                    pass
+
+                            if tool_name in ("final_answer_tool", "final_answer"):
+                                # Extract the final answer from the tool result
+                                try:
+                                    tool_result = json.loads(last_message.content)
+                                    # Check both direct "answer" and "parameters.answer"
+                                    final_answer = tool_result.get(
+                                        "answer"
+                                    ) or tool_result.get("parameters", {}).get("answer")
+                                    if final_answer:
+                                        yield {
+                                            "event": "token",
+                                            "data": json.dumps({"content": final_answer}),
+                                        }
+                                    else:
+                                        # Fallback to raw content if no answer found
+                                        yield {
+                                            "event": "token",
+                                            "data": json.dumps(
+                                                {"content": last_message.content}
+                                            ),
+                                        }
+                                except json.JSONDecodeError:
+                                    # If not JSON, use content directly
+                                    if last_message.content:
+                                        yield {
+                                            "event": "token",
+                                            "data": json.dumps(
+                                                {"content": last_message.content}
+                                            ),
+                                        }
+                                if latest_todos:
+                                    yield {
+                                        "event": "todos",
+                                        "data": json.dumps(
+                                            {"todos": _complete_todos(latest_todos)}
+                                        ),
+                                    }
+                                # End stream after final answer
+                                yield {"event": "debug_clear", "data": json.dumps({})}
+                                yield {
+                                    "event": "complete",
                                     "data": json.dumps(
-                                        {"todos": _complete_todos(latest_todos)}
+                                        {"success": True, "thread_id": thread_id}
                                     ),
                                 }
-                            # End stream after final answer
-                            yield {"event": "debug_clear", "data": json.dumps({})}
-                            yield {
-                                "event": "complete",
-                                "data": json.dumps(
-                                    {"success": True, "thread_id": thread_id}
-                                ),
-                            }
-                            return
-                        # Skip other tool messages (jupyter_cell, markdown results)
-                        continue
+                                return
+                            # Other ToolMessages: don't skip with continue, just don't process further
 
                         # Handle AIMessage
-                        if isinstance(last_message, AIMessage):
+                        elif isinstance(last_message, AIMessage):
                             logger.info(
                                 "SimpleAgent AIMessage content: %s",
                                 last_message.content or "",
@@ -619,6 +661,10 @@ async def stream_agent(request: AgentRequest):
                             if tool_calls:
                                 todos = _emit_todos_from_tool_calls(tool_calls)
                                 if todos:
+                                    logger.info(
+                                        "SSE: Emitting todos event from AIMessage tool_calls: %d items",
+                                        len(todos)
+                                    )
                                     latest_todos = todos
                                     yield {
                                         "event": "todos",
@@ -628,6 +674,9 @@ async def stream_agent(request: AgentRequest):
                                     tool_name = tool_call.get("name", "unknown")
                                     tool_args = tool_call.get("args", {})
 
+                                    logger.info(
+                                        "SSE: Emitting debug event for tool: %s", tool_name
+                                    )
                                     yield {
                                         "event": "debug",
                                         "data": json.dumps(
@@ -674,8 +723,19 @@ async def stream_agent(request: AgentRequest):
                             ):
                                 content = last_message.content
 
+                                # Handle list content (e.g., multimodal responses)
+                                if isinstance(content, list):
+                                    # Extract text content from list
+                                    text_parts = []
+                                    for part in content:
+                                        if isinstance(part, str):
+                                            text_parts.append(part)
+                                        elif isinstance(part, dict) and part.get("type") == "text":
+                                            text_parts.append(part.get("text", ""))
+                                    content = "\n".join(text_parts)
+
                                 # Filter out raw JSON tool responses
-                                if not (
+                                if content and isinstance(content, str) and not (
                                     content.strip().startswith('{"tool":')
                                     or content.strip().startswith('{"status":')
                                     or '"pending_execution"' in content
@@ -686,6 +746,53 @@ async def stream_agent(request: AgentRequest):
                                         "event": "token",
                                         "data": json.dumps({"content": content}),
                                     }
+
+                # Check for interrupt AFTER processing todos and messages
+                # This ensures todos/debug events are emitted even in interrupt steps
+                if isinstance(step, dict) and "__interrupt__" in step:
+                    interrupts = step["__interrupt__"]
+
+                    yield {
+                        "event": "debug",
+                        "data": json.dumps({"status": "⏸️ 사용자 승인 대기 중"}),
+                    }
+
+                    # Process interrupts
+                    for interrupt in interrupts:
+                        interrupt_value = (
+                            interrupt.value
+                            if hasattr(interrupt, "value")
+                            else interrupt
+                        )
+
+                        # Extract action requests
+                        action_requests = interrupt_value.get("action_requests", [])
+                        normalized_actions = [
+                            _normalize_action_request(a) for a in action_requests
+                        ]
+                        if normalized_actions:
+                            _simple_agent_pending_actions[thread_id] = (
+                                normalized_actions
+                            )
+
+                        total_actions = len(normalized_actions)
+                        for idx, action in enumerate(normalized_actions):
+                            yield {
+                                "event": "interrupt",
+                                "data": json.dumps(
+                                    {
+                                        "thread_id": thread_id,
+                                        "action": action.get("name", "unknown"),
+                                        "args": action.get("arguments", {}),
+                                        "description": action.get("description", ""),
+                                        "action_index": idx,
+                                        "total_actions": total_actions,
+                                    }
+                                ),
+                            }
+
+                    # Stop streaming - wait for resume
+                    return
 
             if not produced_output and last_finish_reason == "MALFORMED_FUNCTION_CALL":
                 logger.info(
@@ -873,7 +980,7 @@ async def stream_agent(request: AgentRequest):
                             yield {
                                 "event": "debug",
                                 "data": json.dumps(
-                                    {"status": "🔄 Jupyter Cell로 변환 중..."}
+                                    {"status": "🔄 Jupyter Cell로 변환 중"}
                                 ),
                             }
                             yield {
@@ -973,7 +1080,9 @@ async def resume_agent(request: ResumeRequest):
                     config_dict["openai"] = request.llmConfig.openai
                 if request.llmConfig.vllm:
                     config_dict["vllm"] = request.llmConfig.vllm
-
+            system_prompt_override = (
+                request.llmConfig.system_prompt if request.llmConfig else None
+            )
             # Create agent (will use same checkpointer)
             agent = create_simple_chat_agent(
                 llm_config=config_dict,
@@ -982,6 +1091,7 @@ async def resume_agent(request: ResumeRequest):
                 checkpointer=_simple_agent_checkpointers.setdefault(
                     request.threadId, InMemorySaver()
                 ),
+                system_prompt_override=system_prompt_override,
             )
 
             # Prepare config with thread_id
@@ -1012,7 +1122,8 @@ async def resume_agent(request: ResumeRequest):
                     langgraph_decisions.append(
                         {
                             "type": "reject",
-                            "feedback": decision.feedback
+                            # LangChain HITL middleware expects 'message' key for reject feedback
+                            "message": decision.feedback
                             or "User rejected this action",
                         }
                     )
@@ -1020,7 +1131,7 @@ async def resume_agent(request: ResumeRequest):
             # Resume execution
             yield {
                 "event": "debug",
-                "data": json.dumps({"status": "▶️ 실행 재개 중..."}),
+                "data": json.dumps({"status": "▶️ 실행 재개 중"}),
             }
 
             _simple_agent_pending_actions.pop(request.threadId, None)
@@ -1035,52 +1146,28 @@ async def resume_agent(request: ResumeRequest):
             # Status: waiting for LLM response
             yield {
                 "event": "debug",
-                "data": json.dumps({"status": "🤔 LLM 응답 대기 중..."}),
+                "data": json.dumps({"status": "🤔 LLM 응답 대기 중"}),
             }
 
-            for step in agent.stream(
+            step_count = 0
+
+            async for step in _async_stream_wrapper(
+                agent,
                 Command(resume={"decisions": langgraph_decisions}),
                 config,
                 stream_mode="values",
             ):
-                # Check for another interrupt
-                if isinstance(step, dict) and "__interrupt__" in step:
-                    interrupts = step["__interrupt__"]
+                step_count += 1
+                step_keys = sorted(step.keys()) if isinstance(step, dict) else []
+                logger.info(
+                    "Resume stream step %d: type=%s, keys=%s",
+                    step_count,
+                    type(step).__name__,
+                    step_keys,
+                )
 
-                    yield {
-                        "event": "debug",
-                        "data": json.dumps({"status": "⏸️ 사용자 승인 대기 중..."}),
-                    }
-
-                    for interrupt in interrupts:
-                        interrupt_value = (
-                            interrupt.value
-                            if hasattr(interrupt, "value")
-                            else interrupt
-                        )
-                        action_requests = interrupt_value.get("action_requests", [])
-                        normalized_actions = [
-                            _normalize_action_request(a) for a in action_requests
-                        ]
-                        if normalized_actions:
-                            _simple_agent_pending_actions[request.threadId] = (
-                                normalized_actions
-                            )
-
-                        for action in normalized_actions:
-                            yield {
-                                "event": "interrupt",
-                                "data": json.dumps(
-                                    {
-                                        "thread_id": request.threadId,
-                                        "action": action.get("name", "unknown"),
-                                        "args": action.get("arguments", {}),
-                                        "description": action.get("description", ""),
-                                    }
-                                ),
-                            }
-
-                    return
+                # IMPORTANT: Process todos and messages BEFORE checking for interrupt
+                # This ensures todos/debug events are emitted even in interrupt steps
 
                 # Check for todos in state and stream them
                 if isinstance(step, dict) and "todos" in step:
@@ -1094,16 +1181,20 @@ async def resume_agent(request: ResumeRequest):
                         latest_todos = todos
                         yield {"event": "todos", "data": json.dumps({"todos": todos})}
 
-                # Process messages
+                # Process messages (no continue statements to ensure interrupt check always runs)
                 if isinstance(step, dict) and "messages" in step:
                     messages = step["messages"]
+                    should_process_message = False
                     if messages:
                         last_message = messages[-1]
                         signature = _message_signature(last_message)
-                        if signature == last_signature:
-                            continue
-                        last_signature = signature
+                        # Only process if this is a new message (not duplicate)
+                        if signature != last_signature:
+                            last_signature = signature
+                            should_process_message = True
 
+                    # Process message only if it's new
+                    if should_process_message:
                         if isinstance(last_message, ToolMessage):
                             logger.info(
                                 "Resume ToolMessage content: %s", last_message.content
@@ -1174,14 +1265,25 @@ async def resume_agent(request: ResumeRequest):
                                     ),
                                 }
                                 return
-                            # Skip other ToolMessages (jupyter_cell, markdown, etc.) - don't emit their content
-                            continue
+                            # Other ToolMessages: don't process further (no continue to ensure interrupt check runs)
 
-                        if hasattr(last_message, "content") and last_message.content:
+                        # Handle AIMessage (use elif to avoid processing after ToolMessage)
+                        elif hasattr(last_message, "content") and last_message.content:
                             content = last_message.content
 
+                            # Handle list content (e.g., multimodal responses)
+                            if isinstance(content, list):
+                                # Extract text content from list
+                                text_parts = []
+                                for part in content:
+                                    if isinstance(part, str):
+                                        text_parts.append(part)
+                                    elif isinstance(part, dict) and part.get("type") == "text":
+                                        text_parts.append(part.get("text", ""))
+                                content = "\n".join(text_parts)
+
                             # Filter out raw JSON tool responses
-                            if not (
+                            if content and isinstance(content, str) and not (
                                 content.strip().startswith('{"tool":')
                                 or content.strip().startswith('{"status":')
                                 or '"pending_execution"' in content
@@ -1203,71 +1305,123 @@ async def resume_agent(request: ResumeRequest):
                                 if tc.get("id") not in processed_tool_call_ids
                             ]
 
-                            if not new_tool_calls:
-                                # All tool calls already processed, skip
-                                continue
+                            # Only process if there are new tool calls (no continue to ensure interrupt check runs)
+                            if new_tool_calls:
+                                # Mark these tool calls as processed
+                                for tc in new_tool_calls:
+                                    if tc.get("id"):
+                                        processed_tool_call_ids.add(tc["id"])
 
-                            # Mark these tool calls as processed
-                            for tc in new_tool_calls:
-                                if tc.get("id"):
-                                    processed_tool_call_ids.add(tc["id"])
-
-                            logger.info(
-                                "Resume AIMessage tool_calls: %s",
-                                json.dumps(new_tool_calls, ensure_ascii=False),
-                            )
-                            todos = _emit_todos_from_tool_calls(new_tool_calls)
-                            if todos:
-                                latest_todos = todos
-                                yield {
-                                    "event": "todos",
-                                    "data": json.dumps({"todos": todos}),
-                                }
-                        for tool_call in new_tool_calls:
-                            tool_name = tool_call.get("name", "unknown")
-                            tool_args = tool_call.get("args", {})
-                            if tool_args.get("execution_result"):
                                 logger.info(
-                                    "Resume tool_call includes execution_result; skipping client execution for %s",
-                                    tool_name,
+                                    "Resume AIMessage tool_calls: %s",
+                                    json.dumps(new_tool_calls, ensure_ascii=False),
                                 )
-                                continue
+                                todos = _emit_todos_from_tool_calls(new_tool_calls)
+                                if todos:
+                                    latest_todos = todos
+                                    yield {
+                                        "event": "todos",
+                                        "data": json.dumps({"todos": todos}),
+                                    }
 
+                                # Process tool calls
+                                for tool_call in new_tool_calls:
+                                    tool_name = tool_call.get("name", "unknown")
+                                    tool_args = tool_call.get("args", {})
+                                    # Skip tool calls with execution_result (continue is OK here - inner loop)
+                                    if tool_args.get("execution_result"):
+                                        logger.info(
+                                            "Resume tool_call includes execution_result; skipping client execution for %s",
+                                            tool_name,
+                                        )
+                                        continue
+
+                                    yield {
+                                        "event": "debug",
+                                        "data": json.dumps(
+                                            {"status": f"🔧 Tool 실행: {tool_name}"}
+                                        ),
+                                    }
+
+                                    if tool_name in ("jupyter_cell_tool", "jupyter_cell"):
+                                        yield {
+                                            "event": "tool_call",
+                                            "data": json.dumps(
+                                                {
+                                                    "tool": "jupyter_cell",
+                                                    "code": tool_args.get("code", ""),
+                                                    "description": tool_args.get(
+                                                        "description", ""
+                                                    ),
+                                                }
+                                            ),
+                                        }
+                                    elif tool_name in ("markdown_tool", "markdown"):
+                                        yield {
+                                            "event": "tool_call",
+                                            "data": json.dumps(
+                                                {
+                                                    "tool": "markdown",
+                                                    "content": tool_args.get("content", ""),
+                                                }
+                                            ),
+                                        }
+
+                # Check for interrupt AFTER processing todos and messages
+                # This ensures todos/debug events are emitted even in interrupt steps
+                if isinstance(step, dict) and "__interrupt__" in step:
+                    interrupts = step["__interrupt__"]
+
+                    yield {
+                        "event": "debug",
+                        "data": json.dumps({"status": "⏸️ 사용자 승인 대기 중"}),
+                    }
+
+                    for interrupt in interrupts:
+                        interrupt_value = (
+                            interrupt.value
+                            if hasattr(interrupt, "value")
+                            else interrupt
+                        )
+                        action_requests = interrupt_value.get("action_requests", [])
+                        normalized_actions = [
+                            _normalize_action_request(a) for a in action_requests
+                        ]
+                        if normalized_actions:
+                            _simple_agent_pending_actions[request.threadId] = (
+                                normalized_actions
+                            )
+
+                        total_actions = len(normalized_actions)
+                        for idx, action in enumerate(normalized_actions):
                             yield {
-                                "event": "debug",
+                                "event": "interrupt",
                                 "data": json.dumps(
-                                    {"status": f"🔧 Tool 실행: {tool_name}"}
+                                    {
+                                        "thread_id": request.threadId,
+                                        "action": action.get("name", "unknown"),
+                                        "args": action.get("arguments", {}),
+                                        "description": action.get("description", ""),
+                                        "action_index": idx,
+                                        "total_actions": total_actions,
+                                    }
                                 ),
                             }
 
-                            if tool_name in ("jupyter_cell_tool", "jupyter_cell"):
-                                yield {
-                                    "event": "tool_call",
-                                    "data": json.dumps(
-                                        {
-                                            "tool": "jupyter_cell",
-                                            "code": tool_args.get("code", ""),
-                                            "description": tool_args.get(
-                                                "description", ""
-                                            ),
-                                        }
-                                    ),
-                                }
-                            elif tool_name in ("markdown_tool", "markdown"):
-                                yield {
-                                    "event": "tool_call",
-                                    "data": json.dumps(
-                                        {
-                                            "tool": "markdown",
-                                            "content": tool_args.get("content", ""),
-                                        }
-                                    ),
-                                }
+                    # Stop streaming - wait for resume
+                    return
 
             # Clear debug status before completion
             yield {"event": "debug_clear", "data": json.dumps({})}
 
-            # Execution completed
+            # Execution completed - stream ended without final_answer
+            logger.warning(
+                "Resume stream ended without final_answer_tool after %d steps. "
+                "Last signature: %s, Latest todos: %s",
+                step_count,
+                last_signature,
+                latest_todos,
+            )
             yield {
                 "event": "complete",
                 "data": json.dumps({"success": True, "thread_id": request.threadId}),

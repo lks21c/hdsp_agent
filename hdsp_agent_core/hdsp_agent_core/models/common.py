@@ -6,7 +6,7 @@ Shared data models used across all agent services.
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ToolCall(BaseModel):
@@ -87,9 +87,16 @@ class LLMConfig(BaseModel):
     API keys are managed client-side and passed with each request.
     """
 
+    model_config = ConfigDict(populate_by_name=True)
+
     provider: str = Field(
         default="gemini", description="LLM provider (gemini, openai, vllm)"
     )
     gemini: Optional[GeminiConfig] = Field(default=None, description="Gemini config")
     openai: Optional[OpenAIConfig] = Field(default=None, description="OpenAI config")
     vllm: Optional[VLLMConfig] = Field(default=None, description="vLLM config")
+    system_prompt: Optional[str] = Field(
+        default=None,
+        alias="systemPrompt",
+        description="LangChain system prompt override",
+    )
