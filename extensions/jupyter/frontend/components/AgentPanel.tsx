@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef, useCallback } from 'react';
 import { ReactWidget, LabIcon } from '@jupyterlab/ui-components';
-import { NotebookPanel } from '@jupyterlab/notebook';
+import { NotebookPanel, NotebookActions } from '@jupyterlab/notebook';
 import { ApiService } from '../services/ApiService';
 import { IChatMessage, IFileFixRequest, IFixedFile } from '../types';
 import { SettingsPanel } from './SettingsPanel';
@@ -243,6 +243,218 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
   const [fileSelectionMetadata, setFileSelectionMetadata] = useState<any>(null);
   const [pendingAgentRequest, setPendingAgentRequest] = useState<string | null>(null);
 
+  // Human-in-the-Loop state
+  const [debugStatus, setDebugStatus] = useState<string | null>(null);
+  const [interruptData, setInterruptData] = useState<{
+    threadId: string;
+    action: string;
+    args: any;
+    description: string;
+  } | null>(null);
+
+  // Todo list state (from TodoListMiddleware)
+  const [todos, setTodos] = useState<Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>>([]);
+  const [isTodoExpanded, setIsTodoExpanded] = useState(false);
+  const interruptMessageIdRef = useRef<string | null>(null);
+  const approvalPendingRef = useRef<boolean>(false);
+  const pendingToolCallsRef = useRef<Array<{ tool: string; code?: string; content?: string; cellIndex?: number }>>([]);
+  const handledToolCallKeysRef = useRef<Set<string>>(new Set());
+
+  const getActiveNotebookPanel = (): NotebookPanel | null => {
+    const app = (window as any).jupyterapp;
+    if (app?.shell?.currentWidget) {
+      const currentWidget = app.shell.currentWidget;
+      if (currentWidget instanceof NotebookPanel) {
+        return currentWidget;
+      }
+      if ('content' in currentWidget && currentWidget.content?.model) {
+        return currentWidget as NotebookPanel;
+      }
+    }
+    return notebookTracker?.currentWidget || null;
+  };
+
+  const insertCell = (notebook: NotebookPanel, cellType: 'code' | 'markdown', source: string): number | null => {
+    const model = notebook.content?.model;
+    if (!model?.sharedModel) {
+      console.warn('[AgentPanel] Notebook model not ready for insert');
+      return null;
+    }
+    const insertIndex = model.cells.length;
+    model.sharedModel.insertCell(insertIndex, {
+      cell_type: cellType,
+      source
+    });
+    notebook.content.activeCellIndex = insertIndex;
+    return insertIndex;
+  };
+
+  const executeCell = async (notebook: NotebookPanel, cellIndex: number): Promise<void> => {
+    try {
+      await notebook.sessionContext.ready;
+      notebook.content.activeCellIndex = cellIndex;
+      await NotebookActions.run(notebook.content, notebook.sessionContext);
+    } catch (error) {
+      console.error('[AgentPanel] Cell execution failed:', error);
+    }
+  };
+
+  const captureExecutionResult = (notebook: NotebookPanel, cellIndex: number) => {
+    const cell = notebook.content.widgets[cellIndex];
+    const model = (cell as any)?.model;
+    const outputs = model?.outputs;
+    const rawState = model?.executionState;
+    const executionState =
+      typeof rawState === 'string'
+        ? rawState
+        : rawState?.get?.() ?? rawState?.value ?? null;
+    const result = {
+      success: true,
+      output: '',
+      error: undefined as string | undefined,
+      error_type: undefined as string | undefined,
+      traceback: undefined as string[] | undefined,
+      execution_count: model?.executionCount ?? null,
+      execution_state: executionState,
+      kernel_status: notebook.sessionContext?.session?.kernel?.status ?? null,
+      cell_type: model?.type ?? null,
+      outputs: [] as any[],
+    };
+
+    if (!outputs || outputs.length === 0) {
+      return result;
+    }
+
+    const stripImageData = (data: Record<string, any>) => {
+      const filtered: Record<string, any> = {};
+      Object.keys(data || {}).forEach((key) => {
+        if (!key.toLowerCase().startsWith('image/')) {
+          filtered[key] = data[key];
+        }
+      });
+      return filtered;
+    };
+
+    const errorSignatures = [
+      'command not found',
+      'ModuleNotFoundError',
+      'No module named',
+      'Traceback (most recent call last)',
+      'Error:',
+    ];
+
+    for (let i = 0; i < outputs.length; i++) {
+      const output = outputs.get(i);
+      const json = (output as any).toJSON?.() || output;
+      let sanitizedOutput = json;
+
+      if (output.type === 'error') {
+        result.outputs.push(sanitizedOutput);
+        result.success = false;
+        result.error_type = json.ename;
+        result.error = json.evalue;
+        if (Array.isArray(json.traceback)) {
+          result.traceback = json.traceback;
+        }
+      } else if (output.type === 'stream' && json.text) {
+        result.outputs.push(sanitizedOutput);
+        result.output += json.text;
+        const lowerText = json.text.toLowerCase();
+        if (errorSignatures.some(signature => lowerText.includes(signature.toLowerCase()))) {
+          result.success = false;
+          result.error_type = 'runtime_error';
+          result.error = json.text.trim();
+        }
+      } else if ((output.type === 'execute_result' || output.type === 'display_data') && json.data) {
+        const filteredData = stripImageData(json.data);
+        if (Object.keys(filteredData).length > 0) {
+          sanitizedOutput = { ...json, data: filteredData };
+          result.outputs.push(sanitizedOutput);
+          result.output += JSON.stringify(filteredData);
+        }
+      }
+    }
+
+    return result;
+  };
+
+  const executePendingApproval = async (): Promise<{ tool: string; code?: string; content?: string; execution_result?: any } | null> => {
+    const notebook = getActiveNotebookPanel();
+    if (!notebook) {
+      console.warn('[AgentPanel] No active notebook to execute cell');
+      return null;
+    }
+
+    const pending = pendingToolCallsRef.current;
+    if (pending.length === 0) {
+      approvalPendingRef.current = false;
+      return null;
+    }
+
+    const next = pending.shift();
+    if (!next) {
+      approvalPendingRef.current = false;
+      return null;
+    }
+
+    if (next.tool === 'jupyter_cell' && next.code && typeof next.cellIndex === 'number') {
+      await executeCell(notebook, next.cellIndex);
+      const execResult = captureExecutionResult(notebook, next.cellIndex);
+      (execResult as any).code = next.code;
+      (next as any).execution_result = execResult;
+      console.log('[AgentPanel] Executed approved code cell from tool call');
+      approvalPendingRef.current = pendingToolCallsRef.current.length > 0;
+      return next as any;
+    }
+
+    approvalPendingRef.current = pendingToolCallsRef.current.length > 0;
+    return next as any;
+  };
+
+  const queueApprovalCell = (code: string): void => {
+    const notebook = getActiveNotebookPanel();
+    if (!notebook) {
+      console.warn('[AgentPanel] No active notebook to add approval cell');
+      return;
+    }
+    const key = `jupyter_cell:${code}`;
+    if (handledToolCallKeysRef.current.has(key)) {
+      return;
+    }
+    const index = insertCell(notebook, 'code', code);
+    if (index === null) {
+      return;
+    }
+    handledToolCallKeysRef.current.add(key);
+    approvalPendingRef.current = true;
+    pendingToolCallsRef.current.push({ tool: 'jupyter_cell', code, cellIndex: index });
+    console.log('[AgentPanel] Added code cell pending approval via interrupt');
+  };
+
+  const handleToolCall = (toolCall: { tool: string; code?: string; content?: string }) => {
+    const key = `${toolCall.tool}:${toolCall.code || toolCall.content || ''}`;
+    if (handledToolCallKeysRef.current.has(key)) {
+      return;
+    }
+
+    if (toolCall.tool === 'jupyter_cell') {
+      return;
+    }
+
+    if (toolCall.tool === 'markdown' && toolCall.content) {
+      const notebook = getActiveNotebookPanel();
+      if (!notebook) {
+        console.warn('[AgentPanel] No active notebook to add markdown');
+        return;
+      }
+      const index = insertCell(notebook, 'markdown', toolCall.content);
+      if (index !== null) {
+        handledToolCallKeysRef.current.add(key);
+        console.log('[AgentPanel] Added markdown cell from tool call');
+      }
+    }
+  };
+
   // 모드 변경 시 로컬 스토리지에 저장
   useEffect(() => {
     try {
@@ -258,6 +470,11 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
   const currentCellIdRef = useRef<string | null>(null);
   const currentCellIndexRef = useRef<number | null>(null);
   const orchestratorRef = useRef<AgentOrchestrator | null>(null);
+
+  const makeMessageId = (suffix?: string) => {
+    const base = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    return suffix ? `${base}-${suffix}` : base;
+  };
 
   // Expose handleSendMessage via ref
   useImperativeHandle(ref, () => ({
@@ -411,7 +628,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
     // CRITICAL: Prevent concurrent agent executions
     if (isAgentRunning) {
       const errorMessage: IChatMessage = {
-        id: Date.now().toString(),
+        id: makeMessageId(),
         role: 'assistant',
         content: '⚠️ 이전 작업이 아직 실행 중입니다. 완료될 때까지 기다려주세요.',
         timestamp: Date.now(),
@@ -448,7 +665,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
     if (!notebook || !sessionContext) {
       // 노트북이 없으면 에러 메시지 표시
       const errorMessage: IChatMessage = {
-        id: Date.now().toString(),
+        id: makeMessageId(),
         role: 'assistant',
         content: '노트북을 먼저 열어주세요. Agent 실행은 활성 노트북이 필요합니다.',
         timestamp: Date.now(),
@@ -767,7 +984,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
 
     // Assistant 메시지로 응답 표시
     const assistantMessage: IChatMessage = {
-      id: Date.now().toString() + '-file-fix',
+      id: makeMessageId('file-fix'),
       role: 'assistant',
       content: response,
       timestamp: Date.now(),
@@ -789,7 +1006,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
     if (success) {
       // 성공 메시지
       const successMessage: IChatMessage = {
-        id: Date.now().toString() + '-apply-success',
+        id: makeMessageId('apply-success'),
         role: 'assistant',
         content: `✅ **${fix.path}** 파일이 수정되었습니다.\n\n파일 에디터에서 변경사항을 확인하세요.`,
         timestamp: Date.now(),
@@ -806,7 +1023,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
   // 에러 메시지 추가 헬퍼
   const addErrorMessage = (message: string) => {
     const errorMessage: IChatMessage = {
-      id: Date.now().toString() + '-error',
+      id: makeMessageId('error'),
       role: 'assistant',
       content: `⚠️ ${message}`,
       timestamp: Date.now(),
@@ -923,10 +1140,16 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
     setCurrentAgentMessageId(null);
   };
 
-  // Auto-scroll to bottom when messages change
+  // Auto-scroll to bottom when messages change or streaming
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (isStreaming) {
+      // 스트리밍 중에는 즉시 스크롤
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+    } else {
+      // 일반 메시지 추가 시 부드러운 스크롤
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, isStreaming]);
 
   // Extract and store code blocks from messages, setup button listeners
   useEffect(() => {
@@ -1594,6 +1817,196 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
     return div.innerHTML;
   };
 
+  const isAutoApprovedCode = (code: string): boolean => {
+    const lines = code
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0 && !line.startsWith('#'));
+    if (lines.length === 0) {
+      return true;
+    }
+    const disallowedPatterns = [
+      /(^|[^=!<>])=([^=]|$)/,
+      /\.read_[a-zA-Z0-9_]*\s*\(/,
+      /\bread_[a-zA-Z0-9_]*\s*\(/,
+      /\.to_[a-zA-Z0-9_]*\s*\(/,
+    ];
+    if (lines.some(line => disallowedPatterns.some(pattern => pattern.test(line)))) {
+      return false;
+    }
+    const allowedPatterns = [
+      /^print\(.+\)$/,
+      /^display\(.+\)$/,
+      /^df\.(head|info|describe)\s*\(.*\)$/,
+      /^display\(df\.(head|info|describe)\s*\(.*\)\)$/,
+      /^df\.(tail|sample)\s*\(.*\)$/,
+      /^display\(df\.(tail|sample)\s*\(.*\)\)$/,
+      /^df\.(shape|columns|dtypes)$/,
+      /^import\s+pandas\s+as\s+pd$/,
+    ];
+    return lines.every(line => allowedPatterns.some(pattern => pattern.test(line)));
+  };
+
+  const upsertInterruptMessage = (interrupt: { threadId: string; action: string; args: any; description: string }) => {
+    const interruptMessageId = interruptMessageIdRef.current || makeMessageId('interrupt');
+    interruptMessageIdRef.current = interruptMessageId;
+    const interruptMessage: IChatMessage = {
+      id: interruptMessageId,
+      role: 'system',
+      content: interrupt.description || '코드 실행 승인이 필요합니다.',
+      timestamp: Date.now(),
+      metadata: { interrupt }
+    };
+
+    setMessages(prev => {
+      const hasExisting = prev.some(msg => msg.id === interruptMessageId);
+      if (hasExisting) {
+        return prev.map(msg => msg.id === interruptMessageId ? interruptMessage : msg);
+      }
+      return [...prev, interruptMessage];
+    });
+  };
+
+  const clearInterruptMessage = () => {
+    if (!interruptMessageIdRef.current) return;
+    const messageId = interruptMessageIdRef.current;
+    interruptMessageIdRef.current = null;
+    setMessages(prev =>
+      prev.map(msg => {
+        // Only IChatMessage has metadata property (check via 'role' property)
+        if (msg.id === messageId && 'role' in msg) {
+          const chatMsg = msg as IChatMessage;
+          return {
+            ...chatMsg,
+            metadata: {
+              ...chatMsg.metadata,
+              interrupt: {
+                ...(chatMsg.metadata?.interrupt || {}),
+                resolved: true
+              }
+            }
+          };
+        }
+        return msg;
+      })
+    );
+  };
+
+  const resumeFromInterrupt = async (
+    interrupt: { threadId: string; action: string; args: any; description: string },
+    decision: 'approve' | 'reject'
+  ) => {
+    const { threadId } = interrupt;
+    setInterruptData(null);
+    setDebugStatus(null);
+    clearInterruptMessage();
+    let resumeDecision: 'approve' | 'edit' | 'reject' = decision;
+    let resumeArgs: any = undefined;
+    if (decision === 'approve') {
+      const executed = await executePendingApproval();
+      if (executed && executed.tool === 'jupyter_cell') {
+        resumeDecision = 'edit';
+        resumeArgs = {
+          code: executed.code,
+          execution_result: (executed as any).execution_result
+        };
+      } else if (executed && executed.tool === 'markdown') {
+        resumeDecision = 'edit';
+        resumeArgs = {
+          content: executed.content
+        };
+      }
+    } else {
+      pendingToolCallsRef.current.shift();
+      approvalPendingRef.current = pendingToolCallsRef.current.length > 0;
+    }
+    setIsLoading(true);
+    setIsStreaming(true);
+    let interrupted = false;
+
+    // 항상 새 메시지 생성 - 승인 UI 아래에 append되도록
+    const assistantMessageId = makeMessageId('assistant');
+    setStreamingMessageId(assistantMessageId);
+
+    // 새 메시지 추가 (맨 아래에 append)
+    setMessages(prev => [
+      ...prev,
+      {
+        id: assistantMessageId,
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now()
+      }
+    ]);
+
+    let streamedContent = '';
+
+    try {
+      await apiService.resumeAgent(
+        threadId,
+        resumeDecision,
+        resumeArgs,
+        resumeDecision === 'reject' ? 'User rejected this action' : undefined,
+        llmConfig || undefined,
+        (chunk: string) => {
+          streamedContent += chunk;
+          setMessages(prev =>
+            prev.map(msg =>
+              msg.id === assistantMessageId && isChatMessage(msg)
+                ? { ...msg, content: streamedContent }
+                : msg
+            )
+          );
+        },
+        (status: string) => {
+          setDebugStatus(status);
+        },
+        (nextInterrupt) => {
+          interrupted = true;
+          approvalPendingRef.current = true;
+          if (nextInterrupt.action === 'jupyter_cell_tool' && nextInterrupt.args?.code) {
+            if (isAutoApprovedCode(nextInterrupt.args.code)) {
+              queueApprovalCell(nextInterrupt.args.code);
+              void resumeFromInterrupt(nextInterrupt, 'approve');
+              return;
+            }
+            queueApprovalCell(nextInterrupt.args.code);
+          }
+          setInterruptData(nextInterrupt);
+          upsertInterruptMessage(nextInterrupt);
+          setIsLoading(false);
+          setIsStreaming(false);
+        },
+        (newTodos) => {
+          setTodos(newTodos);
+        },
+        () => {
+          setDebugStatus(null);
+        },
+        handleToolCall
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to resume';
+      setDebugStatus(`오류: ${message}`);
+      console.error('Resume failed:', error);
+      setMessages(prev => [
+        ...prev,
+        {
+          id: makeMessageId(),
+          role: 'assistant',
+          content: `Error: ${message}`,
+          timestamp: Date.now()
+        }
+      ]);
+    } finally {
+      setIsLoading(false);
+      setIsStreaming(false);
+      if (!interrupted) {
+        approvalPendingRef.current = false;
+      }
+    }
+  };
+
   const handleSendMessage = async () => {
     // Check if there's an LLM prompt stored (from cell action)
     const textarea = messagesEndRef.current?.parentElement?.querySelector('.jp-agent-input') as HTMLTextAreaElement;
@@ -1629,7 +2042,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
 
           // User 메시지 추가
           const userMessage: IChatMessage = {
-            id: Date.now().toString(),
+            id: makeMessageId(),
             role: 'user',
             content: currentInput,
             timestamp: Date.now(),
@@ -1666,7 +2079,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
 
           // User 메시지 추가
           const userMessage: IChatMessage = {
-            id: Date.now().toString(),
+            id: makeMessageId(),
             role: 'user',
             content: currentInput,
             timestamp: Date.now(),
@@ -1676,7 +2089,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
 
           // 에러 메시지 요청 안내
           const guideMessage: IChatMessage = {
-            id: Date.now().toString() + '-guide',
+            id: makeMessageId('guide'),
             role: 'assistant',
             content: `파일 에러 수정을 도와드리겠습니다! 🔧
 
@@ -1708,7 +2121,7 @@ SyntaxError: '(' was never closed
         // 노트북이 있으면 Agent 실행
         // User 메시지 추가
         const userMessage: IChatMessage = {
-          id: Date.now().toString(),
+          id: makeMessageId(),
           role: 'user',
           content: `@agent ${currentInput}`,
           timestamp: Date.now(),
@@ -1728,7 +2141,7 @@ SyntaxError: '(' was never closed
       if (agentRequest) {
         // User 메시지 추가
         const userMessage: IChatMessage = {
-          id: Date.now().toString(),
+          id: makeMessageId(),
           role: 'user',
           content: currentInput,
           timestamp: Date.now(),
@@ -1748,7 +2161,7 @@ SyntaxError: '(' was never closed
 
       // User 메시지 추가
       const userMessage: IChatMessage = {
-        id: Date.now().toString(),
+        id: makeMessageId(),
         role: 'user',
         content: currentInput,
         timestamp: Date.now(),
@@ -1776,7 +2189,7 @@ SyntaxError: '(' was never closed
       // Show error message and open settings
       const providerName = llmConfig?.provider || 'LLM';
       const errorMessage: IChatMessage = {
-        id: Date.now().toString(),
+        id: makeMessageId(),
         role: 'assistant',
         content: `API Key가 설정되지 않았습니다.\n\n${providerName === 'gemini' ? 'Gemini' : providerName === 'openai' ? 'OpenAI' : 'vLLM'} API Key를 먼저 설정해주세요.\n\n설정 버튼을 클릭하여 API Key를 입력하세요.`,
         timestamp: Date.now()
@@ -1789,7 +2202,7 @@ SyntaxError: '(' was never closed
     // Use the display prompt (input) for the user message, or use a fallback if input is empty
     const displayContent = currentInput || (llmPrompt ? '셀 분석 요청' : '');
     const userMessage: IChatMessage = {
-      id: Date.now().toString(),
+      id: makeMessageId(),
       role: 'user',
       content: displayContent,
       timestamp: Date.now()
@@ -1810,7 +2223,7 @@ SyntaxError: '(' was never closed
     }
 
     // Create assistant message ID for streaming updates
-    const assistantMessageId = Date.now().toString() + '-assistant';
+    const assistantMessageId = makeMessageId('assistant');
     let streamedContent = '';
     setStreamingMessageId(assistantMessageId);
 
@@ -1823,6 +2236,7 @@ SyntaxError: '(' was never closed
     };
     setMessages(prev => [...prev, initialAssistantMessage]);
 
+    let interrupted = false;
     try {
       // Use LLM prompt if available, otherwise use the display content
       const messageToSend = llmPrompt || displayContent;
@@ -1865,16 +2279,49 @@ SyntaxError: '(' was never closed
               )
             );
           }
-        }
+        },
+        // onDebug callback - show debug status in gray
+        (status: string) => {
+          setDebugStatus(status);
+        },
+        // onInterrupt callback - show approval dialog
+        (interrupt) => {
+          interrupted = true;
+          approvalPendingRef.current = true;
+          if (interrupt.action === 'jupyter_cell_tool' && interrupt.args?.code) {
+            if (isAutoApprovedCode(interrupt.args.code)) {
+              queueApprovalCell(interrupt.args.code);
+              void resumeFromInterrupt(interrupt, 'approve');
+              return;
+            }
+            queueApprovalCell(interrupt.args.code);
+          }
+          setInterruptData(interrupt);
+          upsertInterruptMessage(interrupt);
+          setIsLoading(false);
+          setIsStreaming(false);
+        },
+        // onTodos callback - update todo list UI
+        (newTodos) => {
+          setTodos(newTodos);
+        },
+        // onDebugClear callback - clear debug status
+        () => {
+          setDebugStatus(null);
+        },
+        // onToolCall callback - add cells to notebook
+        handleToolCall
       );
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to send message';
+      setDebugStatus(`오류: ${message}`);
       // Update the assistant message with error
       setMessages(prev =>
         prev.map(msg =>
           msg.id === assistantMessageId && isChatMessage(msg)
             ? {
                 ...msg,
-                content: streamedContent + `\n\nError: ${error instanceof Error ? error.message : 'Failed to send message'}`
+                content: streamedContent + `\n\nError: ${message}`
               }
             : msg
         )
@@ -1883,7 +2330,14 @@ SyntaxError: '(' was never closed
       setIsLoading(false);
       setIsStreaming(false);
       setStreamingMessageId(null);
+      // Keep completed todos visible after the run
     }
+  };
+
+  // Handle resume after user approval/rejection
+  const handleResumeAgent = async (decision: 'approve' | 'reject') => {
+    if (!interruptData) return;
+    await resumeFromInterrupt(interruptData, decision);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -2066,6 +2520,39 @@ SyntaxError: '(' was never closed
     return !('type' in msg) || msg.type !== 'agent_execution';
   };
 
+  const mapStatusText = (raw: string): string => {
+    const normalized = raw.toLowerCase();
+    if (normalized.includes('calling tool')) {
+      return raw.replace(/Calling tool:/gi, '도구 호출 중:').trim();
+    }
+    if (normalized.includes('waiting for user approval')) {
+      return '승인 대기 중...';
+    }
+    if (normalized.includes('resuming execution')) {
+      return '승인 반영 후 실행 재개 중...';
+    }
+    if (normalized.includes('tool')) {
+      return '도구 실행 중...';
+    }
+    return raw;
+  };
+
+  const getStatusText = (): string | null => {
+    if (interruptData) {
+      return `승인 대기: ${interruptData.action}`;
+    }
+    if (debugStatus) {
+      return mapStatusText(debugStatus);
+    }
+    if (isLoading || isStreaming) {
+      // 기본 상태 메시지 - todo 내용은 compact todo UI에서 표시
+      return '요청 처리 중...';
+    }
+    return null;
+  };
+
+  const statusText = getStatusText();
+
   return (
     <div className="jp-agent-panel">
       {/* Settings Dialog */}
@@ -2132,18 +2619,72 @@ SyntaxError: '(' was never closed
           messages.map(msg => {
             if (isChatMessage(msg)) {
               // 일반 Chat 메시지
+              const isAssistant = msg.role === 'assistant';
               return (
-                <div key={msg.id} className={`jp-agent-message jp-agent-message-${msg.role}`}>
-                  <div className="jp-agent-message-header">
-                    <span className="jp-agent-message-role">
-                      {msg.role === 'user' ? '사용자' : 'Agent'}
-                    </span>
-                    <span className="jp-agent-message-time">
-                      {new Date(msg.timestamp).toLocaleTimeString()}
-                    </span>
-                  </div>
+                <div
+                  key={msg.id}
+                  className={
+                    isAssistant
+                      ? 'jp-agent-message jp-agent-message-assistant-inline'
+                      : `jp-agent-message jp-agent-message-${msg.role}`
+                  }
+                >
+                  {!isAssistant && (
+                    <div className="jp-agent-message-header">
+                      <span className="jp-agent-message-role">
+                        {msg.role === 'user' ? '사용자' : msg.role === 'system' ? '승인 요청' : 'Agent'}
+                      </span>
+                      <span className="jp-agent-message-time">
+                        {new Date(msg.timestamp).toLocaleTimeString()}
+                      </span>
+                    </div>
+                  )}
                   <div className={`jp-agent-message-content${streamingMessageId === msg.id ? ' streaming' : ''}`}>
-                    {msg.role === 'assistant' ? (
+                    {msg.role === 'system' && msg.metadata?.interrupt ? (
+                      <div className="jp-agent-interrupt-inline">
+                        <div className="jp-agent-interrupt-description">
+                          {msg.content}
+                        </div>
+                        <div className="jp-agent-interrupt-action">
+                          <div className="jp-agent-interrupt-action-args">
+                            {(() => {
+                              const code = msg.metadata?.interrupt?.args?.code || msg.metadata?.interrupt?.args?.content || '';
+                              const lines = code.split('\n');
+                              const preview = lines.slice(0, 8).join('\n');
+                              const suffix = lines.length > 8 ? '\n...' : '';
+                              const resolved = msg.metadata?.interrupt?.resolved;
+                              const actionHtml = resolved
+                                ? '<div class="jp-agent-interrupt-actions jp-agent-interrupt-actions--resolved">승인됨</div>'
+                                : `
+<div class="code-block-actions jp-agent-interrupt-actions">
+  <button class="jp-agent-interrupt-approve-btn" data-action="approve">승인</button>
+  <button class="jp-agent-interrupt-reject-btn" data-action="reject">거부</button>
+</div>
+`;
+                              return (
+                                <div
+                                  className="jp-RenderedHTMLCommon"
+                                  style={{ padding: '0 4px' }}
+                                  dangerouslySetInnerHTML={{ __html: formatMarkdownToHtml(`\n\`\`\`python\n${preview}${suffix}\n\`\`\``).replace('</div>', `${actionHtml}</div>`) }}
+                                  onClick={(event) => {
+                                    const target = event.target as HTMLElement;
+                                    const action = target?.getAttribute?.('data-action');
+                                    if (msg.metadata?.interrupt?.resolved) {
+                                      return;
+                                    }
+                                    if (action === 'approve') {
+                                      handleResumeAgent('approve');
+                                    } else if (action === 'reject') {
+                                      handleResumeAgent('reject');
+                                    }
+                                  }}
+                                />
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      </div>
+                    ) : msg.role === 'assistant' ? (
                       // Assistant(AI) 메시지: 마크다운 HTML 렌더링 + Jupyter 스타일 적용
                       <div
                         className="jp-RenderedHTMLCommon"
@@ -2169,18 +2710,8 @@ SyntaxError: '(' was never closed
             }
           })
         )}
-        {isLoading && !isStreaming && !isAgentRunning && (
-          <div className="jp-agent-message jp-agent-message-assistant">
-            <div className="jp-agent-message-header">
-              <span className="jp-agent-message-role">Agent</span>
-            </div>
-            <div className="jp-agent-message-content jp-agent-loading">
-              <span className="jp-agent-loading-dot">.</span>
-              <span className="jp-agent-loading-dot">.</span>
-              <span className="jp-agent-loading-dot">.</span>
-            </div>
-          </div>
-        )}
+
+{/* Todo List moved to above input container */}
 
         {/* Console 에러 감지 알림 */}
         {showConsoleErrorNotification && lastConsoleError && (
@@ -2260,6 +2791,82 @@ SyntaxError: '(' was never closed
 
         <div ref={messagesEndRef} />
       </div>
+
+      {statusText && (
+        <div
+          className={`jp-agent-message jp-agent-message-debug${
+            statusText.startsWith('오류:') ? ' jp-agent-message-debug-error' : ''
+          }`}
+        >
+          <div className="jp-agent-debug-content">
+            {!statusText.startsWith('오류:') && (
+              <div className="jp-agent-debug-spinner" />
+            )}
+            <span className="jp-agent-debug-text">{statusText}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Compact Todo Progress - Above Input */}
+      {todos.length > 0 && (
+        <div className="jp-agent-todo-compact">
+          <div
+            className="jp-agent-todo-compact-header"
+            onClick={() => setIsTodoExpanded(!isTodoExpanded)}
+          >
+            <div className="jp-agent-todo-compact-left">
+              <svg
+                className={`jp-agent-todo-expand-icon ${isTodoExpanded ? 'jp-agent-todo-expand-icon--expanded' : ''}`}
+                viewBox="0 0 16 16"
+                fill="currentColor"
+                width="12"
+                height="12"
+              >
+                <path d="M6 12l4-4-4-4" />
+              </svg>
+              {(() => {
+                const currentTodo = todos.find(t => t.status === 'in_progress') || todos.find(t => t.status === 'pending');
+                return currentTodo ? (
+                  <>
+                    <div className="jp-agent-todo-compact-spinner" />
+                    <span className="jp-agent-todo-compact-current">{currentTodo.content}</span>
+                  </>
+                ) : (
+                  <span className="jp-agent-todo-compact-current">✓ 모든 작업 완료</span>
+                );
+              })()}
+            </div>
+            <span className="jp-agent-todo-compact-progress">
+              {todos.filter(t => t.status === 'completed').length}/{todos.length}
+            </span>
+          </div>
+
+          {/* Expanded Todo List */}
+          {isTodoExpanded && (
+            <div className="jp-agent-todo-expanded">
+              {todos.map((todo, index) => (
+                <div
+                  key={index}
+                  className={`jp-agent-todo-item jp-agent-todo-item--${todo.status}`}
+                >
+                  <div className="jp-agent-todo-item-indicator">
+                    {todo.status === 'completed' && (
+                      <svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12">
+                        <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
+                      </svg>
+                    )}
+                    {todo.status === 'in_progress' && <div className="jp-agent-todo-item-spinner" />}
+                    {todo.status === 'pending' && <span className="jp-agent-todo-item-number">{index + 1}</span>}
+                  </div>
+                  <span className={`jp-agent-todo-item-text ${todo.status === 'completed' ? 'jp-agent-todo-item-text--done' : ''}`}>
+                    {todo.content}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Unified Input Container - Cursor AI Style */}
       <div className="jp-agent-input-container">

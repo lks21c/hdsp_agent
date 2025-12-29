@@ -236,7 +236,12 @@ export class ApiService {
   async sendMessageStream(
     request: IChatRequest,
     onChunk: (chunk: string) => void,
-    onMetadata?: (metadata: { conversationId?: string; messageId?: string; provider?: string; model?: string }) => void
+    onMetadata?: (metadata: { conversationId?: string; messageId?: string; provider?: string; model?: string }) => void,
+    onDebug?: (status: string) => void,
+    onInterrupt?: (interrupt: { threadId: string; action: string; args: any; description: string }) => void,
+    onTodos?: (todos: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>) => void,
+    onDebugClear?: () => void,
+    onToolCall?: (toolCall: { tool: string; code?: string; content?: string }) => void
   ): Promise<void> {
     // Maximum retry attempts (should match number of keys)
     const MAX_RETRIES = 10;
@@ -250,7 +255,7 @@ export class ApiService {
         : request;
 
       try {
-        await this.sendMessageStreamInternal(requestToSend, onChunk, onMetadata);
+        await this.sendMessageStreamInternal(requestToSend, onChunk, onMetadata, onDebug, onInterrupt, onTodos, onDebugClear, onToolCall);
         // Success - reset key rotation state
         resetKeyRotation();
         return;
@@ -305,17 +310,39 @@ export class ApiService {
 
   /**
    * Internal streaming implementation (without retry logic)
+   * Uses LangChain agent endpoint for improved middleware support
    */
   private async sendMessageStreamInternal(
     request: IChatRequest,
     onChunk: (chunk: string) => void,
-    onMetadata?: (metadata: { conversationId?: string; messageId?: string; provider?: string; model?: string }) => void
+    onMetadata?: (metadata: { conversationId?: string; messageId?: string; provider?: string; model?: string }) => void,
+    onDebug?: (status: string) => void,
+    onInterrupt?: (interrupt: { threadId: string; action: string; args: any; description: string }) => void,
+    onTodos?: (todos: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>) => void,
+    onDebugClear?: () => void,
+    onToolCall?: (toolCall: { tool: string; code?: string; content?: string }) => void
   ): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/chat/stream`, {
+    // Convert IChatRequest to LangChain AgentRequest format
+    // Frontend's context has limited fields, map what's available
+    const langchainRequest = {
+      request: request.message,
+      notebookContext: request.context ? {
+        notebook_path: request.context.notebookPath,
+        cell_count: 0,
+        imported_libraries: [],
+        defined_variables: [],
+        recent_cells: request.context.selectedCells?.map(cell => ({ source: cell })) || []
+      } : undefined,
+      llmConfig: request.llmConfig,
+      workspaceRoot: '.'
+    };
+
+    // Use LangChain streaming endpoint
+    const response = await fetch(`${this.baseUrl}/agent/langchain/stream`, {
       method: 'POST',
       headers: this.getHeaders(),
       credentials: 'include',
-      body: JSON.stringify(request)
+      body: JSON.stringify(langchainRequest)
     });
 
     if (!response.ok) {
@@ -342,17 +369,90 @@ export class ApiService {
         const lines = buffer.split('\n');
         buffer = lines.pop() || ''; // Keep incomplete line in buffer
 
+        let currentEventType = '';
         for (const line of lines) {
+          // Handle SSE event type: "event: type"
+          if (line.startsWith('event: ')) {
+            currentEventType = line.slice(7).trim();
+            continue;
+          }
+
+          // Handle SSE data: "data: json"
           if (line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.slice(6));
 
+              // Handle based on event type
+              if (currentEventType === 'todos' && data.todos && onTodos) {
+                onTodos(data.todos);
+                currentEventType = '';
+                continue;
+              }
+
+              if (currentEventType === 'debug_clear' && onDebugClear) {
+                onDebugClear();
+                currentEventType = '';
+                continue;
+              }
+
+              if (currentEventType === 'complete') {
+                if (onDebugClear) {
+                  onDebugClear();
+                }
+                return;
+              }
+
               // Handle errors
               if (data.error) {
+                if (onDebug) {
+                  onDebug(`오류: ${data.error}`);
+                }
                 throw new Error(data.error);
               }
 
-              // Handle metadata (conversationId, messageId, etc.)
+              // Handle debug events (display in gray)
+              if (data.status && onDebug) {
+                onDebug(data.status);
+              }
+
+              // Handle interrupt events (Human-in-the-Loop)
+              if (data.thread_id && data.action && onInterrupt) {
+                onInterrupt({
+                  threadId: data.thread_id,
+                  action: data.action,
+                  args: data.args || {},
+                  description: data.description || ''
+                });
+                return; // Stop processing, wait for user decision
+              }
+
+              // Handle token events (streaming LLM response)
+              if (data.content) {
+                onChunk(data.content);
+              }
+
+              // Handle tool_call events - pass to handler for cell creation
+              if (currentEventType === 'tool_call' && data.tool && onToolCall) {
+                onToolCall({
+                  tool: data.tool,
+                  code: data.code,
+                  content: data.content
+                });
+                currentEventType = '';
+                continue;
+              }
+
+              // Handle tool_result events - skip displaying raw output
+              if (data.output) {
+                // Don't add raw tool output to chat
+              }
+
+              // Handle completion
+              if (data.final_answer) {
+                onChunk(data.final_answer);
+              }
+
+              // Handle metadata
               if (data.conversationId && onMetadata) {
                 onMetadata({
                   conversationId: data.conversationId,
@@ -362,11 +462,6 @@ export class ApiService {
                 });
               }
 
-              // Handle content chunks
-              if (data.content) {
-                onChunk(data.content);
-              }
-
               // Final metadata update
               if (data.done && data.metadata && onMetadata) {
                 onMetadata({
@@ -374,10 +469,155 @@ export class ApiService {
                   model: data.metadata.model
                 });
               }
+
+              currentEventType = '';
             } catch (e) {
               if (e instanceof SyntaxError) {
                 console.warn('Failed to parse SSE data:', line);
               } else {
+                throw e;
+              }
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  /**
+   * Resume interrupted agent execution with user decision
+   */
+  async resumeAgent(
+    threadId: string,
+    decision: 'approve' | 'edit' | 'reject',
+    args?: any,
+    feedback?: string,
+    llmConfig?: ILLMConfig,
+    onChunk?: (chunk: string) => void,
+    onDebug?: (status: string) => void,
+    onInterrupt?: (interrupt: { threadId: string; action: string; args: any; description: string }) => void,
+    onTodos?: (todos: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>) => void,
+    onDebugClear?: () => void,
+    onToolCall?: (toolCall: { tool: string; code?: string; content?: string }) => void
+  ): Promise<void> {
+    const resumeRequest = {
+      threadId,
+      decisions: [{
+        type: decision,
+        args,
+        feedback
+      }],
+      llmConfig,
+      workspaceRoot: '.'
+    };
+
+    const response = await fetch(`${this.baseUrl}/agent/langchain/resume`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      credentials: 'include',
+      body: JSON.stringify(resumeRequest)
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Failed to resume agent: ${error}`);
+    }
+
+    // Process SSE stream (same as sendMessageStream)
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('Response body is not readable');
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        let currentEventType = '';
+        for (const line of lines) {
+          // Handle SSE event type
+          if (line.startsWith('event: ')) {
+            currentEventType = line.slice(7).trim();
+            continue;
+          }
+
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              if (data.error) {
+                if (onDebug) {
+                  onDebug(`오류: ${data.error}`);
+                }
+                throw new Error(data.error);
+              }
+
+              // Handle todos event
+              if (currentEventType === 'todos' && data.todos && onTodos) {
+                onTodos(data.todos);
+                currentEventType = '';
+                continue;
+              }
+
+              // Handle debug_clear event
+              if (currentEventType === 'debug_clear' && onDebugClear) {
+                onDebugClear();
+                currentEventType = '';
+                continue;
+              }
+
+              if (currentEventType === 'complete') {
+                if (onDebugClear) {
+                  onDebugClear();
+                }
+                return;
+              }
+
+              // Debug events
+              if (data.status && onDebug) {
+                onDebug(data.status);
+              }
+
+              // Another interrupt
+              if (data.thread_id && data.action && onInterrupt) {
+                onInterrupt({
+                  threadId: data.thread_id,
+                  action: data.action,
+                  args: data.args || {},
+                  description: data.description || ''
+                });
+                return;
+              }
+
+              // Content chunks
+              if (data.content && onChunk) {
+                onChunk(data.content);
+              }
+
+              // Tool call events during resume
+              if (currentEventType === 'tool_call' && data.tool && onToolCall) {
+                onToolCall({
+                  tool: data.tool,
+                  code: data.code,
+                  content: data.content
+                });
+                currentEventType = '';
+                continue;
+              }
+
+              currentEventType = '';
+            } catch (e) {
+              if (!(e instanceof SyntaxError)) {
                 throw e;
               }
             }

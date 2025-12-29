@@ -16,6 +16,7 @@
   flex-direction: column;
   height: 100%;
   padding: 0;
+  min-height: 0;
 }
 
 /* Header */
@@ -118,6 +119,7 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-height: 0;
 }
 
 /* Empty State */
@@ -182,6 +184,19 @@
   align-self: flex-start;
   background: var(--jp-layout-color2);
   border: 1px solid var(--jp-border-color2);
+}
+
+.jp-agent-message-assistant-inline {
+  align-self: flex-start;
+  background: transparent;
+  border: none;
+  padding: 4px 12px 8px 12px;
+  max-width: 95%;
+}
+
+.jp-agent-message-assistant-inline .jp-agent-message-content {
+  padding-left: 4px;
+  color: var(--jp-ui-font-color1);
 }
 
 .jp-agent-message-header {
@@ -1606,4 +1621,361 @@ body[data-jp-theme-light="false"] .jp-agent-console-error-dismiss-btn {
 body[data-jp-theme-light="false"] .jp-agent-console-error-dismiss-btn:hover {
   background: var(--jp-layout-color3);
   color: #d1d5db;
+}
+
+/* Human-in-the-Loop Interrupt Dialog */
+.jp-agent-interrupt-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  backdrop-filter: blur(2px);
+}
+
+.jp-agent-interrupt-dialog {
+  background: var(--jp-layout-color0);
+  border: 2px solid #f59e0b;
+  border-radius: 8px;
+  padding: 24px;
+  max-width: 600px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+
+.jp-agent-interrupt-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--jp-ui-font-color1);
+}
+
+.jp-agent-interrupt-description {
+  margin-bottom: 16px;
+  color: var(--jp-ui-font-color2);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.jp-agent-interrupt-action {
+  margin-bottom: 20px;
+}
+
+.jp-agent-interrupt-action-label {
+  margin-bottom: 8px;
+  color: var(--jp-ui-font-color1);
+  font-size: 14px;
+}
+
+.jp-agent-interrupt-action-args {
+  margin-top: 12px;
+}
+
+.jp-agent-interrupt-action-args strong {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--jp-ui-font-color1);
+  font-size: 14px;
+}
+
+.jp-agent-interrupt-action-args pre {
+  font-family: var(--jp-code-font-family);
+  color: var(--jp-ui-font-color1);
+}
+
+.jp-agent-interrupt-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.jp-agent-interrupt-approve-btn:hover {
+  box-shadow: 0 2px 6px rgba(25, 118, 210, 0.25);
+  transform: translateY(-1px);
+}
+
+.jp-agent-interrupt-reject-btn:hover {
+  box-shadow: 0 2px 6px rgba(211, 47, 47, 0.25);
+  transform: translateY(-1px);
+}
+
+.jp-agent-interrupt-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.jp-agent-interrupt-actions .jp-agent-interrupt-approve-btn,
+.jp-agent-interrupt-actions .jp-agent-interrupt-reject-btn {
+  border-radius: 18px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.jp-agent-interrupt-actions .jp-agent-interrupt-approve-btn {
+  background: #1976d2;
+  color: #fff;
+}
+
+.jp-agent-interrupt-actions .jp-agent-interrupt-reject-btn {
+  background: #fff;
+  color: #d32f2f;
+  border-color: rgba(211, 47, 47, 0.4);
+}
+
+.jp-agent-interrupt-actions--resolved {
+  font-size: 12px;
+  font-weight: 600;
+  color: #2e7d32;
+  justify-content: flex-end;
+}
+
+.jp-agent-interrupt-inline .code-block-apply {
+  display: none;
+}
+
+/* Interrupt 영역 내 복사 버튼: 승인/거부 버튼과 통일된 pill 스타일 */
+.jp-agent-interrupt-inline .code-block-copy {
+  display: none !important;
+}
+
+.jp-agent-interrupt-inline .code-block-copy:hover {
+  background: rgba(158, 158, 158, 0.1) !important;
+  color: #bdbdbd !important;
+  border-color: rgba(158, 158, 158, 0.6) !important;
+}
+
+/* Dark theme for Interrupt Dialog */
+body[data-jp-theme-light="false"] .jp-agent-interrupt-dialog {
+  background: var(--jp-layout-color1);
+  border-color: #f59e0b;
+}
+
+body[data-jp-theme-light="false"] .jp-agent-interrupt-action-args pre {
+  background: rgba(0, 0, 0, 0.3) !important;
+  color: var(--jp-ui-font-color0);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Debug Status Display with Spinner
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.jp-agent-message-debug {
+  padding: 8px 12px;
+  margin: 4px 12px;
+  background: transparent;
+  border-radius: 6px;
+}
+
+.jp-agent-debug-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #888;
+  font-size: 0.9em;
+  font-style: italic;
+}
+
+.jp-agent-debug-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #e0e0e0;
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: jp-agent-debug-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes jp-agent-debug-spin {
+  to { transform: rotate(360deg); }
+}
+
+.jp-agent-debug-text {
+  flex: 1;
+}
+
+.jp-agent-message-debug-error .jp-agent-debug-text {
+  color: var(--jp-error-color1);
+  font-style: normal;
+}
+
+/* Dark theme */
+body[data-jp-theme-light="false"] .jp-agent-debug-content {
+  color: #aaa;
+}
+
+body[data-jp-theme-light="false"] .jp-agent-debug-spinner {
+  border-color: #444;
+  border-top-color: #667eea;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Compact Todo Progress (Above Input)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.jp-agent-todo-compact {
+  margin: 0 12px 8px 12px;
+  background: var(--jp-layout-color2);
+  border: 1px solid var(--jp-border-color2);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.jp-agent-todo-compact-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.jp-agent-todo-compact-header:hover {
+  background: var(--jp-layout-color3);
+}
+
+.jp-agent-todo-compact-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.jp-agent-todo-expand-icon {
+  flex-shrink: 0;
+  color: var(--jp-ui-font-color2);
+  transition: transform 0.2s ease;
+}
+
+.jp-agent-todo-expand-icon--expanded {
+  transform: rotate(90deg);
+}
+
+.jp-agent-todo-compact-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--jp-border-color2);
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: jp-agent-todo-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes jp-agent-todo-spin {
+  to { transform: rotate(360deg); }
+}
+
+.jp-agent-todo-compact-current {
+  font-size: 13px;
+  color: var(--jp-ui-font-color1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.jp-agent-todo-compact-progress {
+  font-size: 12px;
+  color: var(--jp-ui-font-color2);
+  background: var(--jp-layout-color3);
+  padding: 2px 8px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+/* Expanded Todo List */
+.jp-agent-todo-expanded {
+  border-top: 1px solid var(--jp-border-color2);
+  padding: 8px 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.jp-agent-todo-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  transition: background 0.1s ease;
+}
+
+.jp-agent-todo-item:hover {
+  background: var(--jp-layout-color3);
+}
+
+.jp-agent-todo-item-indicator {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.jp-agent-todo-item--completed .jp-agent-todo-item-indicator {
+  color: #4caf50;
+}
+
+.jp-agent-todo-item--in_progress .jp-agent-todo-item-indicator {
+  color: #667eea;
+}
+
+.jp-agent-todo-item-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--jp-border-color2);
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: jp-agent-todo-spin 0.8s linear infinite;
+}
+
+.jp-agent-todo-item-number {
+  font-size: 11px;
+  color: var(--jp-ui-font-color2);
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--jp-layout-color3);
+  border-radius: 50%;
+}
+
+.jp-agent-todo-item-text {
+  font-size: 13px;
+  color: var(--jp-ui-font-color1);
+}
+
+.jp-agent-todo-item-text--done {
+  color: var(--jp-ui-font-color2);
+  text-decoration: line-through;
+}
+
+/* Dark theme adjustments */
+body[data-jp-theme-light="false"] .jp-agent-todo-compact {
+  background: rgba(40, 42, 54, 0.8);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+body[data-jp-theme-light="false"] .jp-agent-todo-compact-header:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+body[data-jp-theme-light="false"] .jp-agent-todo-compact-progress {
+  background: rgba(255, 255, 255, 0.1);
 }

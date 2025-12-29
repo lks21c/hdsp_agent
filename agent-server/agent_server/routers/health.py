@@ -32,6 +32,20 @@ async def health_check() -> HealthResponse:
     )
 
 
+@router.get("/status", response_model=HealthResponse)
+async def status_check() -> HealthResponse:
+    """
+    Status check endpoint (alias for health check).
+    
+    Returns server status, timestamp, and version.
+    """
+    return HealthResponse(
+        status="healthy",
+        timestamp=datetime.utcnow().isoformat(),
+        version="1.0.0",
+    )
+
+
 @router.get("/")
 async def root():
     """Root endpoint with server information"""

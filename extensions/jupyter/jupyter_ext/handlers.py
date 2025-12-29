@@ -19,6 +19,21 @@ from tornado.web import RequestHandler
 logger = logging.getLogger(__name__)
 
 
+def _resolve_workspace_root(server_root: str) -> str:
+    """Resolve workspace root by walking up to the project root if needed."""
+    current = os.path.abspath(server_root)
+    while True:
+        if (
+            os.path.isdir(os.path.join(current, "extensions"))
+            and os.path.isdir(os.path.join(current, "agent-server"))
+        ):
+            return current
+        parent = os.path.dirname(current)
+        if parent == current:
+            return os.path.abspath(server_root)
+        current = parent
+
+
 def _get_service_factory():
     """Get ServiceFactory instance (lazy import to avoid circular imports)"""
     from hdsp_agent_core.factory import get_service_factory
@@ -559,6 +574,111 @@ class TaskCancelProxyHandler(BaseProxyHandler):
         return "/task/unknown/cancel"
 
 
+class LangChainStreamProxyHandler(StreamProxyHandler):
+    """Proxy handler for /agent/langchain/stream endpoint."""
+
+    def get_proxy_path(self) -> str:
+        return "/agent/langchain/stream"
+
+    async def post(self, *args, **kwargs):
+        """Inject workspaceRoot based on Jupyter server root."""
+        try:
+            body = json.loads(self.request.body.decode("utf-8")) if self.request.body else {}
+            server_root = self.settings.get("server_root_dir", os.getcwd())
+            server_root = os.path.expanduser(server_root)
+            resolved_root = _resolve_workspace_root(server_root)
+            workspace_root = body.get("workspaceRoot")
+
+            if not workspace_root or workspace_root == ".":
+                body["workspaceRoot"] = resolved_root
+            elif not os.path.isabs(workspace_root):
+                body["workspaceRoot"] = os.path.join(resolved_root, workspace_root)
+
+            modified_body = json.dumps(body).encode("utf-8")
+            target_url = f"{self.agent_server_url}{self.get_proxy_path()}"
+
+            self.set_header("Content-Type", "text/event-stream")
+            self.set_header("Cache-Control", "no-cache")
+            self.set_header("Connection", "keep-alive")
+            self.set_header("X-Accel-Buffering", "no")
+
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                async with client.stream(
+                    "POST",
+                    target_url,
+                    content=modified_body,
+                    headers={"Content-Type": "application/json"},
+                ) as response:
+                    async for chunk in response.aiter_bytes():
+                        self.write(chunk)
+                        await self.flush()
+        except httpx.ConnectError:
+            self.write(f'data: {json.dumps({"error": "Agent Server is not available"})}\n\n')
+        except httpx.TimeoutException:
+            self.write(f'data: {json.dumps({"error": "Agent Server timeout"})}\n\n')
+        except Exception as e:
+            logger.error(f"LangChainStreamProxy error: {e}", exc_info=True)
+            self.write(f'data: {json.dumps({"error": str(e)})}\n\n')
+        finally:
+            self.finish()
+
+
+class LangChainResumeProxyHandler(StreamProxyHandler):
+    """Proxy handler for /agent/langchain/resume endpoint."""
+
+    def get_proxy_path(self) -> str:
+        return "/agent/langchain/resume"
+
+    async def post(self, *args, **kwargs):
+        """Inject workspaceRoot based on Jupyter server root."""
+        try:
+            body = json.loads(self.request.body.decode("utf-8")) if self.request.body else {}
+            server_root = self.settings.get("server_root_dir", os.getcwd())
+            server_root = os.path.expanduser(server_root)
+            resolved_root = _resolve_workspace_root(server_root)
+            workspace_root = body.get("workspaceRoot")
+
+            if not workspace_root or workspace_root == ".":
+                body["workspaceRoot"] = resolved_root
+            elif not os.path.isabs(workspace_root):
+                body["workspaceRoot"] = os.path.join(resolved_root, workspace_root)
+
+            modified_body = json.dumps(body).encode("utf-8")
+            target_url = f"{self.agent_server_url}{self.get_proxy_path()}"
+
+            self.set_header("Content-Type", "text/event-stream")
+            self.set_header("Cache-Control", "no-cache")
+            self.set_header("Connection", "keep-alive")
+            self.set_header("X-Accel-Buffering", "no")
+
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                async with client.stream(
+                    "POST",
+                    target_url,
+                    content=modified_body,
+                    headers={"Content-Type": "application/json"},
+                ) as response:
+                    async for chunk in response.aiter_bytes():
+                        self.write(chunk)
+                        await self.flush()
+        except httpx.ConnectError:
+            self.write(f'data: {json.dumps({"error": "Agent Server is not available"})}\n\n')
+        except httpx.TimeoutException:
+            self.write(f'data: {json.dumps({"error": "Agent Server timeout"})}\n\n')
+        except Exception as e:
+            logger.error(f"LangChainResumeProxy error: {e}", exc_info=True)
+            self.write(f'data: {json.dumps({"error": str(e)})}\n\n')
+        finally:
+            self.finish()
+
+
+class LangChainHealthProxyHandler(BaseProxyHandler):
+    """Proxy handler for /agent/langchain/health endpoint."""
+
+    def get_proxy_path(self) -> str:
+        return "/agent/langchain/health"
+
+
 class RAGReindexHandler(APIHandler):
     """Handler for /rag/reindex endpoint using ServiceFactory."""
 
@@ -606,6 +726,11 @@ def setup_handlers(web_app):
         # Chat endpoints
         (url_path_join(base_url, "hdsp-agent", "chat", "message"), ChatMessageHandler),
         (url_path_join(base_url, "hdsp-agent", "chat", "stream"), ChatStreamHandler),
+
+        # LangChain agent endpoints (proxy to agent-server)
+        (url_path_join(base_url, "hdsp-agent", "agent", "langchain", "stream"), LangChainStreamProxyHandler),
+        (url_path_join(base_url, "hdsp-agent", "agent", "langchain", "resume"), LangChainResumeProxyHandler),
+        (url_path_join(base_url, "hdsp-agent", "agent", "langchain", "health"), LangChainHealthProxyHandler),
 
         # RAG endpoints
         (url_path_join(base_url, "hdsp-agent", "rag", "search"), RAGSearchHandler),

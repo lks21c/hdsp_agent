@@ -16,6 +16,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from agent_server.routers import agent, chat, config, file_resolver, health, rag
 
+# Optional LangChain router (requires langchain dependencies)
+try:
+    from agent_server.routers import langchain_agent
+    LANGCHAIN_AVAILABLE = True
+except ImportError:
+    LANGCHAIN_AVAILABLE = False
+    langchain_agent = None
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -142,6 +150,11 @@ app.include_router(agent.router, prefix="/agent", tags=["Agent"])
 app.include_router(chat.router, prefix="/chat", tags=["Chat"])
 app.include_router(rag.router, prefix="/rag", tags=["RAG"])
 app.include_router(file_resolver.router, prefix="/file", tags=["File Resolution"])
+
+# Register LangChain agent router if available
+if LANGCHAIN_AVAILABLE:
+    app.include_router(langchain_agent.router, prefix="/agent", tags=["LangChain Agent"])
+    logger.info("LangChain agent router registered")
 
 
 def run():
