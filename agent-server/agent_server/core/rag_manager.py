@@ -88,13 +88,24 @@ class RAGManager:
             self._client = self._create_qdrant_client()
             logger.info("Qdrant client initialized")
 
-            # 2. Initialize embedding service
-            from agent_server.core.embedding_service import get_embedding_service
+            # 2. Initialize embedding service (local or vLLM backend)
+            import os
+            embedding_backend = os.environ.get("HDSP_EMBEDDING_BACKEND", "local").lower()
 
-            self._embedding_service = get_embedding_service(self._config.embedding)
-            logger.info(
-                f"Embedding service initialized (dim={self._embedding_service.dimension})"
-            )
+            if embedding_backend == "vllm":
+                from agent_server.core.vllm_embedding_service import get_vllm_embedding_service
+                self._embedding_service = get_vllm_embedding_service(self._config.embedding)
+                logger.info(
+                    f"vLLM Embedding service initialized (dim={self._embedding_service.dimension})"
+                )
+            else:
+                from agent_server.core.embedding_service import get_embedding_service
+                self._embedding_service = get_embedding_service(self._config.embedding)
+                # Load model to get dimension
+                await self._embedding_service._ensure_model_loaded()
+                logger.info(
+                    f"Local Embedding service initialized (dim={self._embedding_service.dimension})"
+                )
 
             # 3. Ensure collection exists
             await self._ensure_collection()
@@ -151,26 +162,29 @@ class RAGManager:
             )
 
         cfg = self._config.qdrant
+        mode = cfg.get_mode()  # Use get_mode() for env override
 
-        if cfg.mode == "local":
+        if mode == "local":
             # Local file-based storage
             local_path = cfg.get_local_path()
             Path(local_path).mkdir(parents=True, exist_ok=True)
             logger.info(f"Initializing Qdrant in local mode: {local_path}")
             return QdrantClient(path=local_path)
 
-        elif cfg.mode == "server":
+        elif mode == "server":
             # Docker or external server
-            logger.info(f"Connecting to Qdrant server: {cfg.url}")
-            return QdrantClient(url=cfg.url)
+            url = cfg.get_url()  # Use get_url() for env override
+            logger.info(f"Connecting to Qdrant server: {url}")
+            return QdrantClient(url=url)
 
-        elif cfg.mode == "cloud":
+        elif mode == "cloud":
             # Qdrant Cloud
+            url = cfg.get_url()  # Use get_url() for env override
             logger.info("Connecting to Qdrant Cloud")
-            return QdrantClient(url=cfg.url, api_key=cfg.api_key)
+            return QdrantClient(url=url, api_key=cfg.api_key)
 
         else:
-            raise ValueError(f"Unknown Qdrant mode: {cfg.mode}")
+            raise ValueError(f"Unknown Qdrant mode: {mode}")
 
     async def _ensure_collection(self) -> None:
         """Create collection if it doesn't exist."""
@@ -274,7 +288,7 @@ class RAGManager:
                 )
 
                 if chunks:
-                    self._index_chunks(chunks, file_path)
+                    await self._index_chunks(chunks, file_path)
                     indexed += 1
                     self._index_stats["total_documents"] += 1
                     self._index_stats["total_chunks"] += len(chunks)
@@ -345,13 +359,13 @@ class RAGManager:
         else:
             return "general"
 
-    def _index_chunks(self, chunks: List[Dict], file_path: Path) -> None:
+    async def _index_chunks(self, chunks: List[Dict], file_path: Path) -> None:
         """Index document chunks to Qdrant."""
         from qdrant_client.models import PointStruct
 
         # Generate embeddings
         texts = [c["content"] for c in chunks]
-        embeddings = self._embedding_service.embed_texts(texts)
+        embeddings = await self._embedding_service.embed_texts(texts)
 
         # Add content hash to all chunks
         file_hash = self._compute_file_hash(file_path)
@@ -430,7 +444,7 @@ class RAGManager:
             )
 
             if chunks:
-                self._index_chunks(chunks, file_path)
+                await self._index_chunks(chunks, file_path)
                 logger.info(f"Reindexed: {file_path}")
         except Exception as e:
             logger.error(f"Failed to reindex {file_path}: {e}")

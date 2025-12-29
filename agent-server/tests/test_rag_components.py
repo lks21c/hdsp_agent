@@ -12,7 +12,7 @@ Token consumption: 0 (all mocked)
 """
 
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -79,7 +79,7 @@ class TestEmbeddingService:
 
         reset_embedding_service()
 
-    def test_embed_texts_empty_list(self):
+    async def test_embed_texts_empty_list(self):
         """embed_texts should return empty list for empty input."""
         from agent_server.core.embedding_service import (
             EmbeddingService,
@@ -89,13 +89,13 @@ class TestEmbeddingService:
         reset_embedding_service()
 
         service = EmbeddingService()
-        embeddings = service.embed_texts([])
+        embeddings = await service.embed_texts([])
 
         assert embeddings == []
 
         reset_embedding_service()
 
-    def test_embed_query_empty_raises(self):
+    async def test_embed_query_empty_raises(self):
         """embed_query should raise for empty query."""
         from agent_server.core.embedding_service import (
             EmbeddingService,
@@ -107,7 +107,7 @@ class TestEmbeddingService:
         service = EmbeddingService()
 
         with pytest.raises(ValueError):
-            service.embed_query("")
+            await service.embed_query("")
 
         reset_embedding_service()
 
@@ -262,7 +262,8 @@ class TestRetriever:
     def mock_embedding_service(self):
         """Create mock embedding service."""
         service = MagicMock()
-        service.embed_query.return_value = [0.1] * 384
+        # Mock async methods with AsyncMock
+        service.embed_query = AsyncMock(return_value=[0.1] * 384)
         return service
 
     def test_dense_search(self, mock_qdrant_client, mock_embedding_service):
@@ -638,7 +639,8 @@ class TestRAGDebug:
     def mock_embedding_service_debug(self):
         """Create mock embedding service for debug testing."""
         service = MagicMock()
-        service.embed_query.return_value = [0.1] * 384
+        # Mock async methods with AsyncMock
+        service.embed_query = AsyncMock(return_value=[0.1] * 384)
         return service
 
     def test_search_with_debug_returns_scores(

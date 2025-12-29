@@ -41,12 +41,26 @@ class QdrantConfig(BaseModel):
         description="Vector collection name"
     )
 
+    def get_mode(self) -> str:
+        """Get mode with environment variable override"""
+        env_mode = os.environ.get("QDRANT_MODE")
+        if env_mode:
+            return env_mode
+        return self.mode
+
+    def get_url(self) -> str:
+        """Get URL with environment variable override"""
+        env_url = os.environ.get("QDRANT_URL")
+        if env_url:
+            return env_url
+        return self.url or "http://localhost:6333"
+
     def get_local_path(self) -> str:
         """Get resolved local path with environment variable support"""
         if self.local_path:
             return os.path.expanduser(self.local_path)
         # Check environment variable
-        env_path = os.environ.get("HDSP_QDRANT_PATH")
+        env_path = os.environ.get("QDRANT_PATH")
         if env_path:
             return os.path.expanduser(env_path)
         # Default path

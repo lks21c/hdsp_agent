@@ -4,13 +4,14 @@ Local Embedding Service - Wraps sentence-transformers for local embedding genera
 Features:
 - Zero external API calls (data sovereignty)
 - Lazy model loading (only when first needed)
-- Thread-safe singleton pattern
+- Thread-safe singleton pattern with async support
 - Configurable model and device
 - E5 model prefix handling for optimal performance
 
 Default model: intfloat/multilingual-e5-small (384 dimensions, Korean support)
 """
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING, List, Optional
 
@@ -55,51 +56,59 @@ class EmbeddingService:
         self._model = None
         self._dimension: Optional[int] = None
         self._is_e5_model: bool = False
+        self._load_lock = asyncio.Lock()  # Thread-safe lazy loading
 
-    @property
-    def model(self):
-        """Lazy load the embedding model"""
-        if self._model is None:
-            self._load_model()
-        return self._model
+    async def _ensure_model_loaded(self):
+        """Lazy load the embedding model (thread-safe, async)"""
+        if self._model is not None:
+            return
 
-    def _load_model(self) -> None:
-        """Load the sentence-transformers model"""
-        try:
-            from sentence_transformers import SentenceTransformer
-        except ImportError:
-            raise ImportError(
-                "sentence-transformers is required for RAG. "
-                "Install with: pip install sentence-transformers"
-            )
+        async with self._load_lock:
+            # Double-check after acquiring lock
+            if self._model is not None:
+                return
 
-        model_name = self._config.get_model_name()
-        device = self._config.get_device()
+            try:
+                from sentence_transformers import SentenceTransformer
+            except ImportError:
+                raise ImportError(
+                    "sentence-transformers is required for RAG. "
+                    "Install with: pip install sentence-transformers"
+                )
 
-        logger.info(f"Loading embedding model: {model_name} on {device}")
+            model_name = self._config.get_model_name()
+            device = self._config.get_device()
 
-        try:
-            self._model = SentenceTransformer(
-                model_name, device=device, cache_folder=self._config.cache_folder
-            )
-            self._dimension = self._model.get_sentence_embedding_dimension()
+            logger.info(f"Loading embedding model: {model_name} on {device}")
 
-            # Check if E5 model (requires special prefix)
-            self._is_e5_model = "e5" in model_name.lower()
+            try:
+                # Load model in separate thread to avoid blocking event loop
+                self._model = await asyncio.to_thread(
+                    SentenceTransformer,
+                    model_name,
+                    device=device,
+                    cache_folder=self._config.cache_folder,
+                )
+                self._dimension = self._model.get_sentence_embedding_dimension()
 
-            logger.info(
-                f"Embedding model loaded successfully. "
-                f"Dimension: {self._dimension}, E5 model: {self._is_e5_model}"
-            )
-        except Exception as e:
-            logger.error(f"Failed to load embedding model: {e}")
-            raise
+                # Check if E5 model (requires special prefix)
+                self._is_e5_model = "e5" in model_name.lower()
+
+                logger.info(
+                    f"Embedding model loaded successfully. "
+                    f"Dimension: {self._dimension}, E5 model: {self._is_e5_model}"
+                )
+            except Exception as e:
+                logger.error(f"Failed to load embedding model: {e}")
+                raise
 
     @property
     def dimension(self) -> int:
-        """Get embedding dimension (triggers model load if needed)"""
+        """Get embedding dimension (must be loaded first)"""
         if self._dimension is None:
-            _ = self.model  # Trigger lazy load
+            raise RuntimeError(
+                "Embedding dimension not available. Model not loaded yet."
+            )
         return self._dimension
 
     def _prepare_texts(self, texts: List[str], is_query: bool = False) -> List[str]:
@@ -116,7 +125,7 @@ class EmbeddingService:
         prefix = "query: " if is_query else "passage: "
         return [prefix + text for text in texts]
 
-    def embed_texts(self, texts: List[str]) -> List[List[float]]:
+    async def embed_texts(self, texts: List[str]) -> List[List[float]]:
         """
         Generate embeddings for a list of texts (documents/passages).
 
@@ -129,11 +138,15 @@ class EmbeddingService:
         if not texts:
             return []
 
+        await self._ensure_model_loaded()
+
         # Prepare texts with prefix if E5 model
         prepared_texts = self._prepare_texts(texts, is_query=False)
 
         try:
-            embeddings = self.model.encode(
+            # Run in separate thread to avoid blocking event loop
+            embeddings = await asyncio.to_thread(
+                self._model.encode,
                 prepared_texts,
                 batch_size=self._config.batch_size,
                 show_progress_bar=len(texts) > 100,
@@ -145,7 +158,7 @@ class EmbeddingService:
             logger.error(f"Failed to generate embeddings: {e}")
             raise
 
-    def embed_query(self, query: str) -> List[float]:
+    async def embed_query(self, query: str) -> List[float]:
         """
         Generate embedding for a single query.
 
@@ -160,11 +173,15 @@ class EmbeddingService:
         if not query:
             raise ValueError("Query cannot be empty")
 
+        await self._ensure_model_loaded()
+
         # Prepare query with prefix if E5 model
         prepared_query = self._prepare_texts([query], is_query=True)[0]
 
         try:
-            embedding = self.model.encode(
+            # Run in separate thread to avoid blocking event loop
+            embedding = await asyncio.to_thread(
+                self._model.encode,
                 prepared_query,
                 convert_to_numpy=True,
                 normalize_embeddings=self._config.normalize_embeddings,
@@ -174,7 +191,7 @@ class EmbeddingService:
             logger.error(f"Failed to generate query embedding: {e}")
             raise
 
-    def embed_batch(
+    async def embed_batch(
         self, texts: List[str], batch_size: Optional[int] = None
     ) -> List[List[float]]:
         """
@@ -190,11 +207,15 @@ class EmbeddingService:
         if not texts:
             return []
 
+        await self._ensure_model_loaded()
+
         prepared_texts = self._prepare_texts(texts, is_query=False)
         effective_batch_size = batch_size or self._config.batch_size
 
         try:
-            embeddings = self.model.encode(
+            # Run in separate thread to avoid blocking event loop
+            embeddings = await asyncio.to_thread(
+                self._model.encode,
                 prepared_texts,
                 batch_size=effective_batch_size,
                 show_progress_bar=True,

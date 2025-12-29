@@ -105,9 +105,14 @@ async def reindex(request: ReindexRequest) -> ReindexResponse:
         )
 
     try:
-        # For now, return a simple success response
-        # Full reindex implementation would go here
-        return ReindexResponse(success=True, indexed=0, skipped=0, errors=[])
+        # Trigger actual reindexing
+        result = await rag_manager._index_knowledge_base()
+        return ReindexResponse(
+            success=True,
+            indexed=result["indexed"],
+            skipped=result["skipped"],
+            errors=result["errors"],
+        )
 
     except Exception as e:
         logger.error(f"Reindex failed: {e}")

@@ -84,7 +84,7 @@ class Retriever:
         effective_threshold = score_threshold or self._config.score_threshold
 
         # Generate query embedding
-        query_embedding = self._embedding_service.embed_query(query)
+        query_embedding = await self._embedding_service.embed_query(query)
 
         # Build filter condition
         qdrant_filter = self._build_filter(filters) if filters else None
@@ -193,7 +193,7 @@ class Retriever:
         effective_threshold = score_threshold or self._config.score_threshold
 
         # Generate query embedding
-        query_embedding = self._embedding_service.embed_query(query)
+        query_embedding = await self._embedding_service.embed_query(query)
 
         # Build filter condition
         qdrant_filter = self._build_filter(filters) if filters else None

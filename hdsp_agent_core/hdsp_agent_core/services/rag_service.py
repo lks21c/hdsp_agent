@@ -35,8 +35,13 @@ class EmbeddedRAGService(IRAGService):
             return
 
         try:
-            from hdsp_agent_core.managers.rag_manager import get_rag_manager
+            from agent_server.core.rag_manager import get_rag_manager
+
             self._rag_manager = get_rag_manager()
+
+            # Initialize RAG system
+            await self._rag_manager.initialize()
+
             self._initialized = True
             logger.info("EmbeddedRAGService initialized with RAGManager")
         except ImportError as e:
