@@ -12,7 +12,7 @@ import { ILLMConfig } from './index';
 export type ToolName =
   | 'jupyter_cell' | 'markdown' | 'final_answer'
   | 'read_file' | 'write_file' | 'list_files'
-  | 'execute_command' | 'search_files'
+  | 'execute_command_tool' | 'search_files'
   // Extended tools (Phase 2)
   | 'install_package' | 'lint_file'
   | 'delete_cell' | 'get_cell_output' | 'create_notebook'
@@ -83,6 +83,7 @@ export interface WriteFileParams {
   path: string;
   content: string;
   overwrite?: boolean; // 기본: false (기존 파일 덮어쓰기 방지)
+  encoding?: string;  // 기본: 'utf-8'
 }
 
 // list_files 도구 파라미터
@@ -92,7 +93,7 @@ export interface ListFilesParams {
   pattern?: string;    // glob 패턴 (예: "*.py")
 }
 
-// execute_command 도구 파라미터
+// execute_command_tool 도구 파라미터
 export interface ExecuteCommandParams {
   command: string;
   timeout?: number;    // ms (기본: 30000)

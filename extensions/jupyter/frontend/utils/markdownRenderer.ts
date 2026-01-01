@@ -546,6 +546,9 @@ export function formatMarkdownToHtml(text: string): string {
         '</div>' +
       '</div>' +
       '<pre class="code-block language-' + escapeHtml(lang) + '"><code id="' + blockId + '">' + highlightedCode + '</code></pre>' +
+      '<button class="code-block-toggle" data-block-id="' + blockId + '" title="전체 보기" aria-label="전체 보기" aria-expanded="false">' +
+        '<span class="code-block-toggle-icon" aria-hidden="true">▾</span>' +
+      '</button>' +
     '</div>';
 
     codeBlockPlaceholders.push({
@@ -675,4 +678,3 @@ export function formatMarkdownToHtml(text: string): string {
 
   return html;
 }
-

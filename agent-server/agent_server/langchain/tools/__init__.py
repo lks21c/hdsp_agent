@@ -10,6 +10,7 @@ Tools available:
 - list_files: List directory contents
 - search_workspace: Search files in workspace
 - search_notebook_cells: Search cells in notebooks
+- execute_command_tool: Run shell commands (client-executed)
 """
 
 from agent_server.langchain.tools.file_tools import (
@@ -26,6 +27,7 @@ from agent_server.langchain.tools.search_tools import (
     search_notebook_cells_tool,
     search_workspace_tool,
 )
+from agent_server.langchain.tools.shell_tools import execute_command_tool
 
 __all__ = [
     "jupyter_cell_tool",
@@ -36,4 +38,5 @@ __all__ = [
     "list_files_tool",
     "search_workspace_tool",
     "search_notebook_cells_tool",
+    "execute_command_tool",
 ]

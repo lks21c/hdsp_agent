@@ -241,7 +241,7 @@ export class ApiService {
     onInterrupt?: (interrupt: { threadId: string; action: string; args: any; description: string }) => void,
     onTodos?: (todos: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>) => void,
     onDebugClear?: () => void,
-    onToolCall?: (toolCall: { tool: string; code?: string; content?: string }) => void,
+    onToolCall?: (toolCall: { tool: string; code?: string; content?: string; command?: string; timeout?: number }) => void,
     onComplete?: (data: { threadId: string }) => void,  // Callback to capture thread_id for context persistence
     threadId?: string  // Optional thread_id to continue existing conversation
   ): Promise<void> {
@@ -322,7 +322,7 @@ export class ApiService {
     onInterrupt?: (interrupt: { threadId: string; action: string; args: any; description: string }) => void,
     onTodos?: (todos: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>) => void,
     onDebugClear?: () => void,
-    onToolCall?: (toolCall: { tool: string; code?: string; content?: string }) => void,
+    onToolCall?: (toolCall: { tool: string; code?: string; content?: string; command?: string; timeout?: number }) => void,
     onComplete?: (data: { threadId: string }) => void,
     threadId?: string
   ): Promise<void> {
@@ -449,7 +449,9 @@ export class ApiService {
                 onToolCall({
                   tool: data.tool,
                   code: data.code,
-                  content: data.content
+                  content: data.content,
+                  command: data.command,
+                  timeout: data.timeout
                 });
                 currentEventType = '';
                 continue;
@@ -513,7 +515,7 @@ export class ApiService {
     onInterrupt?: (interrupt: { threadId: string; action: string; args: any; description: string }) => void,
     onTodos?: (todos: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>) => void,
     onDebugClear?: () => void,
-    onToolCall?: (toolCall: { tool: string; code?: string; content?: string }) => void
+    onToolCall?: (toolCall: { tool: string; code?: string; content?: string; command?: string; timeout?: number }) => void
   ): Promise<void> {
     const resumeRequest = {
       threadId,
@@ -622,7 +624,9 @@ export class ApiService {
                 onToolCall({
                   tool: data.tool,
                   code: data.code,
-                  content: data.content
+                  content: data.content,
+                  command: data.command,
+                  timeout: data.timeout
                 });
                 currentEventType = '';
                 continue;
@@ -640,6 +644,259 @@ export class ApiService {
     } finally {
       reader.releaseLock();
     }
+  }
+
+  async executeCommand(command: string, timeout?: number, cwd?: string): Promise<{
+    success: boolean;
+    stdout?: string;
+    stderr?: string;
+    returncode?: number;
+    error?: string;
+    cwd?: string;
+  }> {
+    const response = await fetch(`${this.baseUrl}/execute-command`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      credentials: 'include',
+      body: JSON.stringify({ command, timeout, cwd })
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const errorMessage = (payload as any).error || 'Failed to execute command';
+      throw new Error(errorMessage);
+    }
+    return payload;
+  }
+
+  async executeCommandStream(
+    command: string,
+    options?: {
+      timeout?: number;
+      cwd?: string;
+      onOutput?: (chunk: { stream: 'stdout' | 'stderr'; text: string }) => void;
+    }
+  ): Promise<{
+    success: boolean;
+    stdout?: string;
+    stderr?: string;
+    returncode?: number;
+    error?: string;
+    cwd?: string;
+    truncated?: boolean;
+    duration_ms?: number;
+  }> {
+    const response = await fetch(`${this.baseUrl}/execute-command/stream`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      credentials: 'include',
+      body: JSON.stringify({
+        command,
+        timeout: options?.timeout,
+        cwd: options?.cwd
+      })
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      const errorMessage = (payload as any).error || 'Failed to execute command';
+      throw new Error(errorMessage);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('Response body is not readable');
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let result: any = null;
+    let streamError: string | null = null;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        let currentEventType = '';
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            currentEventType = line.slice(7).trim();
+            continue;
+          }
+
+          if (!line.startsWith('data: ')) {
+            continue;
+          }
+
+          let data: any;
+          try {
+            data = JSON.parse(line.slice(6));
+          } catch (e) {
+            continue;
+          }
+
+          if (currentEventType === 'output') {
+            if (typeof data.text === 'string' && options?.onOutput) {
+              options.onOutput({
+                stream: data.stream === 'stderr' ? 'stderr' : 'stdout',
+                text: data.text
+              });
+            }
+            currentEventType = '';
+            continue;
+          }
+
+          if (currentEventType === 'error') {
+            streamError = data.error || 'Command execution failed';
+            currentEventType = '';
+            continue;
+          }
+
+          if (currentEventType === 'result') {
+            result = data;
+            return result;
+          }
+
+          currentEventType = '';
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    if (streamError) {
+      throw new Error(streamError);
+    }
+    if (!result) {
+      throw new Error('No command result received');
+    }
+    return result;
+  }
+
+  async writeFile(
+    path: string,
+    content: string,
+    options?: { encoding?: string; overwrite?: boolean; cwd?: string }
+  ): Promise<{
+    success: boolean;
+    path?: string;
+    resolved_path?: string;
+    size?: number;
+    error?: string;
+  }> {
+    const response = await fetch(`${this.baseUrl}/write-file`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      credentials: 'include',
+      body: JSON.stringify({
+        path,
+        content,
+        encoding: options?.encoding,
+        overwrite: options?.overwrite,
+        cwd: options?.cwd
+      })
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const errorMessage = (payload as any).error || 'Failed to write file';
+      throw new Error(errorMessage);
+    }
+    return payload;
+  }
+
+  /**
+   * Search workspace for files matching pattern
+   * Executed on Jupyter server using grep/ripgrep
+   */
+  async searchWorkspace(options: {
+    pattern: string;
+    file_types?: string[];
+    path?: string;
+    max_results?: number;
+    case_sensitive?: boolean;
+  }): Promise<{
+    success: boolean;
+    command?: string;
+    tool_used?: string;
+    results?: Array<{
+      file_path: string;
+      line_number: number;
+      content: string;
+      match_type: string;
+    }>;
+    total_results?: number;
+    error?: string;
+  }> {
+    const response = await fetch(`${this.baseUrl}/search-workspace`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      credentials: 'include',
+      body: JSON.stringify({
+        pattern: options.pattern,
+        file_types: options.file_types || ['*.py', '*.ipynb'],
+        path: options.path || '.',
+        max_results: options.max_results || 50,
+        case_sensitive: options.case_sensitive || false
+      })
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const errorMessage = (payload as any).error || 'Failed to search workspace';
+      throw new Error(errorMessage);
+    }
+    return payload;
+  }
+
+  /**
+   * Search notebook cells for pattern
+   * Executed on Jupyter server
+   */
+  async searchNotebookCells(options: {
+    pattern: string;
+    notebook_path?: string;
+    cell_type?: 'code' | 'markdown';
+    max_results?: number;
+    case_sensitive?: boolean;
+  }): Promise<{
+    success: boolean;
+    results?: Array<{
+      file_path: string;
+      cell_index: number;
+      cell_type: string;
+      content: string;
+      matching_lines?: Array<{ line: number; content: string }>;
+      match_type: string;
+    }>;
+    total_results?: number;
+    notebooks_searched?: number;
+    error?: string;
+  }> {
+    const response = await fetch(`${this.baseUrl}/search-notebook-cells`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      credentials: 'include',
+      body: JSON.stringify({
+        pattern: options.pattern,
+        notebook_path: options.notebook_path,
+        cell_type: options.cell_type,
+        max_results: options.max_results || 30,
+        case_sensitive: options.case_sensitive || false
+      })
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const errorMessage = (payload as any).error || 'Failed to search notebook cells';
+      throw new Error(errorMessage);
+    }
+    return payload;
   }
 
   /**

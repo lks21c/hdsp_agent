@@ -321,7 +321,7 @@ export const BUILTIN_TOOL_DEFINITIONS: Omit<ToolDefinition, 'executor'>[] = [
   // 확장 도구 (시스템)
   // ─────────────────────────────────────────────────────────────────────────
   {
-    name: 'execute_command',
+    name: 'execute_command_tool',
     description: '셸 명령 실행 (위험 명령만 승인 필요)',
     riskLevel: 'critical',
     requiresApproval: false,  // 조건부 승인 (위험 명령만) - ToolExecutor에서 처리
@@ -407,7 +407,7 @@ export const BUILTIN_TOOL_DEFINITIONS: Omit<ToolDefinition, 'executor'>[] = [
 
 /**
  * 위험한 셸 명령 패턴들
- * execute_command에서 이 패턴에 매칭되는 명령은 사용자 승인 필요
+ * execute_command_tool에서 이 패턴에 매칭되는 명령은 사용자 승인 필요
  */
 export const DANGEROUS_COMMAND_PATTERNS: RegExp[] = [
   // 파일 삭제/제거

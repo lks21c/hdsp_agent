@@ -15,7 +15,7 @@ interactions:
             \uAE08\uC9C0)\n5. **write_file**: {\"path\": \"\uC0C1\uB300\uACBD\uB85C\",
             \"content\": \"\uB0B4\uC6A9\"} - \uD30C\uC77C \uC4F0\uAE30 (\uC2B9\uC778
             \uD544\uC694)\n6. **list_files**: {\"path\": \".\", \"recursive\": false,
-            \"pattern\": \"*.py\"} - \uB514\uB809\uD1A0\uB9AC \uC870\uD68C\n7. **execute_command**:
+            \"pattern\": \"*.py\"} - \uB514\uB809\uD1A0\uB9AC \uC870\uD68C\n7. **execute_command_tool**:
             {\"command\": \"pip list\"} - \uC178 \uBA85\uB839 (\uC704\uD5D8 \uBA85\uB839\uB9CC
             \uC2B9\uC778)\n8. **search_files**: {\"pattern\": \"def func\", \"path\":
             \"src\"} - \uD30C\uC77C \uB0B4\uC6A9 \uAC80\uC0C9\n\n## \U0001F6A8 \uD575\uC2EC

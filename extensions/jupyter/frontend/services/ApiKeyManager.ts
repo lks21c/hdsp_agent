@@ -32,6 +32,7 @@ export interface LLMConfig {
   gemini?: GeminiConfig;
   openai?: OpenAIConfig;
   vllm?: VLLMConfig;
+  workspaceRoot?: string;
   systemPrompt?: string;
 }
 
@@ -59,6 +60,7 @@ NEVER end your turn without calling a tool. NEVER produce an empty response.
 7. **search_workspace_tool**: Search for patterns in workspace files
 8. **search_notebook_cells_tool**: Search for patterns in notebook cells
 9. **write_todos**: Create and update task list for complex multi-step tasks
+10. **execute_command_tool**: Run a shell command via the client (approval required)
 
 ## Mandatory Workflow
 1. After EVERY tool result, immediately call the next tool

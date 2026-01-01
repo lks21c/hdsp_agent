@@ -195,9 +195,9 @@ export class ToolExecutor {
       });
     }
 
-    // execute_command 도구 등록 (조건부 승인)
-    const executeCommandDef = BUILTIN_TOOL_DEFINITIONS.find(t => t.name === 'execute_command');
-    if (executeCommandDef && !this.registry.hasTool('execute_command')) {
+    // execute_command_tool 도구 등록 (조건부 승인)
+    const executeCommandDef = BUILTIN_TOOL_DEFINITIONS.find(t => t.name === 'execute_command_tool');
+    if (executeCommandDef && !this.registry.hasTool('execute_command_tool')) {
       this.registry.register({
         ...executeCommandDef,
         executor: async (params: ExecuteCommandParams, context: ToolExecutionContext) => {
@@ -625,6 +625,12 @@ export class ToolExecutor {
    */
   private isDangerousCommand(command: string): boolean {
     return DANGEROUS_COMMAND_PATTERNS.some(pattern => pattern.test(command));
+  }
+
+  private summarizeOutput(output: string, maxLines: number = 2): { text: string; truncated: boolean } {
+    const lines = output.split(/\r?\n/).filter(line => line.length > 0);
+    const text = lines.slice(0, maxLines).join('\n');
+    return { text, truncated: lines.length > maxLines };
   }
 
   /**
@@ -1077,12 +1083,12 @@ print(json.dumps(result))
   }
 
   /**
-   * execute_command 도구: 셸 명령 실행 (조건부 승인)
+   * execute_command_tool 도구: 셸 명령 실행 (조건부 승인)
    */
   async executeCommand(params: ExecuteCommandParams, context: ToolExecutionContext): Promise<ToolResult> {
     console.log('[ToolExecutor] executeCommand:', params.command);
 
-    const timeout = params.timeout || 30000;
+    const timeout = typeof params.timeout === 'number' ? params.timeout : 600000;
 
     // 위험 명령 검사 및 조건부 승인 요청
     if (this.isDangerousCommand(params.command)) {
@@ -1090,9 +1096,9 @@ print(json.dumps(result))
 
       // 승인 요청
       const request: ApprovalRequest = {
-        id: `execute_command-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        toolName: 'execute_command',
-        toolDefinition: this.registry.getTool('execute_command')!,
+        id: `execute_command_tool-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        toolName: 'execute_command_tool',
+        toolDefinition: this.registry.getTool('execute_command_tool')!,
         parameters: params,
         stepNumber: context.stepNumber,
         description: `🔴 위험 명령 실행 요청:\n\n\`${params.command}\`\n\n이 명령은 시스템에 영향을 줄 수 있습니다.`,
@@ -1111,55 +1117,34 @@ print(json.dumps(result))
       }
     }
 
-    // Python subprocess로 명령 실행
-    const pythonCode = `
-import json
-import subprocess
-import sys
-try:
-    command = ${JSON.stringify(params.command)}
-    timeout_sec = ${timeout / 1000}
-
-    result = subprocess.run(
-        command,
-        shell=True,
-        capture_output=True,
-        text=True,
-        timeout=timeout_sec
-    )
-
-    output = {
-        'success': result.returncode == 0,
-        'stdout': result.stdout,
-        'stderr': result.stderr,
-        'returncode': result.returncode
+    if (!this.apiService) {
+      return { success: false, error: 'ApiService not available for execute_command_tool' };
     }
-except subprocess.TimeoutExpired:
-    output = {'success': False, 'error': f'Command timed out after {timeout_sec}s'}
-except Exception as e:
-    output = {'success': False, 'error': str(e)}
-print(json.dumps(output))
-`.trim();
 
     try {
-      const execResult = await this.executeInKernel(pythonCode);
-      if (execResult.status === 'ok' && execResult.stdout) {
-        const parsed = JSON.parse(execResult.stdout.trim());
-        if (parsed.success) {
-          return {
-            success: true,
-            output: parsed.stdout || '(no output)',
-          };
-        } else {
-          return {
-            success: false,
-            error: parsed.error || parsed.stderr || `Command failed with code ${parsed.returncode}`,
-          };
-        }
+      const result = await this.apiService.executeCommandStream(params.command, { timeout });
+      const stdout = typeof result.stdout === 'string' ? result.stdout : '';
+      const stderr = typeof result.stderr === 'string' ? result.stderr : '';
+      const combined = [stdout, stderr].filter(Boolean).join('\n');
+      const summary = this.summarizeOutput(combined, 2);
+      const output = summary.text || '(no output)';
+
+      if (result.success) {
+        return {
+          success: true,
+          output,
+        };
       }
-      return { success: false, error: execResult.error?.evalue || 'Command execution failed' };
+
+      const errorText = summary.text || result.error || stderr || `Command failed with code ${result.returncode}`;
+      return {
+        success: false,
+        error: errorText,
+      };
     } catch (error: any) {
-      return { success: false, error: error.message };
+      const message = error instanceof Error ? error.message : 'Command execution failed';
+      const summary = this.summarizeOutput(String(message), 2);
+      return { success: false, error: summary.text || 'Command execution failed' };
     }
   }
 

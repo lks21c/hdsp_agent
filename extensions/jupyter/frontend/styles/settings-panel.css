@@ -97,6 +97,7 @@
 }
 
 .jp-agent-settings-textarea {
+  width: -webkit-fill-available;
   min-height: 140px;
   resize: vertical;
   font-family: var(--jp-code-font-family);

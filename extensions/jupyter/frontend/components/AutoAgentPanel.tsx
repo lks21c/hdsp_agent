@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import type { NotebookPanel } from '@jupyterlab/notebook';
+import { NotebookPanel } from '@jupyterlab/notebook';
 import type { ISessionContext } from '@jupyterlab/apputils';
 
 import { ApiService } from '../services/ApiService';
@@ -409,18 +409,28 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
   const mergedConfig = { ...DEFAULT_AUTO_AGENT_CONFIG, ...config, executionSpeed };
 
   // Use app.shell.currentWidget for reliable active tab detection
+  const isNotebookWidget = (widget: any): widget is NotebookPanel => {
+    if (!widget) return false;
+    if (widget instanceof NotebookPanel) return true;
+    const model = widget?.content?.model;
+    return Boolean(model && (model.cells || model.sharedModel?.cells));
+  };
+
   const getCurrentNotebook = (): NotebookPanel | null => {
     if (propNotebook) return propNotebook;
 
     const app = (window as any).jupyterapp;
     if (app?.shell?.currentWidget) {
       const currentWidget = app.shell.currentWidget;
-      if ('content' in currentWidget && currentWidget.content?.model) {
+      if (isNotebookWidget(currentWidget)) {
         return currentWidget as NotebookPanel;
       }
     }
 
-    return notebookTracker?.currentWidget as NotebookPanel | null;
+    if (notebookTracker?.currentWidget && isNotebookWidget(notebookTracker.currentWidget)) {
+      return notebookTracker.currentWidget as NotebookPanel;
+    }
+    return null;
   };
 
   // Initial notebook for render check (propNotebook takes priority)
@@ -590,12 +600,9 @@ export const AutoAgentPanel: React.FC<AutoAgentPanelProps> = ({
     let currentNotebook = null;
 
     // Try to get notebook from shell.currentWidget (most reliable)
-    if (app?.shell?.currentWidget) {
-      const currentWidget = app.shell.currentWidget;
-      if ('content' in currentWidget && currentWidget.content?.model) {
-        currentNotebook = currentWidget;
+      if (app?.shell?.currentWidget && isNotebookWidget(app.shell.currentWidget)) {
+        currentNotebook = app.shell.currentWidget;
       }
-    }
 
     // Fallback: get fresh notebook (not stale variable)
     if (!currentNotebook) {

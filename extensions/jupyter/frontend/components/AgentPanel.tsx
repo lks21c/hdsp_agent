@@ -23,6 +23,9 @@ import {
   ExecutionPlan,
   DEFAULT_AUTO_AGENT_CONFIG,
   ExecutionSpeed,
+  ListFilesParams,
+  ReadFileParams,
+  ToolResult,
 } from '../types/auto-agent';
 import { formatMarkdownToHtml, escapeHtml } from '../utils/markdownRenderer';
 import { FileSelectionDialog } from './FileSelectionDialog';
@@ -272,27 +275,33 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
   const pendingToolCallsRef = useRef<Array<{ tool: string; code?: string; content?: string; cellIndex?: number }>>([]);
   const handledToolCallKeysRef = useRef<Set<string>>(new Set());
 
+  const isNotebookWidget = (widget: any): widget is NotebookPanel => {
+    if (!widget) return false;
+    if (widget instanceof NotebookPanel) return true;
+    const model = widget?.content?.model;
+    return Boolean(model && (model.cells || model.sharedModel?.cells));
+  };
+
   const getActiveNotebookPanel = (): NotebookPanel | null => {
     const app = (window as any).jupyterapp;
-    if (app?.shell?.currentWidget) {
-      const currentWidget = app.shell.currentWidget;
-      if (currentWidget instanceof NotebookPanel) {
-        return currentWidget;
-      }
-      if ('content' in currentWidget && currentWidget.content?.model) {
-        return currentWidget as NotebookPanel;
-      }
+    const currentWidget = app?.shell?.currentWidget;
+    if (isNotebookWidget(currentWidget)) {
+      return currentWidget;
     }
-    return notebookTracker?.currentWidget || null;
+    if (notebookTracker?.currentWidget && isNotebookWidget(notebookTracker.currentWidget)) {
+      return notebookTracker.currentWidget;
+    }
+    return null;
   };
 
   const insertCell = (notebook: NotebookPanel, cellType: 'code' | 'markdown', source: string): number | null => {
     const model = notebook.content?.model;
-    if (!model?.sharedModel) {
+    const cellCount = model?.cells?.length ?? model?.sharedModel?.cells?.length;
+    if (!model?.sharedModel || cellCount === undefined) {
       console.warn('[AgentPanel] Notebook model not ready for insert');
       return null;
     }
-    const insertIndex = model.cells.length;
+    const insertIndex = cellCount;
     model.sharedModel.insertCell(insertIndex, {
       cell_type: cellType,
       source
@@ -303,11 +312,12 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
 
   const deleteCell = (notebook: NotebookPanel, cellIndex: number): boolean => {
     const model = notebook.content?.model;
-    if (!model?.sharedModel) {
+    const cellCount = model?.cells?.length ?? model?.sharedModel?.cells?.length;
+    if (!model?.sharedModel || cellCount === undefined) {
       console.warn('[AgentPanel] Notebook model not ready for delete');
       return false;
     }
-    if (cellIndex < 0 || cellIndex >= model.cells.length) {
+    if (cellIndex < 0 || cellIndex >= cellCount) {
       console.warn('[AgentPanel] Invalid cell index for delete:', cellIndex);
       return false;
     }
@@ -1231,6 +1241,30 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
       const handleContainerClick = async (e: Event) => {
         const target = e.target as HTMLElement;
         
+        // Handle expand/collapse button
+        if (target.classList.contains('code-block-toggle') || target.closest('.code-block-toggle')) {
+          const button = target.classList.contains('code-block-toggle')
+            ? target as HTMLButtonElement
+            : target.closest('.code-block-toggle') as HTMLButtonElement;
+
+          e.stopPropagation();
+          e.preventDefault();
+
+          const container = button.closest('.code-block-container') as HTMLElement | null;
+          if (!container) return;
+
+          const isExpanded = container.classList.toggle('is-expanded');
+          button.setAttribute('aria-expanded', String(isExpanded));
+          button.setAttribute('title', isExpanded ? '접기' : '전체 보기');
+          button.setAttribute('aria-label', isExpanded ? '접기' : '전체 보기');
+
+          const icon = button.querySelector('.code-block-toggle-icon');
+          if (icon) {
+            icon.textContent = isExpanded ? '▴' : '▾';
+          }
+          return;
+        }
+
         // Handle copy button
         if (target.classList.contains('code-block-copy') || target.closest('.code-block-copy')) {
           const button = target.classList.contains('code-block-copy') 
@@ -1852,6 +1886,14 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
     if (lines.length === 0) {
       return true;
     }
+    if (lines.some(line => (
+      line.startsWith('!')
+      || line.startsWith('%%bash')
+      || line.startsWith('%%sh')
+      || line.startsWith('%%shell')
+    ))) {
+      return false;
+    }
     const disallowedPatterns = [
       /(^|[^=!<>])=([^=]|$)/,
       /\.read_[a-zA-Z0-9_]*\s*\(/,
@@ -1872,6 +1914,191 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
       /^import\s+pandas\s+as\s+pd$/,
     ];
     return lines.every(line => allowedPatterns.some(pattern => pattern.test(line)));
+  };
+
+  const userRequestedNotebookExecution = (): boolean => {
+    const lastUserMessage = [...messages]
+      .reverse()
+      .find((msg): msg is IChatMessage => isChatMessage(msg) && msg.role === 'user');
+    const content = lastUserMessage?.content ?? '';
+    return /노트북|셀|cell|notebook|jupyter/i.test(content);
+  };
+
+  const isShellCell = (code: string): boolean => {
+    const lines = code.split('\n');
+    const firstLine = lines.find(line => line.trim().length > 0)?.trim() || '';
+    if (
+      firstLine.startsWith('%%bash')
+      || firstLine.startsWith('%%sh')
+      || firstLine.startsWith('%%shell')
+    ) {
+      return true;
+    }
+    return lines.some(line => line.trim().startsWith('!'));
+  };
+
+  const extractShellCommand = (code: string): string => {
+    const lines = code.split('\n');
+    const firstNonEmptyIndex = lines.findIndex(line => line.trim().length > 0);
+    if (firstNonEmptyIndex === -1) {
+      return '';
+    }
+    const firstLine = lines[firstNonEmptyIndex].trim();
+    if (
+      firstLine.startsWith('%%bash')
+      || firstLine.startsWith('%%sh')
+      || firstLine.startsWith('%%shell')
+    ) {
+      const script = lines.slice(firstNonEmptyIndex + 1).join('\n').trim();
+      if (!script) {
+        return '';
+      }
+      const escaped = script
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/\r?\n/g, '\\n');
+      return `bash -lc $'${escaped}'`;
+    }
+
+    const shellLines = lines
+      .map(line => line.trim())
+      .filter(line => line.startsWith('!'))
+      .map(line => line.replace(/^!+/, '').trim())
+      .filter(Boolean);
+    return shellLines.join('\n');
+  };
+
+  const buildPythonCommand = (code: string): string => (
+    `python3 -c ${JSON.stringify(code)}`
+  );
+
+  const shouldExecuteInNotebook = (code: string): boolean => {
+    const notebook = getActiveNotebookPanel();
+    if (!notebook) {
+      return false;
+    }
+    if (isShellCell(code) && !userRequestedNotebookExecution()) {
+      return false;
+    }
+    return true;
+  };
+
+  const truncateOutputLines = (
+    output: string,
+    maxLines: number = 2
+  ): { text: string; truncated: boolean } => {
+    const lines = output.split(/\r?\n/).filter(line => line.length > 0);
+    const text = lines.slice(0, maxLines).join('\n');
+    return { text, truncated: lines.length > maxLines };
+  };
+
+  const createCommandOutputMessage = (command: string): string => {
+    const messageId = makeMessageId('command-output');
+    const outputMessage: IChatMessage = {
+      id: messageId,
+      role: 'system',
+      content: `🐚 ${command}\n`,
+      timestamp: Date.now(),
+      metadata: {
+        kind: 'shell-output',
+        command
+      }
+    };
+    setMessages(prev => [...prev, outputMessage]);
+    return messageId;
+  };
+
+  const appendCommandOutputMessage = (
+    messageId: string,
+    text: string,
+    stream: 'stdout' | 'stderr'
+  ) => {
+    if (!text) return;
+    const prefix = stream === 'stderr' ? '[stderr] ' : '';
+    setMessages(prev =>
+      prev.map(msg => {
+        if (msg.id !== messageId || !('role' in msg)) {
+          return msg;
+        }
+        const chatMsg = msg as IChatMessage;
+        return {
+          ...chatMsg,
+          content: `${chatMsg.content}${prefix}${text}`
+        };
+      })
+    );
+  };
+
+  const executeSubprocessCommand = async (
+    command: string,
+    timeout?: number,
+    onOutput?: (chunk: { stream: 'stdout' | 'stderr'; text: string }) => void
+  ): Promise<{ success: boolean; output: string; error?: string; returncode?: number | null; command: string; truncated: boolean }> => {
+    try {
+      const result = await apiService.executeCommandStream(command, { timeout, onOutput });
+      const stdout = typeof result.stdout === 'string' ? result.stdout : '';
+      const stderr = typeof result.stderr === 'string' ? result.stderr : '';
+      const combined = [stdout, stderr].filter(Boolean).join('\n');
+      const summary = truncateOutputLines(combined, 2);
+      const truncated = summary.truncated || Boolean(result.truncated);
+      const output = summary.text || '(no output)';
+      if (result.success) {
+        return {
+          success: true,
+          output,
+          returncode: result.returncode ?? null,
+          command,
+          truncated
+        };
+      }
+      const errorText = summary.text || result.error || stderr || 'Command failed';
+      return {
+        success: false,
+        output,
+        error: errorText,
+        returncode: result.returncode ?? null,
+        command,
+        truncated
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Command execution failed';
+      if (onOutput) {
+        onOutput({ stream: 'stderr', text: `${message}\n` });
+      }
+      const summary = truncateOutputLines(message, 2);
+      return {
+        success: false,
+        output: '',
+        error: summary.text || 'Command execution failed',
+        returncode: null,
+        command,
+        truncated: summary.truncated
+      };
+    }
+  };
+
+  const executeCodeViaSubprocess = async (
+    code: string,
+    timeout?: number
+  ): Promise<{ success: boolean; output: string; error?: string; returncode?: number | null; command: string; truncated: boolean; execution_method: string }> => {
+    const isShell = isShellCell(code);
+    const command = isShell ? extractShellCommand(code) : buildPythonCommand(code);
+    if (!command) {
+      return {
+        success: false,
+        output: '',
+        error: isShell ? 'Shell command is empty' : 'Python command is empty',
+        returncode: null,
+        command,
+        truncated: false,
+        execution_method: 'subprocess'
+      };
+    }
+    const result = await executeSubprocessCommand(command, timeout);
+    return {
+      ...result,
+      execution_method: 'subprocess'
+    };
   };
 
   const upsertInterruptMessage = (interrupt: { threadId: string; action: string; args: any; description: string }) => {
@@ -1920,6 +2147,335 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
     );
   };
 
+  const validateRelativePath = (path: string): { valid: boolean; error?: string } => {
+    const trimmed = path.trim();
+    if (trimmed.startsWith('/') || trimmed.startsWith('\\') || /^[A-Za-z]:/.test(trimmed)) {
+      return { valid: false, error: 'Absolute paths are not allowed' };
+    }
+    if (trimmed.includes('..')) {
+      return { valid: false, error: 'Path traversal (..) is not allowed' };
+    }
+    return { valid: true };
+  };
+
+  const normalizeContentsPath = (path: string): string => {
+    const trimmed = path.trim();
+    if (!trimmed || trimmed === '.' || trimmed === './') {
+      return '';
+    }
+    return trimmed
+      .replace(/^\.\/+/, '')
+      .replace(/^\/+/, '')
+      .replace(/\/+$/, '');
+  };
+
+  const globToRegex = (pattern: string): RegExp => {
+    const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+    const regex = `^${escaped.replace(/\*/g, '.*').replace(/\?/g, '.')}$`;
+    return new RegExp(regex);
+  };
+
+  const fetchContentsModel = async (
+    path: string,
+    options?: { content?: boolean; format?: 'text' | 'base64' | 'json' }
+  ): Promise<{ success: boolean; data?: any; error?: string }> => {
+    try {
+      const { PageConfig, URLExt } = await import('@jupyterlab/coreutils');
+      const baseUrl = PageConfig.getBaseUrl();
+      const normalizedPath = normalizeContentsPath(path);
+      const apiUrl = URLExt.join(baseUrl, 'api/contents', normalizedPath);
+      const query = new URLSearchParams();
+      if (options?.content !== undefined) {
+        query.set('content', options.content ? '1' : '0');
+      }
+      if (options?.format) {
+        query.set('format', options.format);
+      }
+      const url = query.toString() ? `${apiUrl}?${query.toString()}` : apiUrl;
+      const response = await fetch(url, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        return { success: false, error: `Failed to load contents: ${response.status}` };
+      }
+      const data = await response.json();
+      return { success: true, data };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to load contents';
+      return { success: false, error: message };
+    }
+  };
+
+  const executeListFilesTool = async (params: ListFilesParams): Promise<ToolResult> => {
+    const pathCheck = validateRelativePath(params.path);
+    if (!pathCheck.valid) {
+      return { success: false, error: pathCheck.error };
+    }
+
+    const pattern = (params.pattern || '*').trim() || '*';
+    const recursive = params.recursive ?? false;
+    const matcher = globToRegex(pattern);
+    const maxEntries = 500;
+    const files: Array<{ path: string; isDir: boolean; size: number }> = [];
+    const pendingDirs: string[] = [normalizeContentsPath(params.path)];
+    const visited = new Set<string>();
+
+    while (pendingDirs.length > 0 && files.length < maxEntries) {
+      const dirPath = pendingDirs.shift() ?? '';
+      if (visited.has(dirPath)) {
+        continue;
+      }
+      visited.add(dirPath);
+
+      const contentsResult = await fetchContentsModel(dirPath, { content: true });
+      if (!contentsResult.success) {
+        return { success: false, error: contentsResult.error };
+      }
+
+      const model = contentsResult.data;
+      if (!model || model.type !== 'directory' || !Array.isArray(model.content)) {
+        const displayPath = dirPath || '.';
+        return { success: false, error: `Not a directory: ${displayPath}` };
+      }
+
+      for (const entry of model.content) {
+        if (!entry) {
+          continue;
+        }
+        const name = entry.name || entry.path?.split('/').pop() || '';
+        const entryPath = entry.path || name;
+        const isDir = entry.type === 'directory';
+        if (matcher.test(name)) {
+          files.push({
+            path: entryPath,
+            isDir,
+            size: isDir ? 0 : (entry.size ?? 0),
+          });
+        }
+        if (recursive && isDir && entryPath) {
+          pendingDirs.push(entryPath);
+        }
+        if (files.length >= maxEntries) {
+          break;
+        }
+      }
+    }
+
+    const formatted = files.map((file: any) => {
+      const icon = file.isDir ? '📁' : '📄';
+      const sizeInfo = file.isDir ? '' : ` (${file.size} bytes)`;
+      return `${icon} ${file.path}${file.isDir ? '/' : sizeInfo}`;
+    }).join('\n');
+
+    return {
+      success: true,
+      output: formatted || '(empty directory)',
+      metadata: { count: files.length, files }
+    };
+  };
+
+  const executeReadFileTool = async (params: ReadFileParams): Promise<ToolResult> => {
+    if (!params.path) {
+      return { success: false, error: 'Path is required' };
+    }
+
+    const pathCheck = validateRelativePath(params.path);
+    if (!pathCheck.valid) {
+      return { success: false, error: pathCheck.error };
+    }
+
+    const maxLines = typeof params.maxLines === 'number' ? params.maxLines : 1000;
+    const safeMaxLines = Math.max(0, maxLines);
+    const contentsResult = await fetchContentsModel(params.path, { content: true, format: 'text' });
+    if (!contentsResult.success) {
+      return { success: false, error: contentsResult.error };
+    }
+
+    const model = contentsResult.data;
+    if (!model) {
+      return { success: false, error: 'File not found' };
+    }
+    if (model.type === 'directory') {
+      return { success: false, error: `Path is a directory: ${params.path}` };
+    }
+
+    let content = model.content ?? '';
+    if (model.format === 'base64') {
+      return { success: false, error: 'Binary file content is not supported' };
+    }
+    if (typeof content !== 'string') {
+      content = JSON.stringify(content, null, 2);
+    }
+
+    const lines = content.split('\n');
+    const sliced = lines.slice(0, safeMaxLines);
+    return {
+      success: true,
+      output: sliced.join('\n'),
+      metadata: {
+        lineCount: sliced.length,
+        truncated: lines.length > safeMaxLines
+      }
+    };
+  };
+
+  // Helper function for auto-approving search/file tools with execution results
+  const handleAutoToolInterrupt = async (
+    interrupt: { threadId: string; action: string; args: any; description: string }
+  ) => {
+    const { threadId, action, args } = interrupt;
+    console.log('[AgentPanel] Auto-approving tool:', action, args);
+
+    try {
+      let executionResult: any;
+
+      if (action === 'search_workspace_tool') {
+        setDebugStatus(`🔍 검색 실행 중: ${args?.pattern || ''}`);
+        executionResult = await apiService.searchWorkspace({
+          pattern: args?.pattern || '',
+          file_types: args?.file_types || ['*.py', '*.ipynb'],
+          path: args?.path || '.',
+          max_results: args?.max_results || 50,
+          case_sensitive: args?.case_sensitive || false
+        });
+        console.log('[AgentPanel] search_workspace result:', executionResult);
+      } else if (action === 'search_notebook_cells_tool') {
+        setDebugStatus(`🔍 노트북 검색 실행 중: ${args?.pattern || ''}`);
+        executionResult = await apiService.searchNotebookCells({
+          pattern: args?.pattern || '',
+          notebook_path: args?.notebook_path,
+          cell_type: args?.cell_type,
+          max_results: args?.max_results || 30,
+          case_sensitive: args?.case_sensitive || false
+        });
+        console.log('[AgentPanel] search_notebook_cells result:', executionResult);
+      } else if (action === 'list_files_tool') {
+        setDebugStatus('📂 파일 목록 조회 중...');
+        const listParams: ListFilesParams = {
+          path: typeof args?.path === 'string' ? args.path : '.',
+          recursive: args?.recursive ?? false,
+          pattern: args?.pattern ?? undefined
+        };
+        executionResult = await executeListFilesTool(listParams);
+        console.log('[AgentPanel] list_files result:', executionResult);
+      } else if (action === 'read_file_tool') {
+        setDebugStatus('📄 파일 읽는 중...');
+        const readParams: ReadFileParams = {
+          path: typeof args?.path === 'string' ? args.path : '',
+          encoding: typeof args?.encoding === 'string' ? args.encoding : undefined,
+          maxLines: args?.max_lines ?? args?.maxLines
+        };
+        executionResult = await executeReadFileTool(readParams);
+        console.log('[AgentPanel] read_file result:', executionResult);
+      } else {
+        console.warn('[AgentPanel] Unknown auto tool:', action);
+        return;
+      }
+
+      // Resume with execution result
+      const resumeArgs = {
+        ...args,
+        execution_result: executionResult
+      };
+
+      // Clear interrupt state (don't show approval UI for search)
+      setInterruptData(null);
+
+      // Create new assistant message for continued response
+      const assistantMessageId = makeMessageId('assistant');
+      setStreamingMessageId(assistantMessageId);
+      setMessages(prev => [
+        ...prev,
+        {
+          id: assistantMessageId,
+          role: 'assistant',
+          content: '',
+          timestamp: Date.now()
+        }
+      ]);
+
+      let streamedContent = '';
+      let interrupted = false;
+
+      setDebugStatus('🤔 LLM 응답 대기 중');
+
+      await apiService.resumeAgent(
+        threadId,
+        'edit',  // Use 'edit' to pass execution_result in args
+        resumeArgs,
+        undefined,
+        llmConfig || undefined,
+        (chunk: string) => {
+          streamedContent += chunk;
+          setMessages(prev =>
+            prev.map(msg =>
+              msg.id === assistantMessageId && isChatMessage(msg)
+                ? { ...msg, content: streamedContent }
+                : msg
+            )
+          );
+        },
+        (status: string) => {
+          setDebugStatus(status);
+        },
+        (nextInterrupt) => {
+          interrupted = true;
+          approvalPendingRef.current = true;
+
+          // Handle next interrupt (could be another search or code execution)
+          if (
+            nextInterrupt.action === 'search_workspace_tool'
+            || nextInterrupt.action === 'search_notebook_cells_tool'
+            || nextInterrupt.action === 'list_files_tool'
+            || nextInterrupt.action === 'read_file_tool'
+          ) {
+            void handleAutoToolInterrupt(nextInterrupt);
+            return;
+          }
+          if (nextInterrupt.action === 'jupyter_cell_tool' && nextInterrupt.args?.code) {
+            const shouldQueue = shouldExecuteInNotebook(nextInterrupt.args.code);
+            if (isAutoApprovedCode(nextInterrupt.args.code)) {
+              if (shouldQueue) {
+                queueApprovalCell(nextInterrupt.args.code);
+              }
+              void resumeFromInterrupt(nextInterrupt, 'approve');
+              return;
+            }
+            if (shouldQueue) {
+              queueApprovalCell(nextInterrupt.args.code);
+            }
+          }
+          setInterruptData(nextInterrupt);
+          upsertInterruptMessage(nextInterrupt);
+          setIsLoading(false);
+          setIsStreaming(false);
+        },
+        (newTodos) => {
+          setTodos(newTodos);
+        },
+        () => {
+          setDebugStatus(null);
+        },
+        handleToolCall
+      );
+
+      if (!interrupted) {
+        setIsLoading(false);
+        setIsStreaming(false);
+        setStreamingMessageId(null);
+        approvalPendingRef.current = false;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Tool execution failed';
+      console.error('[AgentPanel] Auto tool error:', error);
+      setDebugStatus(`오류: ${message}`);
+      setIsLoading(false);
+      setIsStreaming(false);
+      approvalPendingRef.current = false;
+    }
+  };
+
   const resumeFromInterrupt = async (
     interrupt: { threadId: string; action: string; args: any; description: string },
     decision: 'approve' | 'reject',
@@ -1932,18 +2488,122 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
     let resumeDecision: 'approve' | 'edit' | 'reject' = decision;
     let resumeArgs: any = undefined;
     if (decision === 'approve') {
-      const executed = await executePendingApproval();
-      if (executed && executed.tool === 'jupyter_cell') {
+      // Handle write_file_tool separately - execute file write on Jupyter server
+      if (interrupt.action === 'write_file_tool') {
+        try {
+          setDebugStatus('📝 파일 쓰기 중...');
+          const writeResult = await apiService.writeFile(
+            interrupt.args?.path || '',
+            interrupt.args?.content || '',
+            {
+              encoding: interrupt.args?.encoding || 'utf-8',
+              overwrite: interrupt.args?.overwrite || false
+            }
+          );
+          console.log('[AgentPanel] write_file result:', writeResult);
+          resumeDecision = 'edit';
+          resumeArgs = {
+            ...interrupt.args,
+            execution_result: writeResult
+          };
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'File write failed';
+          console.error('[AgentPanel] write_file error:', error);
+          resumeDecision = 'edit';
+          resumeArgs = {
+            ...interrupt.args,
+            execution_result: { success: false, error: message }
+          };
+        }
+      } else if (interrupt.action === 'execute_command_tool') {
+        const command = (interrupt.args?.command || '').trim();
+        setDebugStatus('🐚 셸 명령 실행 중...');
+        const outputMessageId = command ? createCommandOutputMessage(command) : null;
+        const execResult = command
+          ? await executeSubprocessCommand(
+              command,
+              interrupt.args?.timeout,
+              outputMessageId
+                ? (chunk) => appendCommandOutputMessage(outputMessageId, chunk.text, chunk.stream)
+                : undefined
+            )
+          : {
+              success: false,
+              output: '',
+              error: 'Command is required',
+              returncode: null,
+              command,
+              truncated: false
+            };
         resumeDecision = 'edit';
         resumeArgs = {
-          code: executed.code,
-          execution_result: (executed as any).execution_result
+          ...interrupt.args,
+          execution_result: execResult
         };
-      } else if (executed && executed.tool === 'markdown') {
-        resumeDecision = 'edit';
-        resumeArgs = {
-          content: executed.content
-        };
+      } else if (interrupt.action === 'jupyter_cell_tool' && interrupt.args?.code) {
+        const code = interrupt.args.code as string;
+        if (!shouldExecuteInNotebook(code)) {
+          setDebugStatus('🐚 서브프로세스로 코드 실행 중...');
+          const execResult = await executeCodeViaSubprocess(code, interrupt.args?.timeout);
+          resumeDecision = 'edit';
+          resumeArgs = {
+            code,
+            execution_result: execResult
+          };
+        } else {
+          const executed = await executePendingApproval();
+          if (executed && executed.tool === 'jupyter_cell') {
+            resumeDecision = 'edit';
+            resumeArgs = {
+              code: executed.code,
+              execution_result: (executed as any).execution_result
+            };
+          } else {
+            const notebook = getActiveNotebookPanel();
+            if (!notebook) {
+              setDebugStatus('🐚 노트북이 없어 서브프로세스로 실행 중...');
+              const execResult = await executeCodeViaSubprocess(code, interrupt.args?.timeout);
+              resumeDecision = 'edit';
+              resumeArgs = {
+                code,
+                execution_result: execResult
+              };
+            } else {
+              const cellIndex = insertCell(notebook, 'code', code);
+              if (cellIndex === null) {
+                setDebugStatus('🐚 노트북 모델이 없어 서브프로세스로 실행 중...');
+                const execResult = await executeCodeViaSubprocess(code, interrupt.args?.timeout);
+                resumeDecision = 'edit';
+                resumeArgs = {
+                  code,
+                  execution_result: execResult
+                };
+              } else {
+                await executeCell(notebook, cellIndex);
+                const execResult = captureExecutionResult(notebook, cellIndex);
+                resumeDecision = 'edit';
+                resumeArgs = {
+                  code,
+                  execution_result: execResult
+                };
+              }
+            }
+          }
+        }
+      } else {
+        const executed = await executePendingApproval();
+        if (executed && executed.tool === 'jupyter_cell') {
+          resumeDecision = 'edit';
+          resumeArgs = {
+            code: executed.code,
+            execution_result: (executed as any).execution_result
+          };
+        } else if (executed && executed.tool === 'markdown') {
+          resumeDecision = 'edit';
+          resumeArgs = {
+            content: executed.content
+          };
+        }
       }
     } else {
       // Reject: delete the pending cell from notebook
@@ -2006,13 +2666,28 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
         (nextInterrupt) => {
           interrupted = true;
           approvalPendingRef.current = true;
+          // Auto-approve search/file tools
+          if (
+            nextInterrupt.action === 'search_workspace_tool'
+            || nextInterrupt.action === 'search_notebook_cells_tool'
+            || nextInterrupt.action === 'list_files_tool'
+            || nextInterrupt.action === 'read_file_tool'
+          ) {
+            void handleAutoToolInterrupt(nextInterrupt);
+            return;
+          }
           if (nextInterrupt.action === 'jupyter_cell_tool' && nextInterrupt.args?.code) {
+            const shouldQueue = shouldExecuteInNotebook(nextInterrupt.args.code);
             if (isAutoApprovedCode(nextInterrupt.args.code)) {
-              queueApprovalCell(nextInterrupt.args.code);
+              if (shouldQueue) {
+                queueApprovalCell(nextInterrupt.args.code);
+              }
               void resumeFromInterrupt(nextInterrupt, 'approve');
               return;
             }
-            queueApprovalCell(nextInterrupt.args.code);
+            if (shouldQueue) {
+              queueApprovalCell(nextInterrupt.args.code);
+            }
           }
           setInterruptData(nextInterrupt);
           upsertInterruptMessage(nextInterrupt);
@@ -2369,13 +3044,29 @@ SyntaxError: '(' was never closed
             console.log('[AgentPanel] Captured agentThreadId from interrupt:', interrupt.threadId);
           }
 
+          // Auto-approve search/file tools - execute immediately without user interaction
+          if (
+            interrupt.action === 'search_workspace_tool'
+            || interrupt.action === 'search_notebook_cells_tool'
+            || interrupt.action === 'list_files_tool'
+            || interrupt.action === 'read_file_tool'
+          ) {
+            void handleAutoToolInterrupt(interrupt);
+            return;
+          }
+
           if (interrupt.action === 'jupyter_cell_tool' && interrupt.args?.code) {
+            const shouldQueue = shouldExecuteInNotebook(interrupt.args.code);
             if (isAutoApprovedCode(interrupt.args.code)) {
-              queueApprovalCell(interrupt.args.code);
+              if (shouldQueue) {
+                queueApprovalCell(interrupt.args.code);
+              }
               void resumeFromInterrupt(interrupt, 'approve');
               return;
             }
-            queueApprovalCell(interrupt.args.code);
+            if (shouldQueue) {
+              queueApprovalCell(interrupt.args.code);
+            }
           }
           setInterruptData(interrupt);
           upsertInterruptMessage(interrupt);
@@ -2724,26 +3415,38 @@ SyntaxError: '(' was never closed
             if (isChatMessage(msg)) {
               // 일반 Chat 메시지
               const isAssistant = msg.role === 'assistant';
+              const isShellOutput = msg.metadata?.kind === 'shell-output';
+              const interruptAction = msg.metadata?.interrupt?.action;
+              const isWriteFile = interruptAction === 'write_file_tool';
+              const writePath = (
+                isWriteFile
+                && typeof msg.metadata?.interrupt?.args?.path === 'string'
+              ) ? msg.metadata?.interrupt?.args?.path : '';
+              const headerRole = msg.role === 'user'
+                ? '사용자'
+                : msg.role === 'system'
+                  ? (isShellOutput ? 'shell 실행' : '승인 요청')
+                  : 'Agent';
               return (
                 <div
                   key={msg.id}
                   className={
                     isAssistant
                       ? 'jp-agent-message jp-agent-message-assistant-inline'
-                      : `jp-agent-message jp-agent-message-${msg.role}`
+                      : `jp-agent-message jp-agent-message-${msg.role}${isShellOutput ? ' jp-agent-message-shell-output' : ''}`
                   }
                 >
                   {!isAssistant && (
                     <div className="jp-agent-message-header">
                       <span className="jp-agent-message-role">
-                        {msg.role === 'user' ? '사용자' : msg.role === 'system' ? '승인 요청' : 'Agent'}
+                        {headerRole}
                       </span>
                       <span className="jp-agent-message-time">
                         {new Date(msg.timestamp).toLocaleTimeString()}
                       </span>
                     </div>
                   )}
-                  <div className={`jp-agent-message-content${streamingMessageId === msg.id ? ' streaming' : ''}`}>
+                  <div className={`jp-agent-message-content${streamingMessageId === msg.id ? ' streaming' : ''}${isShellOutput ? ' jp-agent-message-content-shell' : ''}`}>
                     {msg.role === 'system' && msg.metadata?.interrupt ? (
                       <div className="jp-agent-interrupt-inline">
                         <div className="jp-agent-interrupt-description">
@@ -2752,10 +3455,10 @@ SyntaxError: '(' was never closed
                         <div className="jp-agent-interrupt-action">
                           <div className="jp-agent-interrupt-action-args">
                             {(() => {
+                              const command = msg.metadata?.interrupt?.args?.command;
                               const code = msg.metadata?.interrupt?.args?.code || msg.metadata?.interrupt?.args?.content || '';
-                              const lines = code.split('\n');
-                              const preview = lines.slice(0, 8).join('\n');
-                              const suffix = lines.length > 8 ? '\n...' : '';
+                              const snippet = (command || code || '(no details)') as string;
+                              const language = command ? 'bash' : 'python';
                               const resolved = msg.metadata?.interrupt?.resolved;
                               const decision = msg.metadata?.interrupt?.decision;
                               const resolvedText = decision === 'reject' ? '거부됨' : '승인됨';
@@ -2768,11 +3471,22 @@ SyntaxError: '(' was never closed
   <button class="jp-agent-interrupt-reject-btn" data-action="reject">거부</button>
 </div>
 `;
+                              const renderedHtml = (() => {
+                                let html = formatMarkdownToHtml(`\n\`\`\`${language}\n${snippet}\n\`\`\``);
+                                if (isWriteFile && writePath) {
+                                  const safePath = escapeHtml(writePath);
+                                  html = html.replace(
+                                    /<span class="code-block-language">[^<]*<\/span>/,
+                                    `<span class="code-block-language jp-agent-interrupt-path">${safePath}</span>`
+                                  );
+                                }
+                                return html.replace('</div>', `${actionHtml}</div>`);
+                              })();
                               return (
                                 <div
                                   className="jp-RenderedHTMLCommon"
                                   style={{ padding: '0 4px' }}
-                                  dangerouslySetInnerHTML={{ __html: formatMarkdownToHtml(`\n\`\`\`python\n${preview}${suffix}\n\`\`\``).replace('</div>', `${actionHtml}</div>`) }}
+                                  dangerouslySetInnerHTML={{ __html: renderedHtml }}
                                   onClick={(event) => {
                                     const target = event.target as HTMLElement;
                                     const action = target?.getAttribute?.('data-action');

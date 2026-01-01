@@ -89,6 +89,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [systemPrompt, setSystemPrompt] = useState(
     initConfig.systemPrompt || ''
   );
+  const [workspaceRoot, setWorkspaceRoot] = useState(
+    initConfig.workspaceRoot || ''
+  );
 
   // Update state when currentConfig changes
   useEffect(() => {
@@ -111,6 +114,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
       setSystemPrompt(
         currentConfig.systemPrompt || getDefaultLLMConfig().systemPrompt || ''
       );
+      setWorkspaceRoot(currentConfig.workspaceRoot || '');
     }
   }, [currentConfig]);
 
@@ -131,6 +135,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
       apiKey: openaiApiKey,
       model: openaiModel
     },
+    workspaceRoot: workspaceRoot.trim() ? workspaceRoot.trim() : undefined,
     systemPrompt: systemPrompt && systemPrompt.trim() ? systemPrompt : undefined
   });
 
@@ -253,6 +258,24 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <option value="vllm">vLLM</option>
               <option value="openai">OpenAI</option>
             </select>
+          </div>
+
+          <div className="jp-agent-settings-group">
+            <label className="jp-agent-settings-label" htmlFor="jp-agent-workspace-root">
+              워크스페이스 루트
+              <small style={{ fontWeight: 'normal', marginLeft: '8px', color: '#666' }}>
+                비우면 현재 노트북 폴더 기준, 절대/상대 경로 가능
+              </small>
+            </label>
+            <input
+              id="jp-agent-workspace-root"
+              type="text"
+              className="jp-agent-settings-input"
+              value={workspaceRoot}
+              onChange={(e) => setWorkspaceRoot(e.target.value)}
+              placeholder="예: /Users/you/project"
+              data-testid="workspace-root-input"
+            />
           </div>
 
           {/* Gemini Settings */}

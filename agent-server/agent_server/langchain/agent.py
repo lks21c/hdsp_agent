@@ -8,6 +8,7 @@ import logging
 from typing import Any, Dict, Optional
 
 from agent_server.langchain.tools import (
+    execute_command_tool,
     final_answer_tool,
     jupyter_cell_tool,
     list_files_tool,
@@ -21,7 +22,7 @@ from agent_server.langchain.tools import (
 logger = logging.getLogger(__name__)
 
 DEFAULT_SYSTEM_PROMPT = """You are an expert Python data scientist and Jupyter notebook assistant.
-Your role is to help users with data analysis, visualization, and Python coding tasks in Jupyter notebooks.
+Your role is to help users with data analysis, visualization, and Python coding tasks in Jupyter notebooks. You can use only Korean
 
 ## ⚠️ CRITICAL RULE: NEVER produce an empty response
 
@@ -41,14 +42,18 @@ NEVER end your turn without calling a tool. NEVER produce an empty response.
 6. **list_files_tool**: List directory contents
 7. **search_workspace_tool**: Search for patterns in workspace files
 8. **search_notebook_cells_tool**: Search for patterns in notebook cells
-9. **write_todos**: Create and update task list for complex multi-step tasks
+9. **execute_command_tool**: Run shell commands via the client (approval required)
+    - If the command prompts for user input, MUST USE non-interactive flags or env vars (for example, `--yes`) to avoid blocking.
+    - If non-interactive execution is not possible, do NOT run the command;instruct the user to run it manually and request the key log lines needed to update todos.
+    - NEVER run long-running or endless commands (servers, watch, dev)
+10. **write_todos**: Create and update task list for complex multi-step tasks
 
 ## Mandatory Workflow
 1. After EVERY tool result, immediately call the next tool
 2. Continue until ALL todos show status: "completed"
 3. ONLY THEN call final_answer_tool to summarize
-4. If `!pip install` fails, use `!pip3 install` instead
-5. For plots and charts, use English text only
+4. Only use jupyter_cell_tool for Python code or when the user explicitly asks to run in a notebook cell
+5. For plots and charts, use English text only.
 
 ## ❌ FORBIDDEN (will break the workflow)
 - Producing an empty response (no tool call, no content)
@@ -56,6 +61,49 @@ NEVER end your turn without calling a tool. NEVER produce an empty response.
 - Ending without calling final_answer_tool
 - Leaving todos in "in_progress" or "pending" state without continuing
 """
+
+
+def _get_hitl_interrupt_config() -> Dict[str, Any]:
+    """Return HITL interrupt config for client-side tool execution."""
+    return {
+        # Require approval before executing code
+        "jupyter_cell_tool": {
+            "allowed_decisions": ["approve", "edit", "reject"],
+            "description": "🔍 Code execution requires approval",
+        },
+        # Safe operations - no approval needed
+        "markdown_tool": False,
+        "read_file_tool": {
+            "allowed_decisions": ["approve", "edit"],
+            "description": "📄 파일 읽기 실행 중",
+        },
+        "list_files_tool": {
+            "allowed_decisions": ["approve", "edit"],
+            "description": "📂 파일 목록 조회 중",
+        },
+        "write_todos": False,  # Todo updates don't need approval
+        # Search tools need HITL for client-side execution (auto-approved by frontend)
+        # Uses 'edit' decision to pass execution_result back
+        "search_workspace_tool": {
+            "allowed_decisions": ["approve", "edit"],
+            "description": "🔍 Searching workspace files",
+        },
+        "search_notebook_cells_tool": {
+            "allowed_decisions": ["approve", "edit"],
+            "description": "🔍 Searching notebook cells",
+        },
+        "execute_command_tool": {
+            "allowed_decisions": ["approve", "edit", "reject"],
+            "description": "🖥️ Shell command requires approval",
+        },
+        # File write requires approval
+        "write_file_tool": {
+            "allowed_decisions": ["approve", "edit", "reject"],
+            "description": "⚠️ File write requires approval",
+        },
+        # Final answer doesn't need approval
+        "final_answer_tool": False,
+    }
 
 
 def _create_llm(llm_config: Dict[str, Any]):
@@ -125,7 +173,7 @@ def _create_llm(llm_config: Dict[str, Any]):
 
 
 def _get_all_tools():
-    """Get all available tools for the agent"""
+    """Get all available tools for the agent."""
     return [
         jupyter_cell_tool,
         markdown_tool,
@@ -135,6 +183,7 @@ def _get_all_tools():
         list_files_tool,
         search_workspace_tool,
         search_notebook_cells_tool,
+        execute_command_tool,
     ]
 
 
@@ -174,7 +223,8 @@ def create_simple_chat_agent(
             ToolCallLimitMiddleware,
             wrap_model_call,
         )
-        from langchain_core.messages import AIMessage, ToolMessage as LCToolMessage
+        from langchain_core.messages import AIMessage
+        from langchain_core.messages import ToolMessage as LCToolMessage
         from langgraph.checkpoint.memory import InMemorySaver
         from langgraph.types import Overwrite
     except ImportError as e:
@@ -237,7 +287,7 @@ Output ONLY the JSON object, no markdown, no explanation."""
             pass
 
         # Try to find JSON object in response
-        json_match = re.search(r'\{[\s\S]*\}', text)
+        json_match = re.search(r"\{[\s\S]*\}", text)
         if json_match:
             try:
                 data = json.loads(json_match.group())
@@ -248,7 +298,9 @@ Output ONLY the JSON object, no markdown, no explanation."""
 
         return None
 
-    def _create_tool_call_message(tool_name: str, arguments: Dict[str, Any]) -> AIMessage:
+    def _create_tool_call_message(
+        tool_name: str, arguments: Dict[str, Any]
+    ) -> AIMessage:
         """Create AIMessage with tool_calls from parsed JSON."""
         import uuid
 
@@ -284,8 +336,8 @@ Output ONLY the JSON object, no markdown, no explanation."""
         3. Parses JSON response and injects tool_calls into AIMessage
         4. Falls back to synthetic final_answer if all else fails
         """
-        import json
         import uuid
+
         from langchain_core.messages import HumanMessage
 
         max_retries = 2  # Allow more retries for JSON fallback
@@ -295,7 +347,7 @@ Output ONLY the JSON object, no markdown, no explanation."""
 
             # Extract AIMessage from response
             response_message = None
-            if hasattr(response, 'result'):
+            if hasattr(response, "result"):
                 result = response.result
                 if isinstance(result, list):
                     for msg in reversed(result):
@@ -304,15 +356,23 @@ Output ONLY the JSON object, no markdown, no explanation."""
                             break
                 elif isinstance(result, AIMessage):
                     response_message = result
-            elif hasattr(response, 'message'):
+            elif hasattr(response, "message"):
                 response_message = response.message
-            elif hasattr(response, 'messages') and response.messages:
+            elif hasattr(response, "messages") and response.messages:
                 response_message = response.messages[-1]
             elif isinstance(response, AIMessage):
                 response_message = response
 
-            has_content = bool(getattr(response_message, 'content', None)) if response_message else False
-            has_tool_calls = bool(getattr(response_message, 'tool_calls', None)) if response_message else False
+            has_content = (
+                bool(getattr(response_message, "content", None))
+                if response_message
+                else False
+            )
+            has_tool_calls = (
+                bool(getattr(response_message, "tool_calls", None))
+                if response_message
+                else False
+            )
 
             logger.info(
                 "handle_empty_response: attempt=%d, type=%s, content=%s, tool_calls=%s",
@@ -341,7 +401,7 @@ Output ONLY the JSON object, no markdown, no explanation."""
                     new_message = _create_tool_call_message(tool_name, arguments)
 
                     # Replace in response
-                    if hasattr(response, 'result'):
+                    if hasattr(response, "result"):
                         if isinstance(response.result, list):
                             new_result = [
                                 new_message if isinstance(m, AIMessage) else m
@@ -366,8 +426,7 @@ Output ONLY the JSON object, no markdown, no explanation."""
                 # Get context for prompt
                 todos = request.state.get("todos", [])
                 pending_todos = [
-                    t for t in todos
-                    if t.get("status") in ("pending", "in_progress")
+                    t for t in todos if t.get("status") in ("pending", "in_progress")
                 ]
 
                 # Build JSON-forcing prompt
@@ -381,7 +440,9 @@ Output ONLY the JSON object, no markdown, no explanation."""
                         f'{{"tool": "final_answer_tool", "arguments": {{"answer": "{content_preview}..."}}}}'
                     )
                 elif pending_todos:
-                    todo_list = ", ".join(t.get("content", "")[:20] for t in pending_todos[:3])
+                    todo_list = ", ".join(
+                        t.get("content", "")[:20] for t in pending_todos[:3]
+                    )
                     example_json = '{"tool": "jupyter_cell_tool", "arguments": {"code": "import pandas as pd\\ndf = pd.read_csv(\'titanic.csv\')\\nprint(df.head())"}}'
                     json_prompt = (
                         f"{JSON_TOOL_SCHEMA}\n\n"
@@ -398,9 +459,7 @@ Output ONLY the JSON object, no markdown, no explanation."""
 
                 # Add JSON prompt and retry
                 request = request.override(
-                    messages=request.messages + [
-                        HumanMessage(content=json_prompt)
-                    ]
+                    messages=request.messages + [HumanMessage(content=json_prompt)]
                 )
                 continue
 
@@ -420,7 +479,8 @@ Output ONLY the JSON object, no markdown, no explanation."""
                 else:
                     todos = request.state.get("todos", [])
                     completed_todos = [
-                        t.get("content", "") for t in todos
+                        t.get("content", "")
+                        for t in todos
                         if t.get("status") == "completed"
                     ]
                     summary = (
@@ -443,7 +503,7 @@ Output ONLY the JSON object, no markdown, no explanation."""
                 )
 
                 # Replace in response
-                if hasattr(response, 'result'):
+                if hasattr(response, "result"):
                     if isinstance(response.result, list):
                         new_result = []
                         replaced = False
@@ -485,18 +545,20 @@ Output ONLY the JSON object, no markdown, no explanation."""
         response = handler(request)
 
         # Check if response has multiple tool calls
-        if hasattr(response, 'result'):
+        if hasattr(response, "result"):
             result = response.result
             messages = result if isinstance(result, list) else [result]
 
             for msg in messages:
-                if isinstance(msg, AIMessage) and hasattr(msg, 'tool_calls'):
+                if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls"):
                     tool_calls = msg.tool_calls
                     if tool_calls and len(tool_calls) > 1:
                         logger.info(
                             "Limiting tool calls from %d to 1 (keeping first: %s)",
                             len(tool_calls),
-                            tool_calls[0].get("name", "unknown") if tool_calls else "none"
+                            tool_calls[0].get("name", "unknown")
+                            if tool_calls
+                            else "none",
                         )
                         # Keep only the first tool call
                         msg.tool_calls = [tool_calls[0]]
@@ -507,11 +569,16 @@ Output ONLY the JSON object, no markdown, no explanation."""
 
     # Non-HITL tools that execute immediately without user approval
     NON_HITL_TOOLS = {
-        "markdown_tool", "markdown",
-        "read_file_tool", "read_file",
-        "list_files_tool", "list_files",
-        "search_workspace_tool", "search_workspace",
-        "search_notebook_cells_tool", "search_notebook_cells",
+        "markdown_tool",
+        "markdown",
+        "read_file_tool",
+        "read_file",
+        "list_files_tool",
+        "list_files",
+        "search_workspace_tool",
+        "search_workspace",
+        "search_notebook_cells_tool",
+        "search_notebook_cells",
         "write_todos",
     }
 
@@ -541,6 +608,7 @@ Output ONLY the JSON object, no markdown, no explanation."""
             if not tool_name:
                 try:
                     import json
+
                     content_json = json.loads(last_msg.content)
                     tool_name = content_json.get("tool", "")
                 except (json.JSONDecodeError, TypeError, AttributeError):
@@ -555,8 +623,7 @@ Output ONLY the JSON object, no markdown, no explanation."""
                 # Get todos context
                 todos = request.state.get("todos", [])
                 pending_todos = [
-                    t for t in todos
-                    if t.get("status") in ("pending", "in_progress")
+                    t for t in todos if t.get("status") in ("pending", "in_progress")
                 ]
 
                 if pending_todos:
@@ -576,6 +643,7 @@ Output ONLY the JSON object, no markdown, no explanation."""
 
                 # Inject as a system-like user message
                 from langchain_core.messages import HumanMessage
+
                 new_messages = list(messages) + [
                     HumanMessage(content=f"[SYSTEM] {continuation}")
                 ]
@@ -666,27 +734,7 @@ NEVER end your response after calling write_todos - always continue with the nex
     if enable_hitl:
         # Add Human-in-the-Loop middleware for code execution
         hitl_middleware = HumanInTheLoopMiddleware(
-            interrupt_on={
-                # Require approval before executing code
-                "jupyter_cell_tool": {
-                    "allowed_decisions": ["approve", "edit", "reject"],
-                    "description": "🔍 Code execution requires approval",
-                },
-                # Safe operations - no approval needed
-                "markdown_tool": False,
-                "read_file_tool": False,
-                "list_files_tool": False,
-                "search_workspace_tool": False,
-                "search_notebook_cells_tool": False,
-                "write_todos": False,  # Todo updates don't need approval
-                # File write requires approval
-                "write_file_tool": {
-                    "allowed_decisions": ["approve", "edit", "reject"],
-                    "description": "⚠️ File write requires approval",
-                },
-                # Final answer doesn't need approval
-                "final_answer_tool": False,
-            },
+            interrupt_on=_get_hitl_interrupt_config(),
             description_prefix="Tool execution pending approval",
         )
         middleware.append(hitl_middleware)
@@ -736,14 +784,17 @@ NEVER end your response after calling write_todos - always continue with the nex
         if summary_model:
             summarization_middleware = SummarizationMiddleware(
                 model=summary_model,
-                trigger={"tokens": 8000, "messages": 30},  # Trigger when exceeding limits
+                trigger={
+                    "tokens": 8000,
+                    "messages": 30,
+                },  # Trigger when exceeding limits
                 keep={"messages": 10},  # Keep last 10 messages intact
                 summary_prefix="[이전 대화 요약]\n",  # Prefix for summary message
             )
             middleware.append(summarization_middleware)
             logger.info(
                 "Added SummarizationMiddleware with model=%s, trigger=8000 tokens/30 msgs, keep=10 msgs",
-                summary_model
+                summary_model,
             )
     except Exception as e:
         logger.warning("Failed to add SummarizationMiddleware: %s", e)

@@ -6,26 +6,56 @@ ServiceFactory-based handlers supporting both embedded and proxy modes:
 - Proxy mode (HDSP_AGENT_MODE=proxy): HTTP proxy to external Agent Server
 """
 
+import asyncio
 import json
 import logging
 import os
-from typing import Any, Dict
+import subprocess
+import time
+from typing import Any, Awaitable, Callable, Dict, Optional
 
 import httpx
 from jupyter_server.base.handlers import APIHandler
 from jupyter_server.utils import url_path_join
-from tornado.web import RequestHandler
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_EXECUTE_COMMAND_TIMEOUT_MS = 600_000
+MAX_EXECUTE_COMMAND_STREAM_BYTES = 1_000_000
+
+
+def _resolve_timeout_ms(
+    value: Any, default: int = DEFAULT_EXECUTE_COMMAND_TIMEOUT_MS
+) -> int:
+    """Resolve timeout in milliseconds with a safe default."""
+    try:
+        timeout_ms = int(value)
+    except (TypeError, ValueError):
+        return default
+    if timeout_ms <= 0:
+        return default
+    return timeout_ms
+
+
+def _resolve_stream_timeout_ms(
+    value: Any, default: int = DEFAULT_EXECUTE_COMMAND_TIMEOUT_MS
+) -> Optional[int]:
+    """Resolve timeout in milliseconds; non-positive disables timeout."""
+    try:
+        timeout_ms = int(value)
+    except (TypeError, ValueError):
+        return default
+    if timeout_ms <= 0:
+        return None
+    return timeout_ms
 
 
 def _resolve_workspace_root(server_root: str) -> str:
     """Resolve workspace root by walking up to the project root if needed."""
     current = os.path.abspath(server_root)
     while True:
-        if (
-            os.path.isdir(os.path.join(current, "extensions"))
-            and os.path.isdir(os.path.join(current, "agent-server"))
+        if os.path.isdir(os.path.join(current, "extensions")) and os.path.isdir(
+            os.path.join(current, "agent-server")
         ):
             return current
         parent = os.path.dirname(current)
@@ -37,6 +67,7 @@ def _resolve_workspace_root(server_root: str) -> str:
 def _get_service_factory():
     """Get ServiceFactory instance (lazy import to avoid circular imports)"""
     from hdsp_agent_core.factory import get_service_factory
+
     return get_service_factory()
 
 
@@ -47,6 +78,462 @@ def _is_embedded_mode() -> bool:
         return factory.is_embedded
     except Exception:
         return False
+
+
+def _run_shell_command(command: str, timeout_ms: int, cwd: str) -> Dict[str, Any]:
+    """Run a shell command with timeout and capture output."""
+    timeout_sec = max(0.1, timeout_ms / 1000)
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=timeout_sec,
+            cwd=cwd,
+        )
+        return {
+            "success": result.returncode == 0,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "returncode": result.returncode,
+            "cwd": cwd,
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "success": False,
+            "error": f"Command timed out after {timeout_sec}s",
+            "cwd": cwd,
+        }
+    except Exception as exc:
+        return {"success": False, "error": str(exc), "cwd": cwd}
+
+
+def _append_stream_output(
+    current: str,
+    chunk: str,
+    max_bytes: int = MAX_EXECUTE_COMMAND_STREAM_BYTES,
+) -> tuple[str, bool]:
+    """Append output chunk, truncating when max_bytes is reached."""
+    if not chunk:
+        return current, False
+    current_bytes = current.encode("utf-8")
+    if len(current_bytes) >= max_bytes:
+        return current, True
+    chunk_bytes = chunk.encode("utf-8")
+    remaining = max_bytes - len(current_bytes)
+    if len(chunk_bytes) <= remaining:
+        return current + chunk, False
+    truncated_chunk = chunk_bytes[:remaining].decode("utf-8", errors="ignore")
+    return current + truncated_chunk, True
+
+
+async def _stream_subprocess_output(
+    stream: Optional[asyncio.StreamReader],
+    stream_name: str,
+    emit: Callable[[str, Dict[str, Any]], Awaitable[None]],
+    append: Callable[[str], None],
+) -> None:
+    """Stream subprocess output lines and collect them."""
+    if stream is None:
+        return
+    while True:
+        chunk = await stream.readline()
+        if not chunk:
+            break
+        text = chunk.decode("utf-8", errors="replace")
+        await emit("output", {"stream": stream_name, "text": text})
+        append(text)
+
+
+def _resolve_path_in_workspace(
+    path: str, workspace_root: str, requested_cwd: Optional[str] = None
+) -> str:
+    """Resolve a relative path within the workspace root."""
+    if os.path.isabs(path):
+        raise ValueError("absolute paths are not allowed")
+    if ".." in path:
+        raise ValueError("parent directory traversal is not allowed")
+
+    normalized_path = os.path.normpath(path)
+    base_dir = workspace_root
+    if requested_cwd:
+        if os.path.isabs(requested_cwd):
+            resolved_cwd = os.path.abspath(requested_cwd)
+        else:
+            resolved_cwd = os.path.abspath(os.path.join(workspace_root, requested_cwd))
+        if os.path.commonpath([workspace_root, resolved_cwd]) != workspace_root:
+            raise ValueError("cwd escapes workspace root")
+        base_dir = resolved_cwd
+
+        rel_cwd = os.path.normpath(os.path.relpath(resolved_cwd, workspace_root))
+        if rel_cwd != ".":
+            prefix = rel_cwd + os.sep
+            if normalized_path == rel_cwd:
+                normalized_path = "."
+            elif normalized_path.startswith(prefix):
+                normalized_path = normalized_path[len(prefix) :]
+
+    resolved_path = os.path.abspath(os.path.join(base_dir, normalized_path))
+    if os.path.commonpath([workspace_root, resolved_path]) != workspace_root:
+        raise ValueError("path escapes workspace root")
+    return resolved_path
+
+
+def _resolve_command_cwd(
+    server_root: str, workspace_root: str, requested_cwd: Optional[str] = None
+) -> str:
+    """Resolve command cwd within workspace root."""
+    default_cwd = os.path.abspath(server_root)
+    if os.path.commonpath([workspace_root, default_cwd]) != workspace_root:
+        default_cwd = workspace_root
+
+    if not requested_cwd:
+        return default_cwd
+
+    if os.path.isabs(requested_cwd):
+        resolved_cwd = os.path.abspath(requested_cwd)
+    else:
+        resolved_cwd = os.path.abspath(os.path.join(default_cwd, requested_cwd))
+
+    if os.path.commonpath([workspace_root, resolved_cwd]) != workspace_root:
+        raise ValueError("cwd escapes workspace root")
+
+    return resolved_cwd
+
+
+def _write_file(
+    resolved_path: str, content: str, encoding: str, overwrite: bool
+) -> Dict[str, Any]:
+    """Write content to a file on disk."""
+    print(
+        f"[WRITE DEBUG] resolved_path={resolved_path}, overwrite={overwrite}, type={type(overwrite)}",
+        flush=True,
+    )
+    try:
+        dir_path = os.path.dirname(resolved_path)
+        if dir_path:
+            os.makedirs(dir_path, exist_ok=True)
+        mode = "w" if overwrite else "x"
+        print(f"[WRITE DEBUG] mode={mode}", flush=True)
+        with open(resolved_path, mode, encoding=encoding) as f:
+            f.write(content)
+        return {
+            "success": True,
+            "size": len(content),
+        }
+    except FileExistsError:
+        return {
+            "success": False,
+            "error": "File already exists. Set overwrite=true to overwrite.",
+        }
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
+def _is_ripgrep_available() -> bool:
+    """Check if ripgrep (rg) is installed."""
+    import shutil
+
+    return shutil.which("rg") is not None
+
+
+def _build_search_command(
+    pattern: str,
+    file_types: list,
+    path: str,
+    case_sensitive: bool,
+    max_results: int,
+) -> tuple:
+    """Build grep/ripgrep command for searching files."""
+    use_ripgrep = _is_ripgrep_available()
+
+    if use_ripgrep:
+        cmd_parts = ["rg", "--line-number", "--with-filename"]
+        if not case_sensitive:
+            cmd_parts.append("--ignore-case")
+        for ft in file_types:
+            cmd_parts.extend(["--glob", ft])
+        cmd_parts.extend(["--max-count", str(max_results)])
+        escaped_pattern = pattern.replace("'", "'\\''")
+        cmd_parts.append(f"'{escaped_pattern}'")
+        cmd_parts.append(path)
+        return " ".join(cmd_parts), "rg"
+    else:
+        find_parts = ["find", path, "-type", "f", "\\("]
+        for i, ft in enumerate(file_types):
+            if i > 0:
+                find_parts.append("-o")
+            find_parts.extend(["-name", f"'{ft}'"])
+        find_parts.append("\\)")
+        grep_flags = "n" + ("" if case_sensitive else "i")
+        escaped_pattern = pattern.replace("'", "'\\''")
+        cmd = f"{' '.join(find_parts)} 2>/dev/null | xargs grep -{grep_flags} '{escaped_pattern}' 2>/dev/null | head -n {max_results}"
+        return cmd, "grep"
+
+
+def _parse_grep_output(output: str, workspace_root: str) -> list:
+    """Parse grep/ripgrep output into structured results."""
+    results = []
+    for line in output.strip().split("\n"):
+        if not line:
+            continue
+        parts = line.split(":", 2)
+        if len(parts) >= 2:
+            file_path = parts[0]
+            try:
+                line_num = int(parts[1])
+                content = parts[2] if len(parts) > 2 else ""
+            except ValueError:
+                line_num = 0
+                content = line
+            try:
+                rel_path = os.path.relpath(file_path, workspace_root)
+            except ValueError:
+                rel_path = file_path
+            results.append(
+                {
+                    "file_path": rel_path,
+                    "line_number": line_num,
+                    "content": content.strip()[:200],
+                    "match_type": "line",
+                }
+            )
+    return results
+
+
+def _search_in_notebook(
+    notebook_path: str, pattern: str, cell_type: Optional[str], case_sensitive: bool
+) -> list:
+    """Search for pattern in notebook cells."""
+    import re
+
+    results = []
+    flags = 0 if case_sensitive else re.IGNORECASE
+
+    try:
+        compiled = re.compile(pattern, flags)
+    except re.error:
+        compiled = re.compile(re.escape(pattern), flags)
+
+    try:
+        with open(notebook_path, "r", encoding="utf-8") as f:
+            notebook = json.load(f)
+        cells = notebook.get("cells", [])
+        for idx, cell in enumerate(cells):
+            current_type = cell.get("cell_type", "code")
+            if cell_type and current_type != cell_type:
+                continue
+            source = cell.get("source", [])
+            if isinstance(source, list):
+                source = "".join(source)
+            if compiled.search(source):
+                matching_lines = []
+                for line_num, line in enumerate(source.split("\n"), 1):
+                    if compiled.search(line):
+                        matching_lines.append(
+                            {"line": line_num, "content": line.strip()[:150]}
+                        )
+                results.append(
+                    {
+                        "cell_index": idx,
+                        "cell_type": current_type,
+                        "content": source[:300] + "..."
+                        if len(source) > 300
+                        else source,
+                        "matching_lines": matching_lines[:5],
+                        "match_type": "cell",
+                    }
+                )
+    except Exception as e:
+        logger.warning(f"Error searching notebook {notebook_path}: {e}")
+    return results
+
+
+def _execute_search_workspace(
+    pattern: str,
+    file_types: list,
+    path: str,
+    max_results: int,
+    case_sensitive: bool,
+    workspace_root: str,
+) -> Dict[str, Any]:
+    """Execute workspace search using subprocess."""
+    search_path = os.path.normpath(os.path.join(workspace_root, path))
+    if not os.path.exists(search_path):
+        return {
+            "success": False,
+            "error": f"Path does not exist: {path}",
+            "results": [],
+            "total_results": 0,
+        }
+
+    command, tool_used = _build_search_command(
+        pattern, file_types, search_path, case_sensitive, max_results
+    )
+    print(f"[SEARCH DEBUG] Executing search: {command}", flush=True)
+    print(
+        f"[SEARCH DEBUG] cwd: {workspace_root}, search_path: {search_path}", flush=True
+    )
+
+    # Debug: test find command separately
+    find_only = f"find {search_path} -type f -name '*.py' | head -5"
+    find_result = subprocess.run(
+        find_only,
+        shell=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        cwd=workspace_root,
+    )
+    print(
+        f"[SEARCH DEBUG] find only stdout: {find_result.stdout[:300] if find_result.stdout else 'EMPTY'}",
+        flush=True,
+    )
+
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=workspace_root,
+        )
+        print(
+            f"[SEARCH DEBUG] stdout: {result.stdout[:500] if result.stdout else 'EMPTY'}",
+            flush=True,
+        )
+        print(
+            f"[SEARCH DEBUG] stderr: {result.stderr[:500] if result.stderr else 'EMPTY'}",
+            flush=True,
+        )
+        print(f"[SEARCH DEBUG] returncode: {result.returncode}", flush=True)
+        results = _parse_grep_output(result.stdout, workspace_root)
+
+        # Also search in notebook cell contents
+        notebook_results = []
+        if any("ipynb" in ft for ft in file_types):
+            find_cmd = f"find {search_path} -name '*.ipynb' -type f 2>/dev/null"
+            nb_result = subprocess.run(
+                find_cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=10,
+                cwd=workspace_root,
+            )
+            if nb_result.returncode == 0 and nb_result.stdout:
+                notebooks = nb_result.stdout.strip().split("\n")
+                for nb_path in notebooks[:20]:
+                    if nb_path and os.path.exists(nb_path):
+                        nb_matches = _search_in_notebook(
+                            nb_path, pattern, None, case_sensitive
+                        )
+                        for m in nb_matches:
+                            try:
+                                m["file_path"] = os.path.relpath(
+                                    nb_path, workspace_root
+                                )
+                            except ValueError:
+                                m["file_path"] = nb_path
+                        notebook_results.extend(nb_matches)
+                        if len(notebook_results) >= max_results:
+                            break
+
+        all_results = results + notebook_results
+        return {
+            "success": True,
+            "command": command,
+            "tool_used": tool_used,
+            "results": all_results[:max_results],
+            "total_results": len(all_results),
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "success": False,
+            "error": "Search timed out",
+            "results": [],
+            "total_results": 0,
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e), "results": [], "total_results": 0}
+
+
+def _execute_search_notebook_cells(
+    pattern: str,
+    notebook_path: Optional[str],
+    cell_type: Optional[str],
+    max_results: int,
+    case_sensitive: bool,
+    workspace_root: str,
+) -> Dict[str, Any]:
+    """Execute notebook cell search."""
+    results = []
+    notebooks_searched = 0
+
+    try:
+        if notebook_path:
+            full_path = os.path.normpath(os.path.join(workspace_root, notebook_path))
+            if os.path.exists(full_path) and full_path.endswith(".ipynb"):
+                matches = _search_in_notebook(
+                    full_path, pattern, cell_type, case_sensitive
+                )
+                for m in matches:
+                    m["file_path"] = notebook_path
+                results.extend(matches)
+                notebooks_searched = 1
+            else:
+                return {
+                    "success": False,
+                    "error": f"Notebook not found: {notebook_path}",
+                    "results": [],
+                    "total_results": 0,
+                    "notebooks_searched": 0,
+                }
+        else:
+            find_cmd = f"find {workspace_root} -name '*.ipynb' -type f 2>/dev/null"
+            find_result = subprocess.run(
+                find_cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=10,
+                cwd=workspace_root,
+            )
+            if find_result.returncode == 0 and find_result.stdout:
+                notebooks = find_result.stdout.strip().split("\n")
+                for nb_full_path in notebooks:
+                    if not nb_full_path or not os.path.exists(nb_full_path):
+                        continue
+                    notebooks_searched += 1
+                    matches = _search_in_notebook(
+                        nb_full_path, pattern, cell_type, case_sensitive
+                    )
+                    try:
+                        rel_path = os.path.relpath(nb_full_path, workspace_root)
+                    except ValueError:
+                        rel_path = nb_full_path
+                    for m in matches:
+                        m["file_path"] = rel_path
+                    results.extend(matches)
+                    if len(results) >= max_results:
+                        break
+
+        return {
+            "success": True,
+            "results": results[:max_results],
+            "total_results": len(results),
+            "notebooks_searched": notebooks_searched,
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "results": [],
+            "total_results": 0,
+            "notebooks_searched": 0,
+        }
 
 
 # ============ Service-Based Handlers ============
@@ -206,7 +693,7 @@ class ChatStreamHandler(APIHandler):
 
         except Exception as e:
             logger.error(f"Chat stream failed: {e}", exc_info=True)
-            self.write(f'data: {json.dumps({"error": str(e)})}\n\n')
+            self.write(f"data: {json.dumps({'error': str(e)})}\n\n")
             self.finish()
 
 
@@ -231,6 +718,250 @@ class RAGSearchHandler(APIHandler):
 
         except Exception as e:
             logger.error(f"RAG search failed: {e}", exc_info=True)
+            self.set_status(500)
+            self.write({"error": str(e)})
+
+
+class ExecuteCommandHandler(APIHandler):
+    """Handler for /execute-command endpoint (runs on Jupyter server)."""
+
+    async def post(self):
+        """Execute shell command after user approval."""
+        try:
+            body = (
+                json.loads(self.request.body.decode("utf-8"))
+                if self.request.body
+                else {}
+            )
+            command = (body.get("command") or "").strip()
+            timeout_ms = _resolve_timeout_ms(body.get("timeout"))
+            requested_cwd = (body.get("cwd") or "").strip()
+
+            if not command:
+                self.set_status(400)
+                self.write({"error": "command is required"})
+                return
+
+            server_root = self.settings.get("server_root_dir", os.getcwd())
+            server_root = os.path.expanduser(server_root)
+            workspace_root = _resolve_workspace_root(server_root)
+
+            try:
+                cwd = _resolve_command_cwd(server_root, workspace_root, requested_cwd)
+            except ValueError as exc:
+                self.set_status(400)
+                self.write({"error": str(exc)})
+                return
+
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                None, _run_shell_command, command, timeout_ms, cwd
+            )
+
+            self.set_header("Content-Type", "application/json")
+            self.write(result)
+
+        except Exception as e:
+            logger.error(f"Execute command failed: {e}", exc_info=True)
+            self.set_status(500)
+            self.write({"error": str(e)})
+
+
+class ExecuteCommandStreamHandler(APIHandler):
+    """Handler for /execute-command/stream endpoint (runs on Jupyter server)."""
+
+    async def post(self):
+        """Execute shell command and stream output."""
+        try:
+            body = (
+                json.loads(self.request.body.decode("utf-8"))
+                if self.request.body
+                else {}
+            )
+            command = (body.get("command") or "").strip()
+            timeout_ms = _resolve_stream_timeout_ms(body.get("timeout"))
+            requested_cwd = (body.get("cwd") or "").strip()
+
+            if not command:
+                self.set_status(400)
+                self.write({"error": "command is required"})
+                return
+
+            server_root = self.settings.get("server_root_dir", os.getcwd())
+            server_root = os.path.expanduser(server_root)
+            workspace_root = _resolve_workspace_root(server_root)
+
+            try:
+                cwd = _resolve_command_cwd(server_root, workspace_root, requested_cwd)
+            except ValueError as exc:
+                self.set_status(400)
+                self.write({"error": str(exc)})
+                return
+
+            self.set_header("Content-Type", "text/event-stream")
+            self.set_header("Cache-Control", "no-cache")
+            self.set_header("Connection", "keep-alive")
+            self.set_header("X-Accel-Buffering", "no")
+
+            async def emit(event: str, payload: Dict[str, Any]) -> None:
+                self.write(f"event: {event}\n")
+                self.write(f"data: {json.dumps(payload)}\n\n")
+                await self.flush()
+
+            start_time = time.monotonic()
+            await emit("start", {"command": command, "cwd": cwd})
+
+            process = await asyncio.create_subprocess_shell(
+                command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=cwd,
+            )
+
+            stdout_text = ""
+            stderr_text = ""
+            stdout_truncated = False
+            stderr_truncated = False
+
+            def append_stdout(text: str) -> None:
+                nonlocal stdout_text, stdout_truncated
+                stdout_text, truncated = _append_stream_output(stdout_text, text)
+                stdout_truncated = stdout_truncated or truncated
+
+            def append_stderr(text: str) -> None:
+                nonlocal stderr_text, stderr_truncated
+                stderr_text, truncated = _append_stream_output(stderr_text, text)
+                stderr_truncated = stderr_truncated or truncated
+
+            stdout_task = asyncio.create_task(
+                _stream_subprocess_output(process.stdout, "stdout", emit, append_stdout)
+            )
+            stderr_task = asyncio.create_task(
+                _stream_subprocess_output(process.stderr, "stderr", emit, append_stderr)
+            )
+
+            timed_out = False
+            timeout_sec = None if timeout_ms is None else max(0.1, timeout_ms / 1000)
+            try:
+                if timeout_sec is None:
+                    await process.wait()
+                else:
+                    await asyncio.wait_for(process.wait(), timeout=timeout_sec)
+            except asyncio.TimeoutError:
+                timed_out = True
+                process.kill()
+                await process.wait()
+
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(stdout_task, stderr_task),
+                    timeout=0.5,
+                )
+            except asyncio.TimeoutError:
+                stdout_task.cancel()
+                stderr_task.cancel()
+                await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
+
+            duration_ms = int((time.monotonic() - start_time) * 1000)
+            truncated = stdout_truncated or stderr_truncated
+            if timed_out:
+                result = {
+                    "success": False,
+                    "stdout": stdout_text,
+                    "stderr": stderr_text,
+                    "returncode": process.returncode,
+                    "error": f"Command timed out after {timeout_sec}s",
+                    "truncated": truncated,
+                    "cwd": cwd,
+                    "duration_ms": duration_ms,
+                }
+            else:
+                result = {
+                    "success": process.returncode == 0,
+                    "stdout": stdout_text,
+                    "stderr": stderr_text,
+                    "returncode": process.returncode,
+                    "truncated": truncated,
+                    "cwd": cwd,
+                    "duration_ms": duration_ms,
+                }
+
+            await emit("result", result)
+            self.finish()
+
+        except Exception as e:
+            logger.error(f"Execute command stream failed: {e}", exc_info=True)
+            self.set_header("Content-Type", "text/event-stream")
+            self.write(f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n")
+            self.finish()
+
+
+class WriteFileHandler(APIHandler):
+    """Handler for /write-file endpoint (runs on Jupyter server)."""
+
+    async def post(self):
+        """Write file content after user approval."""
+        try:
+            body = (
+                json.loads(self.request.body.decode("utf-8"))
+                if self.request.body
+                else {}
+            )
+            path = (body.get("path") or "").strip()
+            content = body.get("content") or ""
+            encoding = body.get("encoding") or "utf-8"
+            overwrite = bool(body.get("overwrite", False))
+            requested_cwd = (body.get("cwd") or "").strip()
+
+            if not path:
+                self.set_status(400)
+                self.write({"error": "path is required"})
+                return
+
+            server_root = self.settings.get("server_root_dir", os.getcwd())
+            server_root = os.path.expanduser(server_root)
+            workspace_root = _resolve_workspace_root(server_root)
+
+            # If no cwd requested, use server_root as default (notebook directory)
+            # This ensures files are saved relative to where Jupyter was started
+            effective_cwd = requested_cwd
+            if not effective_cwd:
+                abs_server_root = os.path.abspath(server_root)
+                # Use server_root if it's within workspace_root, otherwise use workspace_root
+                if (
+                    os.path.commonpath([workspace_root, abs_server_root])
+                    == workspace_root
+                ):
+                    effective_cwd = abs_server_root
+                else:
+                    effective_cwd = workspace_root
+
+            try:
+                resolved_path = _resolve_path_in_workspace(
+                    path, workspace_root, effective_cwd
+                )
+            except ValueError as exc:
+                self.set_status(400)
+                self.write({"error": str(exc)})
+                return
+
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                None, _write_file, resolved_path, content, encoding, overwrite
+            )
+
+            result.update(
+                {
+                    "path": path,
+                    "resolved_path": resolved_path,
+                    "overwrite": overwrite,
+                }
+            )
+            self.set_header("Content-Type", "application/json")
+            self.write(result)
+
+        except Exception as e:
+            logger.error(f"Write file failed: {e}", exc_info=True)
             self.set_status(500)
             self.write({"error": str(e)})
 
@@ -265,6 +996,7 @@ class BaseProxyHandler(APIHandler):
     def agent_server_url(self) -> str:
         """Get the Agent Server base URL."""
         from .config import get_agent_server_config
+
         config = get_agent_server_config()
         return config.base_url
 
@@ -272,6 +1004,7 @@ class BaseProxyHandler(APIHandler):
     def timeout(self) -> float:
         """Get request timeout."""
         from .config import get_agent_server_config
+
         config = get_agent_server_config()
         return config.timeout
 
@@ -281,7 +1014,7 @@ class BaseProxyHandler(APIHandler):
         base_url = self.settings.get("base_url", "/")
         prefix = url_path_join(base_url, "hdsp-agent")
         if request_path.startswith(prefix):
-            return request_path[len(prefix):]
+            return request_path[len(prefix) :]
         return request_path
 
     async def proxy_request(self, method: str = "GET", body: bytes = None):
@@ -300,9 +1033,13 @@ class BaseProxyHandler(APIHandler):
                 if method == "GET":
                     response = await client.get(target_url, headers=headers)
                 elif method == "POST":
-                    response = await client.post(target_url, headers=headers, content=body)
+                    response = await client.post(
+                        target_url, headers=headers, content=body
+                    )
                 elif method == "PUT":
-                    response = await client.put(target_url, headers=headers, content=body)
+                    response = await client.put(
+                        target_url, headers=headers, content=body
+                    )
                 elif method == "DELETE":
                     response = await client.delete(target_url, headers=headers)
                 else:
@@ -312,22 +1049,30 @@ class BaseProxyHandler(APIHandler):
 
                 self.set_status(response.status_code)
                 for name, value in response.headers.items():
-                    if name.lower() not in ("content-encoding", "transfer-encoding", "content-length"):
+                    if name.lower() not in (
+                        "content-encoding",
+                        "transfer-encoding",
+                        "content-length",
+                    ):
                         self.set_header(name, value)
                 self.write(response.content)
 
         except httpx.ConnectError:
             self.set_status(503)
-            self.write({
-                "error": "Agent Server is not available",
-                "detail": f"Could not connect to {self.agent_server_url}",
-            })
+            self.write(
+                {
+                    "error": "Agent Server is not available",
+                    "detail": f"Could not connect to {self.agent_server_url}",
+                }
+            )
         except httpx.TimeoutException:
             self.set_status(504)
-            self.write({
-                "error": "Agent Server timeout",
-                "detail": f"Request to {target_url} timed out after {self.timeout}s",
-            })
+            self.write(
+                {
+                    "error": "Agent Server timeout",
+                    "detail": f"Request to {target_url} timed out after {self.timeout}s",
+                }
+            )
         except Exception as e:
             self.set_status(500)
             self.write({"error": "Proxy error", "detail": str(e)})
@@ -351,12 +1096,14 @@ class StreamProxyHandler(APIHandler):
     @property
     def agent_server_url(self) -> str:
         from .config import get_agent_server_config
+
         config = get_agent_server_config()
         return config.base_url
 
     @property
     def timeout(self) -> float:
         from .config import get_agent_server_config
+
         config = get_agent_server_config()
         return config.timeout
 
@@ -365,7 +1112,7 @@ class StreamProxyHandler(APIHandler):
         base_url = self.settings.get("base_url", "/")
         prefix = url_path_join(base_url, "hdsp-agent")
         if request_path.startswith(prefix):
-            return request_path[len(prefix):]
+            return request_path[len(prefix) :]
         return request_path
 
     async def post(self, *args, **kwargs):
@@ -391,11 +1138,13 @@ class StreamProxyHandler(APIHandler):
                         await self.flush()
 
         except httpx.ConnectError:
-            self.write(f'data: {json.dumps({"error": "Agent Server is not available"})}\n\n')
+            self.write(
+                f"data: {json.dumps({'error': 'Agent Server is not available'})}\n\n"
+            )
         except httpx.TimeoutException:
-            self.write(f'data: {json.dumps({"error": "Agent Server timeout"})}\n\n')
+            self.write(f"data: {json.dumps({'error': 'Agent Server timeout'})}\n\n")
         except Exception as e:
-            self.write(f'data: {json.dumps({"error": str(e)})}\n\n')
+            self.write(f"data: {json.dumps({'error': str(e)})}\n\n")
         finally:
             self.finish()
 
@@ -427,6 +1176,7 @@ class HealthHandler(APIHandler):
             else:
                 # In proxy mode, check agent server connectivity
                 from .config import get_agent_server_config
+
                 config = get_agent_server_config()
 
                 agent_server_healthy = False
@@ -449,10 +1199,12 @@ class HealthHandler(APIHandler):
 
         except Exception as e:
             logger.error(f"Health check failed: {e}")
-            self.write({
-                "status": "degraded",
-                "error": str(e),
-            })
+            self.write(
+                {
+                    "status": "degraded",
+                    "error": str(e),
+                }
+            )
 
 
 class ConfigProxyHandler(BaseProxyHandler):
@@ -583,7 +1335,11 @@ class LangChainStreamProxyHandler(StreamProxyHandler):
     async def post(self, *args, **kwargs):
         """Inject workspaceRoot based on Jupyter server root."""
         try:
-            body = json.loads(self.request.body.decode("utf-8")) if self.request.body else {}
+            body = (
+                json.loads(self.request.body.decode("utf-8"))
+                if self.request.body
+                else {}
+            )
             server_root = self.settings.get("server_root_dir", os.getcwd())
             server_root = os.path.expanduser(server_root)
             resolved_root = _resolve_workspace_root(server_root)
@@ -613,12 +1369,14 @@ class LangChainStreamProxyHandler(StreamProxyHandler):
                         self.write(chunk)
                         await self.flush()
         except httpx.ConnectError:
-            self.write(f'data: {json.dumps({"error": "Agent Server is not available"})}\n\n')
+            self.write(
+                f"data: {json.dumps({'error': 'Agent Server is not available'})}\n\n"
+            )
         except httpx.TimeoutException:
-            self.write(f'data: {json.dumps({"error": "Agent Server timeout"})}\n\n')
+            self.write(f"data: {json.dumps({'error': 'Agent Server timeout'})}\n\n")
         except Exception as e:
             logger.error(f"LangChainStreamProxy error: {e}", exc_info=True)
-            self.write(f'data: {json.dumps({"error": str(e)})}\n\n')
+            self.write(f"data: {json.dumps({'error': str(e)})}\n\n")
         finally:
             self.finish()
 
@@ -632,7 +1390,11 @@ class LangChainResumeProxyHandler(StreamProxyHandler):
     async def post(self, *args, **kwargs):
         """Inject workspaceRoot based on Jupyter server root."""
         try:
-            body = json.loads(self.request.body.decode("utf-8")) if self.request.body else {}
+            body = (
+                json.loads(self.request.body.decode("utf-8"))
+                if self.request.body
+                else {}
+            )
             server_root = self.settings.get("server_root_dir", os.getcwd())
             server_root = os.path.expanduser(server_root)
             resolved_root = _resolve_workspace_root(server_root)
@@ -662,12 +1424,14 @@ class LangChainResumeProxyHandler(StreamProxyHandler):
                         self.write(chunk)
                         await self.flush()
         except httpx.ConnectError:
-            self.write(f'data: {json.dumps({"error": "Agent Server is not available"})}\n\n')
+            self.write(
+                f"data: {json.dumps({'error': 'Agent Server is not available'})}\n\n"
+            )
         except httpx.TimeoutException:
-            self.write(f'data: {json.dumps({"error": "Agent Server timeout"})}\n\n')
+            self.write(f"data: {json.dumps({'error': 'Agent Server timeout'})}\n\n")
         except Exception as e:
             logger.error(f"LangChainResumeProxy error: {e}", exc_info=True)
-            self.write(f'data: {json.dumps({"error": str(e)})}\n\n')
+            self.write(f"data: {json.dumps({'error': str(e)})}\n\n")
         finally:
             self.finish()
 
@@ -679,6 +1443,100 @@ class LangChainHealthProxyHandler(BaseProxyHandler):
         return "/agent/langchain/health"
 
 
+class SearchWorkspaceHandler(APIHandler):
+    """Handler for /search-workspace endpoint (runs on Jupyter server)."""
+
+    async def post(self):
+        """Execute workspace search."""
+        try:
+            body = (
+                json.loads(self.request.body.decode("utf-8"))
+                if self.request.body
+                else {}
+            )
+            pattern = (body.get("pattern") or "").strip()
+            file_types = body.get("file_types") or ["*.py", "*.ipynb"]
+            path = body.get("path") or "."
+            max_results = body.get("max_results", 50)
+            case_sensitive = bool(body.get("case_sensitive", False))
+
+            if not pattern:
+                self.set_status(400)
+                self.write({"error": "pattern is required"})
+                return
+
+            server_root = self.settings.get("server_root_dir", os.getcwd())
+            server_root = os.path.expanduser(server_root)
+            workspace_root = _resolve_workspace_root(server_root)
+
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                None,
+                _execute_search_workspace,
+                pattern,
+                file_types,
+                path,
+                max_results,
+                case_sensitive,
+                workspace_root,
+            )
+
+            self.set_header("Content-Type", "application/json")
+            self.write(result)
+
+        except Exception as e:
+            logger.error(f"Search workspace failed: {e}", exc_info=True)
+            self.set_status(500)
+            self.write({"error": str(e)})
+
+
+class SearchNotebookCellsHandler(APIHandler):
+    """Handler for /search-notebook-cells endpoint (runs on Jupyter server)."""
+
+    async def post(self):
+        """Execute notebook cells search."""
+        try:
+            body = (
+                json.loads(self.request.body.decode("utf-8"))
+                if self.request.body
+                else {}
+            )
+            pattern = (body.get("pattern") or "").strip()
+            notebook_path = body.get("notebook_path")
+            cell_type = body.get("cell_type")
+            max_results = body.get("max_results", 30)
+            case_sensitive = bool(body.get("case_sensitive", False))
+
+            if not pattern:
+                self.set_status(400)
+                self.write({"error": "pattern is required"})
+                return
+
+            server_root = self.settings.get("server_root_dir", os.getcwd())
+            server_root = os.path.expanduser(server_root)
+            workspace_root = _resolve_workspace_root(server_root)
+
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                None,
+                _execute_search_notebook_cells,
+                pattern,
+                notebook_path,
+                cell_type,
+                max_results,
+                case_sensitive,
+                workspace_root,
+            )
+
+            self.set_header("Content-Type", "application/json")
+            self.write(result)
+
+        except Exception as e:
+            logger.error(f"Search notebook cells failed: {e}", exc_info=True)
+            self.set_status(500)
+            self.write({"error": str(e)})
+
+
 class RAGReindexHandler(APIHandler):
     """Handler for /rag/reindex endpoint using ServiceFactory."""
 
@@ -688,7 +1546,11 @@ class RAGReindexHandler(APIHandler):
             factory = _get_service_factory()
             rag_service = factory.get_rag_service()
 
-            body = json.loads(self.request.body.decode("utf-8")) if self.request.body else {}
+            body = (
+                json.loads(self.request.body.decode("utf-8"))
+                if self.request.body
+                else {}
+            )
             force = body.get("force", False)
 
             response = await rag_service.trigger_reindex(force=force)
@@ -715,43 +1577,104 @@ def setup_handlers(web_app):
         (url_path_join(base_url, "hdsp-agent", "health"), HealthHandler),
         # Config endpoint (still proxied)
         (url_path_join(base_url, "hdsp-agent", "config"), ConfigProxyHandler),
-
         # ===== ServiceFactory-based handlers =====
         # Agent endpoints
         (url_path_join(base_url, "hdsp-agent", "auto-agent", "plan"), AgentPlanHandler),
-        (url_path_join(base_url, "hdsp-agent", "auto-agent", "refine"), AgentRefineHandler),
-        (url_path_join(base_url, "hdsp-agent", "auto-agent", "replan"), AgentReplanHandler),
-        (url_path_join(base_url, "hdsp-agent", "auto-agent", "validate"), AgentValidateHandler),
-
+        (
+            url_path_join(base_url, "hdsp-agent", "auto-agent", "refine"),
+            AgentRefineHandler,
+        ),
+        (
+            url_path_join(base_url, "hdsp-agent", "auto-agent", "replan"),
+            AgentReplanHandler,
+        ),
+        (
+            url_path_join(base_url, "hdsp-agent", "auto-agent", "validate"),
+            AgentValidateHandler,
+        ),
         # Chat endpoints
         (url_path_join(base_url, "hdsp-agent", "chat", "message"), ChatMessageHandler),
         (url_path_join(base_url, "hdsp-agent", "chat", "stream"), ChatStreamHandler),
-
         # LangChain agent endpoints (proxy to agent-server)
-        (url_path_join(base_url, "hdsp-agent", "agent", "langchain", "stream"), LangChainStreamProxyHandler),
-        (url_path_join(base_url, "hdsp-agent", "agent", "langchain", "resume"), LangChainResumeProxyHandler),
-        (url_path_join(base_url, "hdsp-agent", "agent", "langchain", "health"), LangChainHealthProxyHandler),
-
+        (
+            url_path_join(base_url, "hdsp-agent", "agent", "langchain", "stream"),
+            LangChainStreamProxyHandler,
+        ),
+        (
+            url_path_join(base_url, "hdsp-agent", "agent", "langchain", "resume"),
+            LangChainResumeProxyHandler,
+        ),
+        (
+            url_path_join(base_url, "hdsp-agent", "agent", "langchain", "health"),
+            LangChainHealthProxyHandler,
+        ),
+        # Shell command execution (server-side, approval required)
+        (
+            url_path_join(base_url, "hdsp-agent", "execute-command"),
+            ExecuteCommandHandler,
+        ),
+        (
+            url_path_join(base_url, "hdsp-agent", "execute-command", "stream"),
+            ExecuteCommandStreamHandler,
+        ),
+        # File write execution (server-side, approval required)
+        (url_path_join(base_url, "hdsp-agent", "write-file"), WriteFileHandler),
+        # Search endpoints (server-side, no approval required)
+        (
+            url_path_join(base_url, "hdsp-agent", "search-workspace"),
+            SearchWorkspaceHandler,
+        ),
+        (
+            url_path_join(base_url, "hdsp-agent", "search-notebook-cells"),
+            SearchNotebookCellsHandler,
+        ),
         # RAG endpoints
         (url_path_join(base_url, "hdsp-agent", "rag", "search"), RAGSearchHandler),
         (url_path_join(base_url, "hdsp-agent", "rag", "status"), RAGStatusHandler),
         (url_path_join(base_url, "hdsp-agent", "rag", "reindex"), RAGReindexHandler),
-
         # ===== Proxy-only handlers (not yet migrated to ServiceFactory) =====
-        (url_path_join(base_url, "hdsp-agent", "auto-agent", "reflect"), AgentReflectProxyHandler),
-        (url_path_join(base_url, "hdsp-agent", "auto-agent", "verify-state"), AgentVerifyStateProxyHandler),
-        (url_path_join(base_url, "hdsp-agent", "auto-agent", "plan", "stream"), AgentPlanStreamProxyHandler),
-
+        (
+            url_path_join(base_url, "hdsp-agent", "auto-agent", "reflect"),
+            AgentReflectProxyHandler,
+        ),
+        (
+            url_path_join(base_url, "hdsp-agent", "auto-agent", "verify-state"),
+            AgentVerifyStateProxyHandler,
+        ),
+        (
+            url_path_join(base_url, "hdsp-agent", "auto-agent", "plan", "stream"),
+            AgentPlanStreamProxyHandler,
+        ),
         # Cell/File action endpoints
-        (url_path_join(base_url, "hdsp-agent", "cell", "action"), CellActionProxyHandler),
-        (url_path_join(base_url, "hdsp-agent", "file", "action"), FileActionProxyHandler),
-        (url_path_join(base_url, "hdsp-agent", "file", "resolve"), FileResolveProxyHandler),
-        (url_path_join(base_url, "hdsp-agent", "file", "select"), FileSelectProxyHandler),
-
+        (
+            url_path_join(base_url, "hdsp-agent", "cell", "action"),
+            CellActionProxyHandler,
+        ),
+        (
+            url_path_join(base_url, "hdsp-agent", "file", "action"),
+            FileActionProxyHandler,
+        ),
+        (
+            url_path_join(base_url, "hdsp-agent", "file", "resolve"),
+            FileResolveProxyHandler,
+        ),
+        (
+            url_path_join(base_url, "hdsp-agent", "file", "select"),
+            FileSelectProxyHandler,
+        ),
         # Task endpoints
-        (url_path_join(base_url, "hdsp-agent", "task", r"([^/]+)", "status"), TaskStatusProxyHandler),
-        (url_path_join(base_url, "hdsp-agent", "task", r"([^/]+)", "stream"), TaskStreamProxyHandler),
-        (url_path_join(base_url, "hdsp-agent", "task", r"([^/]+)", "cancel"), TaskCancelProxyHandler),
+        (
+            url_path_join(base_url, "hdsp-agent", "task", r"([^/]+)", "status"),
+            TaskStatusProxyHandler,
+        ),
+        (
+            url_path_join(base_url, "hdsp-agent", "task", r"([^/]+)", "stream"),
+            TaskStreamProxyHandler,
+        ),
+        (
+            url_path_join(base_url, "hdsp-agent", "task", r"([^/]+)", "cancel"),
+            TaskCancelProxyHandler,
+        ),
     ]
 
     web_app.add_handlers(host_pattern, handlers)

@@ -9,7 +9,7 @@ Tool Calling 구조:
 - read_file: 파일 읽기 (상대 경로만)
 - write_file: 파일 쓰기 (승인 필요)
 - list_files: 디렉토리 조회
-- execute_command: 셸 명령 실행 (위험 명령만 승인)
+- execute_command_tool: 셸 명령 실행 (위험 명령만 승인)
 - search_files: 파일 내용 검색
 """
 
@@ -61,7 +61,7 @@ PLAN_GENERATION_PROMPT = """Jupyter 노트북 Python 전문가. 단계별 실행
 4. **read_file**: {{"path": "상대경로"}} - 파일 읽기 (절대경로/.. 금지)
 5. **write_file**: {{"path": "상대경로", "content": "내용"}} - 파일 쓰기 (승인 필요)
 6. **list_files**: {{"path": ".", "recursive": false, "pattern": "*.py"}} - 디렉토리 조회
-7. **execute_command**: {{"command": "pip list"}} - 셸 명령 (위험 명령만 승인)
+7. **execute_command_tool**: {{"command": "pip list"}} - 셸 명령 (위험 명령만 승인)
 8. **search_files**: {{"pattern": "def func", "path": "src"}} - 파일 내용 검색
 
 ## 🚨 핵심 원칙 (CRITICAL!)
@@ -600,7 +600,7 @@ STRUCTURED_PLAN_PROMPT = """당신은 Jupyter 노트북을 위한 Python 코드 
 6. **list_files**: 디렉토리 조회
    - parameters: {{"path": ".", "recursive": false, "pattern": "*.py"}}
 
-7. **execute_command**: 셸 명령 (위험 명령만 승인)
+7. **execute_command_tool**: 셸 명령 (위험 명령만 승인)
    - parameters: {{"command": "pip list"}}
 
 8. **search_files**: 파일 내용 검색

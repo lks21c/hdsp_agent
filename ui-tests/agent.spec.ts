@@ -81,6 +81,30 @@ test.describe('HDSP Agent Extension', () => {
     });
   });
 
+  test.describe('Settings', () => {
+    test('should persist workspace root setting', async ({ page }) => {
+      await page.evaluate(() => {
+        const app = (window as any).jupyterapp;
+        if (app?.shell?.activateById) {
+          app.shell.activateById('hdsp-agent-panel');
+        }
+      });
+
+      await page.waitForSelector('.jp-agent-panel', { timeout: 10000 });
+      await page.click('.jp-agent-settings-button-icon');
+      await page.waitForSelector('.jp-agent-settings-dialog', { timeout: 10000 });
+
+      const input = page.locator('[data-testid="workspace-root-input"]');
+      await input.fill('/Users/example/workspace');
+      await page.click('.jp-agent-settings-button-primary');
+
+      const stored = await page.evaluate(() => localStorage.getItem('hdsp-agent-llm-config'));
+      expect(stored).toBeTruthy();
+      const parsed = JSON.parse(stored as string);
+      expect(parsed.workspaceRoot).toBe('/Users/example/workspace');
+    });
+  });
+
   test.describe('Network Mocking Verification', () => {
     test('should block OpenAI API calls', async ({ page }) => {
       // This test verifies that network mocking is working

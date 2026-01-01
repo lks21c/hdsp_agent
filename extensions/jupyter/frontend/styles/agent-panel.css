@@ -227,6 +227,12 @@
   max-width: 100%;
 }
 
+.jp-agent-message-content.jp-agent-message-content-shell {
+  font-family: var(--jp-code-font-family, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .jp-agent-message-user .jp-agent-message-content {
   color: white;
 }
@@ -398,6 +404,9 @@ body[data-jp-theme-light="false"] .jp-agent-input {
   overflow: hidden !important;
   background: #1e1e1e !important;
   border: 1px solid #333 !important;
+  position: relative !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
 }
 
 .jp-agent-message-content .code-block-header,
@@ -421,9 +430,51 @@ body[data-jp-theme-light="false"] .jp-agent-input {
   letter-spacing: 0.5px !important;
 }
 
+.jp-agent-message-content .code-block-language.jp-agent-interrupt-path,
+.jp-agent-message-content .jp-RenderedHTMLCommon .code-block-language.jp-agent-interrupt-path,
+.jp-RenderedHTMLCommon .jp-agent-message-content .code-block-language.jp-agent-interrupt-path {
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  font-family: var(--jp-code-font-family, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace);
+  font-weight: 500 !important;
+}
+
 .jp-agent-message-content .code-block-actions {
   display: flex;
   gap: 6px;
+}
+
+.jp-agent-message-content .code-block-toggle {
+  display: inline-flex;
+  align-items: center;
+  background: transparent !important;
+  color: #c4c4c4 !important;
+  border: 1px solid #4d4d4d !important;
+  border-radius: 3px !important;
+  padding: 4px 6px !important;
+  font-size: 11px !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+  font-weight: 500 !important;
+  line-height: 1 !important;
+  min-width: 26px;
+  justify-content: center;
+  position: absolute !important;
+  right: 10px;
+  bottom: 10px;
+  z-index: 2;
+  background: rgba(45, 45, 45, 0.9) !important;
+}
+
+.jp-agent-message-content .code-block-toggle:hover {
+  background: #3d3d3d !important;
+  color: #f1f1f1 !important;
+  border-color: #5d5d5d !important;
+}
+
+.jp-agent-message-content .code-block-toggle-icon {
+  font-size: 10px;
+  line-height: 1;
 }
 
 .jp-agent-message-content .code-block-apply {
@@ -474,6 +525,41 @@ body[data-jp-theme-light="false"] .jp-agent-input {
   background: #4d4d4d !important;
 }
 
+.jp-agent-message-content .code-block-container:not(.is-expanded) .code-block,
+.jp-agent-message-content .jp-RenderedHTMLCommon .code-block-container:not(.is-expanded) .code-block,
+.jp-RenderedHTMLCommon .jp-agent-message-content .code-block-container:not(.is-expanded) .code-block {
+  max-height: 110px !important;
+  overflow-y: hidden !important;
+  position: relative !important;
+}
+
+.jp-agent-message-content .code-block-container:not(.is-expanded) .code-block::after,
+.jp-agent-message-content .jp-RenderedHTMLCommon .code-block-container:not(.is-expanded) .code-block::after,
+.jp-RenderedHTMLCommon .jp-agent-message-content .code-block-container:not(.is-expanded) .code-block::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 28px;
+  background: linear-gradient(180deg, rgba(30, 30, 30, 0) 0%, #1e1e1e 100%);
+  pointer-events: none;
+}
+
+.jp-agent-message-content .code-block-container.is-expanded .code-block,
+.jp-agent-message-content .jp-RenderedHTMLCommon .code-block-container.is-expanded .code-block,
+.jp-RenderedHTMLCommon .jp-agent-message-content .code-block-container.is-expanded .code-block {
+  max-height: none !important;
+  overflow-x: auto !important;
+  overflow-y: visible !important;
+}
+
+.jp-agent-message-content .code-block-container.is-expanded,
+.jp-agent-message-content .jp-RenderedHTMLCommon .code-block-container.is-expanded,
+.jp-RenderedHTMLCommon .jp-agent-message-content .code-block-container.is-expanded {
+  overflow: hidden !important;
+}
+
 .jp-agent-message-content .code-block,
 .jp-agent-message-content pre.code-block,
 .jp-agent-message-content .jp-RenderedHTMLCommon .code-block,
@@ -481,7 +567,10 @@ body[data-jp-theme-light="false"] .jp-agent-input {
 .jp-RenderedHTMLCommon .jp-agent-message-content .code-block,
 .jp-RenderedHTMLCommon .jp-agent-message-content pre.code-block {
   margin: 0 !important;
-  padding: 14px !important;
+  padding: 14px 14px 36px !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
   background: #1e1e1e !important;
   overflow-x: auto !important;
   font-family: 'Menlo', 'Monaco', 'Courier New', monospace !important;

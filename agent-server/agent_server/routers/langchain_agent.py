@@ -8,6 +8,7 @@ Provides streaming and non-streaming endpoints for agent execution.
 import asyncio
 import json
 import logging
+import os
 import uuid
 from typing import Any, Dict, List, Optional
 
@@ -25,6 +26,28 @@ from agent_server.langchain.agent import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/langchain", tags=["langchain-agent"])
+
+
+def _find_project_root(start_path: str) -> str:
+    current = os.path.abspath(start_path)
+    while True:
+        if os.path.isdir(os.path.join(current, "extensions")) and os.path.isdir(
+            os.path.join(current, "agent-server")
+        ):
+            return current
+        parent = os.path.dirname(current)
+        if parent == current:
+            return os.path.abspath(start_path)
+        current = parent
+
+
+def _resolve_workspace_root(workspace_root: Optional[str]) -> str:
+    normalized = os.path.normpath(workspace_root or ".")
+    if normalized == ".":
+        return _find_project_root(os.getcwd())
+    if not os.path.isabs(normalized):
+        return os.path.abspath(os.path.join(os.getcwd(), normalized))
+    return os.path.abspath(normalized)
 
 
 # ============ Request/Response Models ============
@@ -142,6 +165,12 @@ class AgentResponse(BaseModel):
 
 _simple_agent_checkpointers: Dict[str, Any] = {}
 _simple_agent_pending_actions: Dict[str, List[Dict[str, Any]]] = {}
+_simple_agent_last_signatures: Dict[
+    str, str
+] = {}  # Track last message signature per thread
+_simple_agent_emitted_contents: Dict[
+    str, set
+] = {}  # Track emitted content hashes per thread to prevent duplicates
 
 
 def _normalize_action_request(action: Dict[str, Any]) -> Dict[str, Any]:
@@ -194,7 +223,6 @@ def _extract_todos(payload: Any) -> Optional[List[Dict[str, Any]]]:
         if isinstance(todos, list) and todos:
             return todos
     return None
-
 
 
 def _emit_todos_from_tool_calls(
@@ -254,12 +282,36 @@ def _normalize_tool_calls(raw_tool_calls: Any) -> List[Dict[str, Any]]:
 
 
 def _message_signature(message: Any) -> str:
-    """Create a stable signature to de-duplicate repeated streamed messages."""
+    """Create a stable signature to de-duplicate repeated streamed messages.
+
+    NOTE: We normalize tool_calls by removing 'execution_result' from args,
+    because the same AIMessage can be streamed again with execution results
+    added to the tool_calls args after HITL approval.
+    """
     content = getattr(message, "content", "") or ""
     tool_calls = getattr(message, "tool_calls", None)
     if tool_calls:
         try:
-            tool_calls = json.dumps(tool_calls, ensure_ascii=False, sort_keys=True)
+            # Normalize tool_calls: remove execution_result from args to ensure
+            # the same logical message has the same signature before and after execution
+            normalized_calls = []
+            for tc in tool_calls:
+                if isinstance(tc, dict):
+                    normalized_tc = {k: v for k, v in tc.items() if k != "args"}
+                    args = tc.get("args", {})
+                    if isinstance(args, dict):
+                        # Remove execution_result from args
+                        normalized_tc["args"] = {
+                            k: v for k, v in args.items() if k != "execution_result"
+                        }
+                    else:
+                        normalized_tc["args"] = args
+                    normalized_calls.append(normalized_tc)
+                else:
+                    normalized_calls.append(tc)
+            tool_calls = json.dumps(
+                normalized_calls, ensure_ascii=False, sort_keys=True
+            )
         except TypeError:
             tool_calls = str(tool_calls)
     else:
@@ -291,7 +343,9 @@ async def _async_stream_wrapper(agent, input_data, config, stream_mode="values")
         try:
             for step in agent.stream(input_data, config, stream_mode=stream_mode):
                 # Put step into queue from sync thread
-                asyncio.run_coroutine_threadsafe(queue.put(("step", step)), loop).result()
+                asyncio.run_coroutine_threadsafe(
+                    queue.put(("step", step)), loop
+                ).result()
         except Exception as e:
             asyncio.run_coroutine_threadsafe(queue.put(("error", e)), loop).result()
         finally:
@@ -385,7 +439,7 @@ async def stream_agent(request: AgentRequest):
     logger.info(
         "Stream request - threadId from request: %s, using thread_id: %s",
         request.threadId,
-        thread_id
+        thread_id,
     )
 
     async def event_generator():
@@ -427,12 +481,13 @@ async def stream_agent(request: AgentRequest):
                 "Checkpointer for thread %s: existing=%s, total_threads=%d",
                 thread_id,
                 is_existing_thread,
-                len(_simple_agent_checkpointers)
+                len(_simple_agent_checkpointers),
             )
 
+            resolved_workspace_root = _resolve_workspace_root(request.workspaceRoot)
             agent = create_simple_chat_agent(
                 llm_config=config_dict,
-                workspace_root=request.workspaceRoot or ".",
+                workspace_root=resolved_workspace_root,
                 enable_hitl=True,
                 checkpointer=checkpointer,
                 system_prompt_override=system_prompt_override,
@@ -445,11 +500,13 @@ async def stream_agent(request: AgentRequest):
             try:
                 existing_state = checkpointer.get(config)
                 if existing_state:
-                    existing_messages = existing_state.get("channel_values", {}).get("messages", [])
+                    existing_messages = existing_state.get("channel_values", {}).get(
+                        "messages", []
+                    )
                     logger.info(
                         "Existing state for thread %s: %d messages found",
                         thread_id,
-                        len(existing_messages)
+                        len(existing_messages),
                     )
                 else:
                     logger.info("No existing state for thread %s", thread_id)
@@ -467,6 +524,9 @@ async def stream_agent(request: AgentRequest):
             last_finish_reason = None
             last_signature = None
             latest_todos: Optional[List[Dict[str, Any]]] = None
+            # Initialize emitted contents set for this thread (clear any stale data)
+            emitted_contents: set = set()
+            _simple_agent_emitted_contents[thread_id] = emitted_contents
 
             # Initial status: waiting for LLM
             logger.info("SSE: Sending initial debug status '🤔 LLM 응답 대기 중'")
@@ -475,7 +535,9 @@ async def stream_agent(request: AgentRequest):
                 "data": json.dumps({"status": "🤔 LLM 응답 대기 중"}),
             }
 
-            async for step in _async_stream_wrapper(agent, agent_input, config, stream_mode="values"):
+            async for step in _async_stream_wrapper(
+                agent, agent_input, config, stream_mode="values"
+            ):
                 if isinstance(step, dict):
                     logger.info(
                         "SimpleAgent step keys: %s", ",".join(sorted(step.keys()))
@@ -509,6 +571,12 @@ async def stream_agent(request: AgentRequest):
                     if messages:
                         last_message = messages[-1]
                         signature = _message_signature(last_message)
+                        logger.info(
+                            "Initial: Signature comparison - current: %s, last: %s, match: %s",
+                            signature[:100] if signature else None,
+                            last_signature[:100] if last_signature else None,
+                            signature == last_signature,
+                        )
                         # Only process if this is a new message (not duplicate)
                         if signature != last_signature:
                             last_signature = signature
@@ -565,7 +633,9 @@ async def stream_agent(request: AgentRequest):
                                     if final_answer:
                                         yield {
                                             "event": "token",
-                                            "data": json.dumps({"content": final_answer}),
+                                            "data": json.dumps(
+                                                {"content": final_answer}
+                                            ),
                                         }
                                     else:
                                         # Fallback to raw content if no answer found
@@ -658,12 +728,18 @@ async def stream_agent(request: AgentRequest):
                                     ).get("function_call")
                                 tool_calls = _normalize_tool_calls(raw_tool_calls)
 
+                            has_final_answer_tool = False
                             if tool_calls:
+                                has_final_answer_tool = any(
+                                    (call.get("name") or call.get("tool") or "")
+                                    in ("final_answer_tool", "final_answer")
+                                    for call in tool_calls
+                                )
                                 todos = _emit_todos_from_tool_calls(tool_calls)
                                 if todos:
                                     logger.info(
                                         "SSE: Emitting todos event from AIMessage tool_calls: %d items",
-                                        len(todos)
+                                        len(todos),
                                     )
                                     latest_todos = todos
                                     yield {
@@ -674,14 +750,33 @@ async def stream_agent(request: AgentRequest):
                                     tool_name = tool_call.get("name", "unknown")
                                     tool_args = tool_call.get("args", {})
 
+                                    # Create detailed status message for search tools
+                                    if tool_name in (
+                                        "search_workspace_tool",
+                                        "search_workspace",
+                                    ):
+                                        pattern = tool_args.get("pattern", "")
+                                        path = tool_args.get("path", ".")
+                                        status_msg = f"🔍 검색 실행: grep/rg '{pattern}' in {path}"
+                                    elif tool_name in (
+                                        "search_notebook_cells_tool",
+                                        "search_notebook_cells",
+                                    ):
+                                        pattern = tool_args.get("pattern", "")
+                                        nb_path = tool_args.get(
+                                            "notebook_path", "all notebooks"
+                                        )
+                                        status_msg = f"🔍 노트북 검색: '{pattern}' in {nb_path or 'all notebooks'}"
+                                    else:
+                                        status_msg = f"🔧 Tool 실행: {tool_name}"
+
                                     logger.info(
-                                        "SSE: Emitting debug event for tool: %s", tool_name
+                                        "SSE: Emitting debug event for tool: %s",
+                                        tool_name,
                                     )
                                     yield {
                                         "event": "debug",
-                                        "data": json.dumps(
-                                            {"status": f"🔧 Tool 실행: {tool_name}"}
-                                        ),
+                                        "data": json.dumps({"status": status_msg}),
                                     }
 
                                     # Send tool_call event with details for frontend to execute
@@ -715,6 +810,77 @@ async def stream_agent(request: AgentRequest):
                                                 }
                                             ),
                                         }
+                                    elif tool_name == "execute_command_tool":
+                                        produced_output = True
+                                        yield {
+                                            "event": "tool_call",
+                                            "data": json.dumps(
+                                                {
+                                                    "tool": "execute_command_tool",
+                                                    "command": tool_args.get(
+                                                        "command", ""
+                                                    ),
+                                                    "timeout": tool_args.get("timeout"),
+                                                }
+                                            ),
+                                        }
+                                    elif tool_name in (
+                                        "search_workspace_tool",
+                                        "search_workspace",
+                                    ):
+                                        # Search workspace - emit tool_call for client-side execution
+                                        produced_output = True
+                                        yield {
+                                            "event": "tool_call",
+                                            "data": json.dumps(
+                                                {
+                                                    "tool": "search_workspace",
+                                                    "pattern": tool_args.get(
+                                                        "pattern", ""
+                                                    ),
+                                                    "file_types": tool_args.get(
+                                                        "file_types",
+                                                        ["*.py", "*.ipynb"],
+                                                    ),
+                                                    "path": tool_args.get("path", "."),
+                                                    "max_results": tool_args.get(
+                                                        "max_results", 50
+                                                    ),
+                                                    "case_sensitive": tool_args.get(
+                                                        "case_sensitive", False
+                                                    ),
+                                                }
+                                            ),
+                                        }
+                                    elif tool_name in (
+                                        "search_notebook_cells_tool",
+                                        "search_notebook_cells",
+                                    ):
+                                        # Search notebook cells - emit tool_call for client-side execution
+                                        produced_output = True
+                                        yield {
+                                            "event": "tool_call",
+                                            "data": json.dumps(
+                                                {
+                                                    "tool": "search_notebook_cells",
+                                                    "pattern": tool_args.get(
+                                                        "pattern", ""
+                                                    ),
+                                                    "notebook_path": tool_args.get(
+                                                        "notebook_path"
+                                                    ),
+                                                    "cell_type": tool_args.get(
+                                                        "cell_type"
+                                                    ),
+                                                    "max_results": tool_args.get(
+                                                        "max_results", 30
+                                                    ),
+                                                    "case_sensitive": tool_args.get(
+                                                        "case_sensitive", False
+                                                    ),
+                                                }
+                                            ),
+                                        }
 
                             # Only display content if it's not empty and not a JSON tool response
                             if (
@@ -730,22 +896,45 @@ async def stream_agent(request: AgentRequest):
                                     for part in content:
                                         if isinstance(part, str):
                                             text_parts.append(part)
-                                        elif isinstance(part, dict) and part.get("type") == "text":
+                                        elif (
+                                            isinstance(part, dict)
+                                            and part.get("type") == "text"
+                                        ):
                                             text_parts.append(part.get("text", ""))
                                     content = "\n".join(text_parts)
 
                                 # Filter out raw JSON tool responses
-                                if content and isinstance(content, str) and not (
-                                    content.strip().startswith('{"tool":')
-                                    or content.strip().startswith('{"status":')
-                                    or '"pending_execution"' in content
-                                    or '"status": "complete"' in content
+                                if (
+                                    content
+                                    and isinstance(content, str)
+                                    and not has_final_answer_tool
+                                    and not (
+                                        content.strip().startswith('{"tool":')
+                                        or content.strip().startswith('{"status":')
+                                        or '"pending_execution"' in content
+                                        or '"status": "complete"' in content
+                                    )
                                 ):
-                                    produced_output = True
-                                    yield {
-                                        "event": "token",
-                                        "data": json.dumps({"content": content}),
-                                    }
+                                    # Check if we've already emitted this content (prevents duplicates)
+                                    content_hash = hash(content)
+                                    if content_hash in emitted_contents:
+                                        logger.info(
+                                            "Initial: SKIPPING duplicate content (len=%d): %s",
+                                            len(content),
+                                            content[:100],
+                                        )
+                                    else:
+                                        emitted_contents.add(content_hash)
+                                        logger.info(
+                                            "Initial: EMITTING token content (len=%d): %s",
+                                            len(content),
+                                            content[:100],
+                                        )
+                                        produced_output = True
+                                        yield {
+                                            "event": "token",
+                                            "data": json.dumps({"content": content}),
+                                        }
 
                 # Check for interrupt AFTER processing todos and messages
                 # This ensures todos/debug events are emitted even in interrupt steps
@@ -790,6 +979,22 @@ async def stream_agent(request: AgentRequest):
                                     }
                                 ),
                             }
+
+                    # Save last signature for resume to avoid duplicate content
+                    if last_signature:
+                        _simple_agent_last_signatures[thread_id] = last_signature
+                        logger.info(
+                            "Interrupt: Saved signature for thread %s: %s",
+                            thread_id,
+                            last_signature[:100] if last_signature else None,
+                        )
+                    # Save emitted contents for resume
+                    _simple_agent_emitted_contents[thread_id] = emitted_contents
+                    logger.info(
+                        "Interrupt: Saved %d emitted content hashes for thread %s",
+                        len(emitted_contents),
+                        thread_id,
+                    )
 
                     # Stop streaming - wait for resume
                     return
@@ -928,6 +1133,24 @@ async def stream_agent(request: AgentRequest):
                                     {
                                         "tool": "markdown",
                                         "content": tool_args.get("content", ""),
+                                    }
+                                ),
+                            }
+                        elif tool_name == "execute_command_tool":
+                            produced_output = True
+                            yield {
+                                "event": "debug",
+                                "data": json.dumps(
+                                    {"status": f"🔧 Tool 실행: {tool_name}"}
+                                ),
+                            }
+                            yield {
+                                "event": "tool_call",
+                                "data": json.dumps(
+                                    {
+                                        "tool": "execute_command_tool",
+                                        "command": tool_args.get("command", ""),
+                                        "timeout": tool_args.get("timeout"),
                                     }
                                 ),
                             }
@@ -1084,9 +1307,10 @@ async def resume_agent(request: ResumeRequest):
                 request.llmConfig.system_prompt if request.llmConfig else None
             )
             # Create agent (will use same checkpointer)
+            resolved_workspace_root = _resolve_workspace_root(request.workspaceRoot)
             agent = create_simple_chat_agent(
                 llm_config=config_dict,
-                workspace_root=request.workspaceRoot or ".",
+                workspace_root=resolved_workspace_root,
                 enable_hitl=True,
                 checkpointer=_simple_agent_checkpointers.setdefault(
                     request.threadId, InMemorySaver()
@@ -1123,8 +1347,7 @@ async def resume_agent(request: ResumeRequest):
                         {
                             "type": "reject",
                             # LangChain HITL middleware expects 'message' key for reject feedback
-                            "message": decision.feedback
-                            or "User rejected this action",
+                            "message": decision.feedback or "User rejected this action",
                         }
                     )
 
@@ -1140,8 +1363,22 @@ async def resume_agent(request: ResumeRequest):
             processed_tool_call_ids: set[str] = set()
             latest_todos: Optional[List[Dict[str, Any]]] = None
 
-            # Resume with Command
-            last_signature = None
+            # Resume with Command - use saved signature to avoid duplicate content
+            last_signature = _simple_agent_last_signatures.get(request.threadId)
+            logger.info(
+                "Resume: Restored signature for thread %s: %s",
+                request.threadId,
+                last_signature[:100] if last_signature else None,
+            )
+            # Restore emitted contents set to prevent duplicate content emission
+            emitted_contents = _simple_agent_emitted_contents.get(
+                request.threadId, set()
+            )
+            logger.info(
+                "Resume: Restored %d emitted content hashes for thread %s",
+                len(emitted_contents),
+                request.threadId,
+            )
 
             # Status: waiting for LLM response
             yield {
@@ -1188,6 +1425,49 @@ async def resume_agent(request: ResumeRequest):
                     if messages:
                         last_message = messages[-1]
                         signature = _message_signature(last_message)
+                        # Debug: Show full signature details when mismatch occurs
+                        if signature != last_signature and last_signature:
+                            logger.info(
+                                "Resume: Signature MISMATCH - len(current)=%d, len(last)=%d",
+                                len(signature),
+                                len(last_signature) if last_signature else 0,
+                            )
+                            # Find first difference position
+                            min_len = min(len(signature), len(last_signature))
+                            diff_pos = next(
+                                (
+                                    i
+                                    for i in range(min_len)
+                                    if signature[i] != last_signature[i]
+                                ),
+                                min_len,
+                            )
+                            logger.info(
+                                "Resume: First diff at pos %d: current[%d:%d]='%s', last[%d:%d]='%s'",
+                                diff_pos,
+                                max(0, diff_pos - 20),
+                                min(len(signature), diff_pos + 30),
+                                signature[
+                                    max(0, diff_pos - 20) : min(
+                                        len(signature), diff_pos + 30
+                                    )
+                                ],
+                                max(0, diff_pos - 20),
+                                min(len(last_signature), diff_pos + 30),
+                                last_signature[
+                                    max(0, diff_pos - 20) : min(
+                                        len(last_signature), diff_pos + 30
+                                    )
+                                ]
+                                if last_signature
+                                else "",
+                            )
+                        logger.info(
+                            "Resume: Signature comparison - current: %s, last: %s, match: %s",
+                            signature[:100] if signature else None,
+                            last_signature[:100] if last_signature else None,
+                            signature == last_signature,
+                        )
                         # Only process if this is a new message (not duplicate)
                         if signature != last_signature:
                             last_signature = signature
@@ -1269,6 +1549,18 @@ async def resume_agent(request: ResumeRequest):
 
                         # Handle AIMessage (use elif to avoid processing after ToolMessage)
                         elif hasattr(last_message, "content") and last_message.content:
+                            message_tool_calls = (
+                                last_message.tool_calls
+                                if hasattr(last_message, "tool_calls")
+                                and last_message.tool_calls
+                                else []
+                            )
+                            has_final_answer_tool = any(
+                                (call.get("name") or call.get("tool") or "")
+                                in ("final_answer_tool", "final_answer")
+                                for call in message_tool_calls
+                                if isinstance(call, dict)
+                            )
                             content = last_message.content
 
                             # Handle list content (e.g., multimodal responses)
@@ -1278,21 +1570,44 @@ async def resume_agent(request: ResumeRequest):
                                 for part in content:
                                     if isinstance(part, str):
                                         text_parts.append(part)
-                                    elif isinstance(part, dict) and part.get("type") == "text":
+                                    elif (
+                                        isinstance(part, dict)
+                                        and part.get("type") == "text"
+                                    ):
                                         text_parts.append(part.get("text", ""))
                                 content = "\n".join(text_parts)
 
                             # Filter out raw JSON tool responses
-                            if content and isinstance(content, str) and not (
-                                content.strip().startswith('{"tool":')
-                                or content.strip().startswith('{"status":')
-                                or '"pending_execution"' in content
-                                or '"status": "complete"' in content
+                            if (
+                                content
+                                and isinstance(content, str)
+                                and not has_final_answer_tool
+                                and not (
+                                    content.strip().startswith('{"tool":')
+                                    or content.strip().startswith('{"status":')
+                                    or '"pending_execution"' in content
+                                    or '"status": "complete"' in content
+                                )
                             ):
-                                yield {
-                                    "event": "token",
-                                    "data": json.dumps({"content": content}),
-                                }
+                                # Check if we've already emitted this content (prevents duplicates)
+                                content_hash = hash(content)
+                                if content_hash in emitted_contents:
+                                    logger.info(
+                                        "Resume: SKIPPING duplicate content (len=%d): %s",
+                                        len(content),
+                                        content[:100],
+                                    )
+                                else:
+                                    emitted_contents.add(content_hash)
+                                    logger.info(
+                                        "Resume: EMITTING token content (len=%d): %s",
+                                        len(content),
+                                        content[:100],
+                                    )
+                                    yield {
+                                        "event": "token",
+                                        "data": json.dumps({"content": content}),
+                                    }
 
                         if (
                             hasattr(last_message, "tool_calls")
@@ -1336,14 +1651,35 @@ async def resume_agent(request: ResumeRequest):
                                         )
                                         continue
 
+                                    # Create detailed status message for search tools
+                                    if tool_name in (
+                                        "search_workspace_tool",
+                                        "search_workspace",
+                                    ):
+                                        pattern = tool_args.get("pattern", "")
+                                        path = tool_args.get("path", ".")
+                                        status_msg = f"🔍 검색 실행: grep/rg '{pattern}' in {path}"
+                                    elif tool_name in (
+                                        "search_notebook_cells_tool",
+                                        "search_notebook_cells",
+                                    ):
+                                        pattern = tool_args.get("pattern", "")
+                                        nb_path = tool_args.get(
+                                            "notebook_path", "all notebooks"
+                                        )
+                                        status_msg = f"🔍 노트북 검색: '{pattern}' in {nb_path or 'all notebooks'}"
+                                    else:
+                                        status_msg = f"🔧 Tool 실행: {tool_name}"
+
                                     yield {
                                         "event": "debug",
-                                        "data": json.dumps(
-                                            {"status": f"🔧 Tool 실행: {tool_name}"}
-                                        ),
+                                        "data": json.dumps({"status": status_msg}),
                                     }
 
-                                    if tool_name in ("jupyter_cell_tool", "jupyter_cell"):
+                                    if tool_name in (
+                                        "jupyter_cell_tool",
+                                        "jupyter_cell",
+                                    ):
                                         yield {
                                             "event": "tool_call",
                                             "data": json.dumps(
@@ -1362,7 +1698,77 @@ async def resume_agent(request: ResumeRequest):
                                             "data": json.dumps(
                                                 {
                                                     "tool": "markdown",
-                                                    "content": tool_args.get("content", ""),
+                                                    "content": tool_args.get(
+                                                        "content", ""
+                                                    ),
+                                                }
+                                            ),
+                                        }
+                                    elif tool_name == "execute_command_tool":
+                                        yield {
+                                            "event": "tool_call",
+                                            "data": json.dumps(
+                                                {
+                                                    "tool": "execute_command_tool",
+                                                    "command": tool_args.get(
+                                                        "command", ""
+                                                    ),
+                                                    "timeout": tool_args.get("timeout"),
+                                                }
+                                            ),
+                                        }
+                                    elif tool_name in (
+                                        "search_workspace_tool",
+                                        "search_workspace",
+                                    ):
+                                        # Search workspace - emit tool_call for client-side execution
+                                        yield {
+                                            "event": "tool_call",
+                                            "data": json.dumps(
+                                                {
+                                                    "tool": "search_workspace",
+                                                    "pattern": tool_args.get(
+                                                        "pattern", ""
+                                                    ),
+                                                    "file_types": tool_args.get(
+                                                        "file_types",
+                                                        ["*.py", "*.ipynb"],
+                                                    ),
+                                                    "path": tool_args.get("path", "."),
+                                                    "max_results": tool_args.get(
+                                                        "max_results", 50
+                                                    ),
+                                                    "case_sensitive": tool_args.get(
+                                                        "case_sensitive", False
+                                                    ),
+                                                }
+                                            ),
+                                        }
+                                    elif tool_name in (
+                                        "search_notebook_cells_tool",
+                                        "search_notebook_cells",
+                                    ):
+                                        # Search notebook cells - emit tool_call for client-side execution
+                                        yield {
+                                            "event": "tool_call",
+                                            "data": json.dumps(
+                                                {
+                                                    "tool": "search_notebook_cells",
+                                                    "pattern": tool_args.get(
+                                                        "pattern", ""
+                                                    ),
+                                                    "notebook_path": tool_args.get(
+                                                        "notebook_path"
+                                                    ),
+                                                    "cell_type": tool_args.get(
+                                                        "cell_type"
+                                                    ),
+                                                    "max_results": tool_args.get(
+                                                        "max_results", 30
+                                                    ),
+                                                    "case_sensitive": tool_args.get(
+                                                        "case_sensitive", False
+                                                    ),
                                                 }
                                             ),
                                         }
@@ -1407,6 +1813,22 @@ async def resume_agent(request: ResumeRequest):
                                     }
                                 ),
                             }
+
+                    # Save last signature for next resume to avoid duplicate content
+                    if last_signature:
+                        _simple_agent_last_signatures[request.threadId] = last_signature
+                        logger.info(
+                            "Resume Interrupt: Saved signature for thread %s: %s",
+                            request.threadId,
+                            last_signature[:100] if last_signature else None,
+                        )
+                    # Save emitted contents for next resume
+                    _simple_agent_emitted_contents[request.threadId] = emitted_contents
+                    logger.info(
+                        "Resume Interrupt: Saved %d emitted content hashes for thread %s",
+                        len(emitted_contents),
+                        request.threadId,
+                    )
 
                     # Stop streaming - wait for resume
                     return
@@ -1462,7 +1884,8 @@ async def search_workspace(
     """
     from agent_server.langchain.executors.notebook_searcher import NotebookSearcher
 
-    searcher = NotebookSearcher(workspace_root)
+    resolved_workspace_root = _resolve_workspace_root(workspace_root)
+    searcher = NotebookSearcher(resolved_workspace_root)
 
     if notebook_path:
         results = searcher.search_notebook(

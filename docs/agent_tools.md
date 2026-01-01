@@ -129,7 +129,7 @@ Python 코드 셀을 생성, 수정, 삽입합니다.
 }
 ```
 
-### execute_command
+### execute_command_tool
 
 셸 명령을 실행합니다. **위험한 명령은 사용자 승인이 필요합니다.**
 
@@ -140,7 +140,7 @@ Python 코드 셀을 생성, 수정, 삽입합니다.
 
 ```json
 {
-  "tool": "execute_command",
+  "tool": "execute_command_tool",
   "parameters": {
     "command": "pip install pandas",
     "timeout": 60
@@ -471,7 +471,7 @@ pytest 또는 unittest로 테스트를 실행합니다.
 | 🟢 low | `markdown`, `final_answer`, `read_file`, `list_files`, `search_files`, `get_cell_output`, `create_folder` |
 | 🟡 medium | `jupyter_cell`, `lint_file`, `delete_cell`, `create_notebook`, `run_tests` |
 | 🟠 high | `write_file`, `git_operations`, `install_package`, `refactor_code` |
-| 🔴 critical | `execute_command`, `delete_file` |
+| 🔴 critical | `execute_command_tool`, `delete_file` |
 
 **승인 정책:**
 - 🟢 low: 승인 불필요
