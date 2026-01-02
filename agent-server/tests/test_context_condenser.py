@@ -3,10 +3,10 @@ Unit tests for ContextCondenser - intelligent context compression.
 """
 
 import pytest
+
 from agent_server.core.context_condenser import (
-    ContextCondenser,
     CompressionStrategy,
-    CompressionStats,
+    ContextCondenser,
     get_context_condenser,
 )
 
@@ -24,7 +24,10 @@ def sample_messages():
         {"role": "user", "content": "Hello, how are you today?"},
         {"role": "assistant", "content": "I'm doing well, thank you for asking!"},
         {"role": "user", "content": "Can you help me with Python programming?"},
-        {"role": "assistant", "content": "Of course! I'd be happy to help with Python."},
+        {
+            "role": "assistant",
+            "content": "Of course! I'd be happy to help with Python.",
+        },
         {"role": "user", "content": "How do I read a file in Python?"},
     ]
 
@@ -325,6 +328,7 @@ class TestSessionManagerIntegration:
     def test_build_context_with_compress(self, tmp_path):
         """build_context with compression enabled."""
         from hdsp_agent_core.managers.session_manager import SessionManager
+
         import agent_server.core.context_condenser as cc
 
         # Reset singletons

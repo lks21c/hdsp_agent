@@ -11,6 +11,7 @@ Tools available:
 - search_workspace: Search files in workspace
 - search_notebook_cells: Search cells in notebooks
 - execute_command_tool: Run shell commands (client-executed)
+- check_resource_tool: Check resources before data processing (client-executed)
 """
 
 from agent_server.langchain.tools.file_tools import (
@@ -23,6 +24,7 @@ from agent_server.langchain.tools.jupyter_tools import (
     jupyter_cell_tool,
     markdown_tool,
 )
+from agent_server.langchain.tools.resource_tools import check_resource_tool
 from agent_server.langchain.tools.search_tools import (
     search_notebook_cells_tool,
     search_workspace_tool,
@@ -39,4 +41,5 @@ __all__ = [
     "search_workspace_tool",
     "search_notebook_cells_tool",
     "execute_command_tool",
+    "check_resource_tool",
 ]

@@ -16,13 +16,13 @@ logger = logging.getLogger(__name__)
 class ErrorHandlingMiddleware:
     """
     Middleware that handles errors after tool execution.
-    
+
     This middleware:
     1. Classifies errors using ErrorClassifier
     2. Decides on recovery strategy (refine, insert_steps, replan)
     3. Updates state with recovery information
     4. Tracks retry attempts
-    
+
     Uses @after_tool_call hook pattern from LangChain middleware.
     """
 
@@ -35,7 +35,7 @@ class ErrorHandlingMiddleware:
     ):
         """
         Initialize error handling middleware.
-        
+
         Args:
             error_classifier: ErrorClassifier instance
             max_retries: Maximum retry attempts per error
@@ -56,6 +56,7 @@ class ErrorHandlingMiddleware:
         if self._classifier is None:
             try:
                 from agent_server.core.error_classifier import get_error_classifier
+
                 self._classifier = get_error_classifier()
             except ImportError:
                 logger.warning("ErrorClassifier not available")
@@ -122,21 +123,31 @@ class ErrorHandlingMiddleware:
                 },
                 "reasoning": "Package installation required",
                 "changes": {
-                    "new_steps": [{
-                        "description": f"Install {module_name}",
-                        "toolCalls": [{
-                            "tool": "jupyter_cell",
-                            "parameters": {
-                                "code": f"!pip install {module_name}"
-                            }
-                        }]
-                    }]
+                    "new_steps": [
+                        {
+                            "description": f"Install {module_name}",
+                            "toolCalls": [
+                                {
+                                    "tool": "jupyter_cell",
+                                    "parameters": {
+                                        "code": f"!pip install {module_name}"
+                                    },
+                                }
+                            ],
+                        }
+                    ]
                 },
                 "confidence": 0.9,
             }
 
         # Syntax/Type/Value errors -> refine code
-        if error_type in ("SyntaxError", "TypeError", "ValueError", "KeyError", "IndexError"):
+        if error_type in (
+            "SyntaxError",
+            "TypeError",
+            "ValueError",
+            "KeyError",
+            "IndexError",
+        ):
             return {
                 "decision": "refine",
                 "analysis": {
@@ -202,16 +213,16 @@ class ErrorHandlingMiddleware:
     ) -> Optional[Dict[str, Any]]:
         """
         Hook called after each tool execution.
-        
+
         Handles errors and updates recovery strategy.
-        
+
         Args:
             tool_name: Name of the tool that was called
             tool_input: Tool input parameters
             tool_result: Result from tool execution
             state: Current agent state
             runtime: Agent runtime context
-            
+
         Returns:
             Modified result or None
         """
@@ -279,10 +290,10 @@ class ErrorHandlingMiddleware:
     ) -> str:
         """
         Format error information for feedback to the model.
-        
+
         Args:
             last_error: Last error information from state
-            
+
         Returns:
             Formatted feedback string
         """
@@ -322,12 +333,12 @@ def create_error_handling_middleware(
 ) -> ErrorHandlingMiddleware:
     """
     Factory function to create error handling middleware.
-    
+
     Args:
         max_retries: Maximum retry attempts
         use_llm_fallback: Use LLM for complex errors
         enabled: Whether to enable error handling
-        
+
     Returns:
         Configured ErrorHandlingMiddleware instance
     """

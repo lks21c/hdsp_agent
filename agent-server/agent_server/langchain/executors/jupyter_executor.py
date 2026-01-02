@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ExecutionResult:
     """Result of code execution in Jupyter kernel"""
+
     success: bool
     output: str = ""
     error_type: Optional[str] = None
@@ -46,10 +47,10 @@ class ExecutionResult:
 class JupyterExecutor:
     """
     Executes code in Jupyter kernel (Embedded Mode).
-    
+
     In Embedded Mode, this class directly accesses the Jupyter server's
     kernel manager and contents manager to execute code and modify notebooks.
-    
+
     Usage:
         executor = JupyterExecutor()
         await executor.initialize(kernel_id, notebook_path)
@@ -77,13 +78,13 @@ class JupyterExecutor:
     ) -> bool:
         """
         Initialize the executor with kernel and notebook information.
-        
+
         Args:
             kernel_id: ID of the kernel to use
             notebook_path: Path to the notebook file
             kernel_manager: Jupyter's MappingKernelManager (optional, auto-detect)
             contents_manager: Jupyter's ContentsManager (optional, auto-detect)
-            
+
         Returns:
             True if initialization successful
         """
@@ -120,12 +121,14 @@ class JupyterExecutor:
         """Try to get kernel manager from Jupyter server app"""
         try:
             from jupyter_server.serverapp import ServerApp
+
             app = ServerApp.instance()
             return app.kernel_manager
         except Exception:
             try:
                 # Fallback for older versions
                 from notebook.notebookapp import NotebookApp
+
                 app = NotebookApp.instance()
                 return app.kernel_manager
             except Exception:
@@ -135,11 +138,13 @@ class JupyterExecutor:
         """Try to get contents manager from Jupyter server app"""
         try:
             from jupyter_server.serverapp import ServerApp
+
             app = ServerApp.instance()
             return app.contents_manager
         except Exception:
             try:
                 from notebook.notebookapp import NotebookApp
+
                 app = NotebookApp.instance()
                 return app.contents_manager
             except Exception:
@@ -153,12 +158,12 @@ class JupyterExecutor:
     ) -> ExecutionResult:
         """
         Execute Python code in the Jupyter kernel.
-        
+
         Args:
             code: Python code to execute
             timeout: Execution timeout in seconds
             add_to_notebook: Whether to add the code as a new cell
-            
+
         Returns:
             ExecutionResult with output or error
         """
@@ -166,7 +171,7 @@ class JupyterExecutor:
             return ExecutionResult(
                 success=False,
                 error_type="NotInitialized",
-                error_message="Executor not initialized. Call initialize() first."
+                error_message="Executor not initialized. Call initialize() first.",
             )
 
         # If no kernel manager, use mock execution
@@ -189,28 +194,20 @@ class JupyterExecutor:
             return ExecutionResult(
                 success=False,
                 error_type="TimeoutError",
-                error_message=f"Execution timed out after {timeout} seconds"
+                error_message=f"Execution timed out after {timeout} seconds",
             )
         except Exception as e:
             logger.error(f"Execution failed: {e}")
             return ExecutionResult(
-                success=False,
-                error_type=type(e).__name__,
-                error_message=str(e)
+                success=False, error_type=type(e).__name__, error_message=str(e)
             )
 
-    async def _execute_in_kernel(
-        self,
-        code: str,
-        timeout: float
-    ) -> ExecutionResult:
+    async def _execute_in_kernel(self, code: str, timeout: float) -> ExecutionResult:
         """Execute code using kernel client"""
         # This is a simplified implementation
         # In production, you would use jupyter_client's async API
 
         try:
-            from jupyter_client import KernelClient
-
             # Get connection info from kernel manager
             km = self._kernel_manager
             kernel = km.get_kernel(self._kernel_id)
@@ -250,7 +247,9 @@ class JupyterExecutor:
                     if msg_type == "stream":
                         output_parts.append(content.get("text", ""))
                     elif msg_type == "execute_result":
-                        output_parts.append(str(content.get("data", {}).get("text/plain", "")))
+                        output_parts.append(
+                            str(content.get("data", {}).get("text/plain", ""))
+                        )
                         execution_count = content.get("execution_count", 0)
                     elif msg_type == "display_data":
                         display_data.append(content.get("data", {}))
@@ -260,7 +259,10 @@ class JupyterExecutor:
                             "evalue": content.get("evalue", ""),
                             "traceback": content.get("traceback", []),
                         }
-                    elif msg_type == "status" and content.get("execution_state") == "idle":
+                    elif (
+                        msg_type == "status"
+                        and content.get("execution_state") == "idle"
+                    ):
                         break
 
                 if error_info:
@@ -382,8 +384,9 @@ class JupyterExecutor:
             defined_variables = set()
 
             import re
-            import_pattern = re.compile(r'^(?:import|from)\s+([\w.]+)', re.MULTILINE)
-            var_pattern = re.compile(r'^(\w+)\s*=', re.MULTILINE)
+
+            import_pattern = re.compile(r"^(?:import|from)\s+([\w.]+)", re.MULTILINE)
+            var_pattern = re.compile(r"^(\w+)\s*=", re.MULTILINE)
 
             for cell in cells:
                 if cell.get("cell_type") != "code":

@@ -73,7 +73,7 @@ class WatchdogService:
             return True
 
         try:
-            from watchdog.events import FileSystemEvent, FileSystemEventHandler
+            from watchdog.events import FileSystemEventHandler
             from watchdog.observers import Observer
         except ImportError:
             logger.warning(

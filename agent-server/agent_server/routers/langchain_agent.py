@@ -10,7 +10,7 @@ import json
 import logging
 import os
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from fastapi import APIRouter, HTTPException
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -66,6 +66,11 @@ class LLMConfig(BaseModel):
         default=None,
         alias="systemPrompt",
         description="Override system prompt for LangChain agent",
+    )
+    resource_context: Optional[Union[Dict[str, Any], str]] = Field(
+        default=None,
+        alias="resourceContext",
+        description="Client resource usage snapshot for prompt injection",
     )
 
 
@@ -429,7 +434,11 @@ async def stream_agent(request: AgentRequest):
     - error: Error events
     """
 
-    logger.info(f"Agent stream request: {request.request[:100]}...")
+    logger.info(
+        "Agent stream request received: length=%d chars, first 100='%s...'",
+        len(request.request),
+        request.request[:100],
+    )
 
     if not request.request:
         raise HTTPException(status_code=400, detail="Request is required")
@@ -468,6 +477,8 @@ async def stream_agent(request: AgentRequest):
                     config_dict["openai"] = request.llmConfig.openai
                 if request.llmConfig.vllm:
                     config_dict["vllm"] = request.llmConfig.vllm
+                if request.llmConfig.resource_context:
+                    config_dict["resource_context"] = request.llmConfig.resource_context
             system_prompt_override = (
                 request.llmConfig.system_prompt if request.llmConfig else None
             )
@@ -1303,6 +1314,8 @@ async def resume_agent(request: ResumeRequest):
                     config_dict["openai"] = request.llmConfig.openai
                 if request.llmConfig.vllm:
                     config_dict["vllm"] = request.llmConfig.vllm
+                if request.llmConfig.resource_context:
+                    config_dict["resource_context"] = request.llmConfig.resource_context
             system_prompt_override = (
                 request.llmConfig.system_prompt if request.llmConfig else None
             )

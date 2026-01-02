@@ -6,6 +6,7 @@ ErrorClassifier Unit Tests
 """
 
 import pytest
+
 from agent_server.core.error_classifier import (
     ErrorClassifier,
     ReplanDecision,
@@ -118,7 +119,10 @@ class TestOSErrorAndDlopen:
 
         # Linux 패턴이 매칭되면 REPLAN_REMAINING, 아니면 일반 OSError로 REFINE
         # 현재 패턴이 정확히 매칭되지 않으면 REFINE이 됨
-        assert result.decision in (ReplanDecision.REPLAN_REMAINING, ReplanDecision.REFINE)
+        assert result.decision in (
+            ReplanDecision.REPLAN_REMAINING,
+            ReplanDecision.REFINE,
+        )
 
     def test_general_oserror_triggers_refine(self):
         """일반 OSError → REFINE"""

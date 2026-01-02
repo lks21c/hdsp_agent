@@ -2,16 +2,11 @@
 Unit tests for SessionManager - persistent session storage.
 """
 
-import json
 import pytest
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-import tempfile
-
 from hdsp_agent_core.managers.session_manager import (
-    SessionManager,
-    Session,
     ChatMessage,
+    Session,
+    SessionManager,
     get_session_manager,
 )
 
@@ -274,7 +269,9 @@ class TestSessionPersistence:
 class TestSingletonAccessor:
     """Tests for get_session_manager singleton accessor."""
 
-    def test_get_session_manager_returns_singleton(self, temp_storage_path, monkeypatch):
+    def test_get_session_manager_returns_singleton(
+        self, temp_storage_path, monkeypatch
+    ):
         """get_session_manager returns same instance."""
         # Reset singleton and global accessor
         SessionManager._instance = None

@@ -5,16 +5,14 @@ Error Recovery Scenarios - E2E Integration Tests
 전체 흐름: 에러 발생 → 분류 → 상태 검증 → 복구 결정
 """
 
-import pytest
 from agent_server.core.error_classifier import (
     ErrorClassifier,
     ReplanDecision,
-    ErrorAnalysis,
 )
 from agent_server.core.state_verifier import (
-    StateVerifier,
-    Recommendation,
     MismatchType,
+    Recommendation,
+    StateVerifier,
 )
 
 

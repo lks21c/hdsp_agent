@@ -21,12 +21,12 @@ logger = logging.getLogger(__name__)
 class CodeSearchMiddleware:
     """
     Middleware that searches for relevant code before model calls.
-    
+
     This middleware:
     1. Extracts search terms from the user request
     2. Searches workspace files and notebook cells
     3. Injects relevant code context into the state
-    
+
     Uses @before_model hook pattern from LangChain middleware.
     """
 
@@ -70,7 +70,7 @@ class CodeSearchMiddleware:
     def _extract_search_terms(self, request: str) -> List[str]:
         """
         Extract potential search terms from user request.
-        
+
         Looks for:
         - Variable names (snake_case, camelCase)
         - Function calls (func_name(), methodName())
@@ -86,33 +86,117 @@ class CodeSearchMiddleware:
 
         # Extract potential identifiers (excluding common words)
         common_words = {
-            "the", "a", "an", "is", "are", "was", "were", "be", "been",
-            "have", "has", "had", "do", "does", "did", "will", "would",
-            "could", "should", "may", "might", "must", "shall", "can",
-            "for", "and", "or", "but", "in", "on", "at", "to", "from",
-            "with", "by", "about", "into", "through", "during", "before",
-            "after", "above", "below", "between", "under", "again",
-            "further", "then", "once", "here", "there", "when", "where",
-            "why", "how", "all", "each", "every", "both", "few", "more",
-            "most", "other", "some", "such", "no", "nor", "not", "only",
-            "own", "same", "so", "than", "too", "very", "just", "also",
-            "now", "please", "help", "want", "need", "make", "create",
-            "use", "using", "show", "display", "get", "set", "add",
-            "remove", "delete", "update", "change", "modify", "fix",
+            "the",
+            "a",
+            "an",
+            "is",
+            "are",
+            "was",
+            "were",
+            "be",
+            "been",
+            "have",
+            "has",
+            "had",
+            "do",
+            "does",
+            "did",
+            "will",
+            "would",
+            "could",
+            "should",
+            "may",
+            "might",
+            "must",
+            "shall",
+            "can",
+            "for",
+            "and",
+            "or",
+            "but",
+            "in",
+            "on",
+            "at",
+            "to",
+            "from",
+            "with",
+            "by",
+            "about",
+            "into",
+            "through",
+            "during",
+            "before",
+            "after",
+            "above",
+            "below",
+            "between",
+            "under",
+            "again",
+            "further",
+            "then",
+            "once",
+            "here",
+            "there",
+            "when",
+            "where",
+            "why",
+            "how",
+            "all",
+            "each",
+            "every",
+            "both",
+            "few",
+            "more",
+            "most",
+            "other",
+            "some",
+            "such",
+            "no",
+            "nor",
+            "not",
+            "only",
+            "own",
+            "same",
+            "so",
+            "than",
+            "too",
+            "very",
+            "just",
+            "also",
+            "now",
+            "please",
+            "help",
+            "want",
+            "need",
+            "make",
+            "create",
+            "use",
+            "using",
+            "show",
+            "display",
+            "get",
+            "set",
+            "add",
+            "remove",
+            "delete",
+            "update",
+            "change",
+            "modify",
+            "fix",
         }
 
         # Look for identifiers (snake_case, camelCase, PascalCase)
-        identifiers = re.findall(r'\b([a-zA-Z_][a-zA-Z0-9_]*)\b', request)
+        identifiers = re.findall(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\b", request)
         for ident in identifiers:
             if ident.lower() not in common_words and len(ident) > 2:
                 terms.add(ident)
 
         # Look for file patterns
-        file_patterns = re.findall(r'\b(\w+\.(?:py|ipynb|csv|json|txt))\b', request)
+        file_patterns = re.findall(r"\b(\w+\.(?:py|ipynb|csv|json|txt))\b", request)
         terms.update(file_patterns)
 
         # Look for function/method calls
-        func_calls = re.findall(r'\b(\w+)\s*\(', request)
+        func_calls = re.findall(r"\b(\w+)\s*\(", request)
         for func in func_calls:
             if func.lower() not in common_words:
                 terms.add(func)
@@ -177,13 +261,15 @@ class CodeSearchMiddleware:
                         max_results=3,
                     )
                     for match in results.matches:
-                        search_results.append(SearchResult(
-                            file_path=match.file_path,
-                            cell_index=match.cell_index,
-                            line_number=match.line_number,
-                            content=match.content,
-                            match_type="cell",
-                        ))
+                        search_results.append(
+                            SearchResult(
+                                file_path=match.file_path,
+                                cell_index=match.cell_index,
+                                line_number=match.line_number,
+                                content=match.content,
+                                match_type="cell",
+                            )
+                        )
                 except Exception as e:
                     logger.warning(f"Notebook search failed: {e}")
 
@@ -199,23 +285,25 @@ class CodeSearchMiddleware:
                     for match in results.matches:
                         # Avoid duplicates
                         if not any(
-                            r["file_path"] == match.file_path and
-                            r.get("line_number") == match.line_number
+                            r["file_path"] == match.file_path
+                            and r.get("line_number") == match.line_number
                             for r in search_results
                         ):
-                            search_results.append(SearchResult(
-                                file_path=match.file_path,
-                                cell_index=match.cell_index,
-                                line_number=match.line_number,
-                                content=match.content,
-                                match_type=match.match_type,
-                            ))
+                            search_results.append(
+                                SearchResult(
+                                    file_path=match.file_path,
+                                    cell_index=match.cell_index,
+                                    line_number=match.line_number,
+                                    content=match.content,
+                                    match_type=match.match_type,
+                                )
+                            )
                 except Exception as e:
                     logger.warning(f"Workspace search failed: {e}")
 
         if search_results:
             logger.info(f"Found {len(search_results)} relevant code snippets")
-            return {"search_results": search_results[:self._max_results]}
+            return {"search_results": search_results[: self._max_results]}
 
         return None
 
@@ -225,10 +313,10 @@ class CodeSearchMiddleware:
     ) -> str:
         """
         Format search results for inclusion in the prompt.
-        
+
         Args:
             search_results: List of search results
-            
+
         Returns:
             Formatted context string
         """
@@ -237,7 +325,7 @@ class CodeSearchMiddleware:
 
         lines = ["## Relevant Code from Workspace"]
 
-        for i, result in enumerate(search_results[:self._max_results], 1):
+        for i, result in enumerate(search_results[: self._max_results], 1):
             file_path = result.get("file_path", "unknown")
             cell_idx = result.get("cell_index")
             line_num = result.get("line_number")
@@ -262,12 +350,12 @@ def create_code_search_middleware(
 ) -> CodeSearchMiddleware:
     """
     Factory function to create code search middleware.
-    
+
     Args:
         workspace_root: Root directory for searches
         max_results: Maximum results to include
         auto_search: Auto-extract search terms from request
-        
+
     Returns:
         Configured CodeSearchMiddleware instance
     """

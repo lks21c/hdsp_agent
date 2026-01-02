@@ -17,12 +17,12 @@ logger = logging.getLogger(__name__)
 class RAGMiddleware:
     """
     Middleware that injects RAG context before model calls.
-    
+
     This middleware:
     1. Detects required libraries from the user request
     2. Queries the RAG system for relevant documentation
     3. Injects the context into the agent state
-    
+
     Uses @before_model hook pattern from LangChain middleware.
     """
 
@@ -35,7 +35,7 @@ class RAGMiddleware:
     ):
         """
         Initialize RAG middleware.
-        
+
         Args:
             rag_manager: RAGManager instance for context retrieval
             library_detector: LibraryDetector for detecting required libraries
@@ -56,6 +56,7 @@ class RAGMiddleware:
         if self._rag_manager is None:
             try:
                 from agent_server.core.rag_manager import get_rag_manager
+
                 self._rag_manager = get_rag_manager()
             except ImportError:
                 logger.warning("RAG manager not available")
@@ -67,6 +68,7 @@ class RAGMiddleware:
         if self._library_detector is None:
             try:
                 from hdsp_agent_core.knowledge.loader import get_library_detector
+
                 self._library_detector = get_library_detector()
             except ImportError:
                 logger.warning("Library detector not available")
@@ -85,6 +87,7 @@ class RAGMiddleware:
 
         try:
             from hdsp_agent_core.knowledge.loader import get_knowledge_base
+
             knowledge_base = get_knowledge_base()
             available = knowledge_base.list_available_libraries()
 
@@ -119,7 +122,7 @@ class RAGMiddleware:
             )
 
             if context and len(context) > self._max_context_length:
-                context = context[:self._max_context_length] + "\n... (truncated)"
+                context = context[: self._max_context_length] + "\n... (truncated)"
 
             return context
         except Exception as e:
@@ -133,13 +136,13 @@ class RAGMiddleware:
     ) -> Optional[Dict[str, Any]]:
         """
         Hook called before each model invocation.
-        
+
         Injects RAG context into the state if available.
-        
+
         Args:
             state: Current agent state
             runtime: Agent runtime context
-            
+
         Returns:
             Updated state fields or None
         """
@@ -182,11 +185,11 @@ class RAGMiddleware:
     ) -> str:
         """
         Format RAG context for inclusion in the prompt.
-        
+
         Args:
             rag_context: Retrieved RAG context
             detected_libraries: List of detected libraries
-            
+
         Returns:
             Formatted context string
         """
@@ -211,12 +214,12 @@ def create_rag_middleware(
 ) -> RAGMiddleware:
     """
     Factory function to create RAG middleware.
-    
+
     Args:
         rag_manager: Optional RAGManager instance
         max_context_length: Maximum context length
         enabled: Whether to enable RAG
-        
+
     Returns:
         Configured RAGMiddleware instance
     """

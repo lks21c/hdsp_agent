@@ -389,6 +389,58 @@ class TestSearchTools:
             assert result.total_matches >= 1
 
 
+class TestResourceTools:
+    """Test resource check tool"""
+
+    def test_check_resource_tool_returns_pending_execution(self):
+        """Test that check_resource returns pending_execution status"""
+        from agent_server.langchain.tools.resource_tools import check_resource_tool
+
+        result = check_resource_tool.invoke({
+            "files": ["data.csv", "train.parquet"],
+            "dataframes": ["df", "train_df"]
+        })
+
+        assert result["status"] == "pending_execution"
+        assert result["tool"] == "check_resource_tool"
+        assert "file_size_command" in result
+        assert "dataframe_check_code" in result
+
+    def test_check_resource_tool_with_execution_result(self):
+        """Test that check_resource processes execution result correctly"""
+        from agent_server.langchain.tools.resource_tools import check_resource_tool
+
+        execution_result = {
+            "success": True,
+            "system": {
+                "ram_available_mb": 4096,
+                "ram_total_mb": 8192,
+                "cpu_cores": 4,
+                "environment": "Host/VM"
+            },
+            "files": [
+                {"name": "data.csv", "path": "data.csv", "size_mb": 100, "exists": True}
+            ],
+            "dataframes": [
+                {"name": "df", "exists": True, "rows": 1000, "cols": 10, "memory_mb": 5}
+            ]
+        }
+
+        result = check_resource_tool.invoke({
+            "files": ["data.csv"],
+            "dataframes": ["df"],
+            "execution_result": execution_result
+        })
+
+        assert result["status"] == "complete"
+        assert result["success"] is True
+        assert result["system"]["ram_available_mb"] == 4096
+        assert len(result["files"]) == 1
+        assert result["files"][0]["size_mb"] == 100
+        assert len(result["dataframes"]) == 1
+        assert result["dataframes"][0]["rows"] == 1000
+
+
 # ============ Executor Tests ============
 
 
@@ -598,6 +650,48 @@ class TestCodeSearchMiddleware:
 
         assert "titanic.csv" in terms
         assert "DataFrame" in terms
+
+
+class TestSystemPromptLogging:
+    """Test system prompt log formatting"""
+
+    def test_format_system_prompt_for_log(self):
+        """Ensure system prompt log formatting is deterministic."""
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        from agent_server.langchain.agent import _format_system_prompt_for_log
+
+        messages = [
+            HumanMessage(content="hello"),
+            SystemMessage(content="base prompt"),
+            SystemMessage(content="resource prompt"),
+        ]
+        count, length, combined = _format_system_prompt_for_log(messages)
+
+        assert count == 2
+        assert combined == "base prompt\n\nresource prompt"
+        assert length == len(combined)
+
+
+class TestLLMTraceLogger:
+    """Test prompt/response logging callback"""
+
+    def test_chat_model_logs_system_prompt(self, caplog):
+        """Ensure chat callback logs system prompt content."""
+        import logging
+
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        from agent_server.langchain.agent import LLMTraceLogger
+
+        handler = LLMTraceLogger()
+        messages = [[SystemMessage(content="base prompt"), HumanMessage(content="hi")]]
+
+        with caplog.at_level(logging.INFO):
+            handler.on_chat_model_start({}, messages)
+
+        assert "AGENT -> LLM PROMPT (batch=0" in caplog.text
+        assert "base prompt" in caplog.text
 
 
 # ============ Router Tests ============

@@ -6,7 +6,7 @@ This state is passed through the agent execution and updated by middleware.
 """
 
 from dataclasses import dataclass
-from typing import Annotated, Any, Dict, List, Optional, TypedDict
+from typing import Annotated, Any, Dict, List, Optional, TypedDict, Union
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
@@ -14,6 +14,7 @@ from langgraph.graph.message import add_messages
 
 class NotebookContext(TypedDict, total=False):
     """Current notebook context"""
+
     notebook_path: str
     cell_count: int
     imported_libraries: List[str]
@@ -24,6 +25,7 @@ class NotebookContext(TypedDict, total=False):
 
 class ExecutionResult(TypedDict, total=False):
     """Result of code execution"""
+
     success: bool
     output: str
     error_type: Optional[str]
@@ -35,6 +37,7 @@ class ExecutionResult(TypedDict, total=False):
 
 class SearchResult(TypedDict, total=False):
     """Result of code search"""
+
     file_path: str
     cell_index: Optional[int]
     line_number: Optional[int]
@@ -51,6 +54,7 @@ class AgentState(TypedDict, total=False):
     - Tool executions (execution results, search results)
     - Agent decisions (current step, plan updates)
     """
+
     # Message history - uses add_messages reducer to accumulate messages
     messages: Annotated[List[BaseMessage], add_messages]
 
@@ -87,6 +91,9 @@ class AgentState(TypedDict, total=False):
     # Detected libraries for knowledge injection
     detected_libraries: List[str]
 
+    # Resource usage context (legacy, use check_resource_tool instead)
+    resource_context: Optional[Union[Dict[str, Any], str]]
+
     # Final answer
     final_answer: Optional[str]
     is_complete: bool
@@ -96,9 +103,10 @@ class AgentState(TypedDict, total=False):
 class AgentRuntime:
     """
     Runtime context passed to middleware.
-    
+
     Contains references to executors and services needed by middleware.
     """
+
     jupyter_executor: Any = None
     notebook_searcher: Any = None
     rag_manager: Any = None
@@ -107,7 +115,7 @@ class AgentRuntime:
     workspace_root: str = "."
 
     # Execution mode
-    embedded_mode: bool = True
+    embedded_mode: bool = False
 
     # Configuration
     max_retries: int = 3
@@ -123,19 +131,20 @@ def create_initial_state(
 ) -> AgentState:
     """
     Create initial agent state from user request.
-    
+
     Args:
         user_request: Natural language request from user
         notebook_context: Current notebook state
         llm_config: LLM configuration
-        
+
     Returns:
         Initialized AgentState
     """
     return AgentState(
         messages=[],
         user_request=user_request,
-        notebook_context=notebook_context or NotebookContext(
+        notebook_context=notebook_context
+        or NotebookContext(
             notebook_path="",
             cell_count=0,
             imported_libraries=[],
@@ -154,6 +163,7 @@ def create_initial_state(
         recovery_strategy=None,
         llm_config=llm_config or {},
         detected_libraries=[],
+        resource_context=None,
         final_answer=None,
         is_complete=False,
     )

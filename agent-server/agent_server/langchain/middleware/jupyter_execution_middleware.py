@@ -21,13 +21,13 @@ logger = logging.getLogger(__name__)
 class JupyterExecutionMiddleware:
     """
     Middleware that executes code in Jupyter kernel.
-    
+
     This middleware:
     1. Wraps jupyter_cell and markdown tool calls
     2. Executes code using JupyterExecutor
     3. Returns execution results to the agent
     4. Handles execution errors and timeouts
-    
+
     Uses @wrap_tool_call hook pattern from LangChain middleware.
     """
 
@@ -40,7 +40,7 @@ class JupyterExecutionMiddleware:
     ):
         """
         Initialize Jupyter execution middleware.
-        
+
         Args:
             executor: JupyterExecutor instance
             timeout: Execution timeout in seconds
@@ -74,17 +74,17 @@ class JupyterExecutionMiddleware:
     ) -> Dict[str, Any]:
         """
         Wrap tool calls to handle Jupyter execution.
-        
+
         For jupyter_cell tools, executes code in kernel.
         For other tools, passes through to next handler.
-        
+
         Args:
             tool_name: Name of the tool
             tool_input: Tool input parameters
             next_call: Next handler in chain
             state: Current agent state
             runtime: Agent runtime context
-            
+
         Returns:
             Tool execution result
         """
@@ -93,21 +93,15 @@ class JupyterExecutionMiddleware:
 
         # Handle jupyter_cell execution
         if tool_name == "jupyter_cell_tool":
-            return await self._execute_jupyter_cell(
-                tool_input, state, runtime
-            )
+            return await self._execute_jupyter_cell(tool_input, state, runtime)
 
         # Handle markdown cell
         if tool_name == "markdown_tool":
-            return await self._add_markdown_cell(
-                tool_input, state, runtime
-            )
+            return await self._add_markdown_cell(tool_input, state, runtime)
 
         # Handle final_answer
         if tool_name == "final_answer_tool":
-            return await self._handle_final_answer(
-                tool_input, state, runtime
-            )
+            return await self._handle_final_answer(tool_input, state, runtime)
 
         # Pass through for other tools
         return await next_call(tool_name, tool_input)
@@ -285,12 +279,12 @@ def create_jupyter_execution_middleware(
 ) -> JupyterExecutionMiddleware:
     """
     Factory function to create Jupyter execution middleware.
-    
+
     Args:
         timeout: Execution timeout in seconds
         add_to_notebook: Add cells to notebook
         enabled: Whether to enable execution
-        
+
     Returns:
         Configured JupyterExecutionMiddleware instance
     """

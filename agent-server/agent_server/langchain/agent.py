@@ -4,10 +4,15 @@ LangChain Agent
 Main agent creation module for tool-driven chat execution.
 """
 
+import json
 import logging
+from functools import wraps
 from typing import Any, Dict, Optional
 
+from langchain_core.callbacks import BaseCallbackHandler
+
 from agent_server.langchain.tools import (
+    check_resource_tool,
     execute_command_tool,
     final_answer_tool,
     jupyter_cell_tool,
@@ -20,6 +25,168 @@ from agent_server.langchain.tools import (
 )
 
 logger = logging.getLogger(__name__)
+
+LOG_SEPARATOR = "=" * 96
+LOG_SUBSECTION = "-" * 96
+
+
+def _format_system_prompt_for_log(messages) -> tuple[int, int, str]:
+    from langchain_core.messages import SystemMessage
+
+    system_contents = [
+        str(getattr(msg, "content", ""))
+        for msg in messages
+        if isinstance(msg, SystemMessage)
+    ]
+    combined = "\n\n".join(system_contents)
+    return len(system_contents), len(combined), combined
+
+
+def _pretty_json(value: Any) -> str:
+    try:
+        return json.dumps(value, indent=2, ensure_ascii=False, sort_keys=True)
+    except TypeError:
+        return json.dumps(str(value), indent=2, ensure_ascii=False)
+
+
+def _serialize_message(message) -> Dict[str, Any]:
+    data: Dict[str, Any] = {"type": message.__class__.__name__}
+    content = getattr(message, "content", None)
+    if content is not None:
+        data["content"] = content
+    name = getattr(message, "name", None)
+    if name:
+        data["name"] = name
+    tool_call_id = getattr(message, "tool_call_id", None)
+    if tool_call_id:
+        data["tool_call_id"] = tool_call_id
+    tool_calls = getattr(message, "tool_calls", None)
+    if tool_calls:
+        data["tool_calls"] = tool_calls
+    additional_kwargs = getattr(message, "additional_kwargs", None)
+    if additional_kwargs:
+        data["additional_kwargs"] = additional_kwargs
+    response_metadata = getattr(message, "response_metadata", None)
+    if response_metadata:
+        data["response_metadata"] = response_metadata
+    return data
+
+
+def _format_messages_block(title: str, messages) -> str:
+    lines = [LOG_SEPARATOR, title, LOG_SEPARATOR]
+    if not messages:
+        lines.append("<empty>")
+        lines.append(LOG_SEPARATOR)
+        return "\n".join(lines)
+
+    for idx, message in enumerate(messages):
+        lines.append(f"[{idx}] {message.__class__.__name__}")
+        lines.append(_pretty_json(_serialize_message(message)))
+        if idx < len(messages) - 1:
+            lines.append(LOG_SUBSECTION)
+    lines.append(LOG_SEPARATOR)
+    return "\n".join(lines)
+
+
+def _format_json_block(title: str, payload: Any) -> str:
+    return "\n".join(
+        [
+            LOG_SEPARATOR,
+            title,
+            LOG_SEPARATOR,
+            _pretty_json(payload),
+            LOG_SEPARATOR,
+        ]
+    )
+
+
+def _format_middleware_marker(name: str, stage: str) -> str:
+    return "\n".join([LOG_SEPARATOR, f"MIDDLEWARE {stage}: {name}", LOG_SEPARATOR])
+
+
+def _with_middleware_logging(name: str):
+    def decorator(func):
+        @wraps(func)
+        def wrapped(request, handler):
+            logger.info("%s", _format_middleware_marker(name, "START"))
+            response = func(request, handler)
+            logger.info("%s", _format_middleware_marker(name, "END"))
+            return response
+
+        return wrapped
+
+    return decorator
+
+
+class LLMTraceLogger(BaseCallbackHandler):
+    """Log prompts, responses, tool calls, and tool messages."""
+
+    def _normalize_batches(self, messages):
+        if not messages:
+            return []
+        if isinstance(messages[0], (list, tuple)):
+            return messages
+        return [messages]
+
+    def _log_prompt_batches(self, title: str, messages) -> None:
+        for batch_idx, batch in enumerate(self._normalize_batches(messages)):
+            header = f"{title} (batch={batch_idx}, messages={len(batch)})"
+            logger.info("%s", _format_messages_block(header, batch))
+
+            tool_messages = [
+                msg
+                for msg in batch
+                if getattr(msg, "type", "") == "tool"
+                or msg.__class__.__name__ == "ToolMessage"
+            ]
+            if tool_messages:
+                tool_header = f"{title} TOOL MESSAGES (batch={batch_idx})"
+                logger.info("%s", _format_messages_block(tool_header, tool_messages))
+
+    def on_chat_model_start(self, serialized, messages, **kwargs) -> None:
+        if not messages:
+            logger.info(
+                "%s",
+                _format_messages_block("AGENT -> LLM PROMPT (<none>)", []),
+            )
+            return
+        self._log_prompt_batches("AGENT -> LLM PROMPT", messages)
+
+    def on_chat_model_end(self, response, **kwargs) -> None:
+        generations = getattr(response, "generations", None) or []
+        if generations and isinstance(generations[0], list):
+            batches = generations
+        else:
+            batches = [generations]
+
+        for batch_idx, batch in enumerate(batches):
+            for gen_idx, generation in enumerate(batch):
+                message = getattr(generation, "message", None)
+                if not message:
+                    continue
+
+                title = (
+                    f"LLM -> AGENT RESPONSE (batch={batch_idx}, generation={gen_idx})"
+                )
+                logger.info("%s", _format_messages_block(title, [message]))
+
+                tool_calls = getattr(message, "tool_calls", None)
+                if tool_calls:
+                    tool_title = (
+                        "LLM -> AGENT TOOL CALLS "
+                        f"(batch={batch_idx}, generation={gen_idx})"
+                    )
+                    logger.info("%s", _format_json_block(tool_title, tool_calls))
+
+    def on_llm_start(self, serialized, prompts, **kwargs) -> None:
+        if not prompts:
+            logger.info("%s", _format_json_block("LLM PROMPT (<none>)", ""))
+            return
+
+        for idx, prompt in enumerate(prompts):
+            title = f"LLM PROMPT (batch={idx}, length={len(prompt)})"
+            logger.info("%s", _format_json_block(title, prompt))
+
 
 DEFAULT_SYSTEM_PROMPT = """You are an expert Python data scientist and Jupyter notebook assistant.
 Your role is to help users with data analysis, visualization, and Python coding tasks in Jupyter notebooks. You can use only Korean
@@ -34,19 +201,25 @@ You MUST ALWAYS call a tool in every response. After any tool result, you MUST:
 NEVER end your turn without calling a tool. NEVER produce an empty response.
 
 ## Available Tools
-1. **jupyter_cell_tool**: Execute Python code in a new notebook cell
-2. **markdown_tool**: Add a markdown explanation cell
-3. **final_answer_tool**: Complete the task with a summary - REQUIRED when done
-4. **read_file_tool**: Read file contents
-5. **write_file_tool**: Write file contents
-6. **list_files_tool**: List directory contents
-7. **search_workspace_tool**: Search for patterns in workspace files
-8. **search_notebook_cells_tool**: Search for patterns in notebook cells
-9. **execute_command_tool**: Run shell commands via the client (approval required)
-    - If the command prompts for user input, MUST USE non-interactive flags or env vars (for example, `--yes`) to avoid blocking.
-    - If non-interactive execution is not possible, do NOT run the command;instruct the user to run it manually and request the key log lines needed to update todos.
-    - NEVER run long-running or endless commands (servers, watch, dev)
-10. **write_todos**: Create and update task list for complex multi-step tasks
+1. **write_todos**: Create and update task list for complex multi-step tasks
+2. **jupyter_cell_tool**: Execute Python code in a new notebook cell
+3. **markdown_tool**: Add a markdown explanation cell
+4. **final_answer_tool**: Complete the task with a summary - REQUIRED when done
+5. **read_file_tool**: Read file contents
+6. **write_file_tool**: Write file contents
+7. **list_files_tool**: List directory contents
+8. **search_workspace_tool**: Search for patterns in workspace files
+9. **search_notebook_cells_tool**: Search for patterns in notebook cells
+10. **execute_command_tool**: Run shell commands via the client (approval required)
+    - Interactive prompts are auto-answered with "y" by default
+    - NEVER run long-running commands (servers, watch, dev) or endless processes
+11. **check_resource_tool**: Check system RAM and file sizes BEFORE handling data
+
+## 🔴 MANDATORY: Resource Check Before Data Hanlding
+**ALWAYS call check_resource_tool FIRST** when the task involves:
+- Loading files: .csv, .parquet, .json, .xlsx, .pickle, .h5, .feather
+- Handling datasets(dataframe) with pandas, polars, dask, or similar libraries
+- Training ML models on data files
 
 ## Mandatory Workflow
 1. After EVERY tool result, immediately call the next tool
@@ -92,6 +265,11 @@ def _get_hitl_interrupt_config() -> Dict[str, Any]:
             "allowed_decisions": ["approve", "edit"],
             "description": "🔍 Searching notebook cells",
         },
+        # Resource check tool for client-side execution (auto-approved by frontend)
+        "check_resource_tool": {
+            "allowed_decisions": ["approve", "edit"],
+            "description": "📊 Checking system resources",
+        },
         "execute_command_tool": {
             "allowed_decisions": ["approve", "edit", "reject"],
             "description": "🖥️ Shell command requires approval",
@@ -109,6 +287,7 @@ def _get_hitl_interrupt_config() -> Dict[str, Any]:
 def _create_llm(llm_config: Dict[str, Any]):
     """Create LangChain LLM from config"""
     provider = llm_config.get("provider", "gemini")
+    callbacks = [LLMTraceLogger()]
 
     if provider == "gemini":
         from langchain_google_genai import ChatGoogleGenerativeAI
@@ -130,6 +309,7 @@ def _create_llm(llm_config: Dict[str, Any]):
             temperature=0.0,
             max_output_tokens=8192,
             convert_system_message_to_human=True,  # Better tool calling support
+            callbacks=callbacks,
         )
         return llm
 
@@ -148,6 +328,7 @@ def _create_llm(llm_config: Dict[str, Any]):
             api_key=api_key,
             temperature=0.0,
             max_tokens=4096,
+            callbacks=callbacks,
         )
         return llm
 
@@ -165,6 +346,7 @@ def _create_llm(llm_config: Dict[str, Any]):
             base_url=f"{endpoint}/v1",
             temperature=0.0,
             max_tokens=4096,
+            callbacks=callbacks,
         )
         return llm
 
@@ -184,6 +366,7 @@ def _get_all_tools():
         search_workspace_tool,
         search_notebook_cells_tool,
         execute_command_tool,
+        check_resource_tool,
     ]
 
 
@@ -256,7 +439,12 @@ Available tools:
 - final_answer_tool: Complete task. Arguments: {"answer": "<summary>"}
 - write_todos: Update task list. Arguments: {"todos": [{"content": "...", "status": "pending|in_progress|completed"}]}
 - read_file_tool: Read file. Arguments: {"path": "<file_path>"}
-- list_files_tool: List directory. Arguments: {"path": "."}
+- write_file_tool: Write file. Arguments: {"path": "<path>", "content": "<content>", "overwrite": false}
+- list_files_tool: List directory. Arguments: {"path": ".", "recursive": false}
+- search_workspace_tool: Search files. Arguments: {"pattern": "<regex>", "file_types": ["py"], "path": "."}
+- search_notebook_cells_tool: Search notebook cells. Arguments: {"pattern": "<regex>"}
+- execute_command_tool: Execute shell command. Arguments: {"command": "<command>", "stdin": "<input_for_prompts>"}
+- check_resource_tool: Check resources before data processing. Arguments: {"files": ["<path>"], "dataframes": ["<var_name>"]}
 
 Output ONLY the JSON object, no markdown, no explanation."""
 
@@ -322,6 +510,7 @@ Output ONLY the JSON object, no markdown, no explanation."""
 
     # Middleware to detect and handle empty LLM responses with JSON fallback
     @wrap_model_call
+    @_with_middleware_logging("handle_empty_response")
     def handle_empty_response(
         request: ModelRequest,
         handler,
@@ -531,6 +720,7 @@ Output ONLY the JSON object, no markdown, no explanation."""
     # Middleware to limit tool calls to one at a time
     # This prevents "Can receive only one value per step" errors with TodoListMiddleware
     @wrap_model_call
+    @_with_middleware_logging("limit_tool_calls_to_one")
     def limit_tool_calls_to_one(
         request: ModelRequest,
         handler,
@@ -584,6 +774,7 @@ Output ONLY the JSON object, no markdown, no explanation."""
 
     # Middleware to inject continuation prompt after non-HITL tool execution
     @wrap_model_call
+    @_with_middleware_logging("inject_continuation_after_non_hitl_tool")
     def inject_continuation_after_non_hitl_tool(
         request: ModelRequest,
         handler,
@@ -657,8 +848,20 @@ Output ONLY the JSON object, no markdown, no explanation."""
         """Patch dangling tool calls so the agent can continue."""
 
         def before_agent(self, state, runtime):
+            logger.info(
+                "%s",
+                _format_middleware_marker(
+                    "PatchToolCallsMiddleware.before_agent", "START"
+                ),
+            )
             messages = state.get("messages", [])
             if not messages:
+                logger.info(
+                    "%s",
+                    _format_middleware_marker(
+                        "PatchToolCallsMiddleware.before_agent", "NOOP"
+                    ),
+                )
                 return None
 
             patched = []
@@ -692,7 +895,19 @@ Output ONLY the JSON object, no markdown, no explanation."""
                             )
 
             if patched == messages:
+                logger.info(
+                    "%s",
+                    _format_middleware_marker(
+                        "PatchToolCallsMiddleware.before_agent", "NOOP"
+                    ),
+                )
                 return None
+            logger.info(
+                "%s",
+                _format_middleware_marker(
+                    "PatchToolCallsMiddleware.before_agent", "PATCHED"
+                ),
+            )
             return {"messages": Overwrite(patched)}
 
     middleware.append(PatchToolCallsMiddleware())
@@ -769,21 +984,50 @@ NEVER end your response after calling write_todos - always continue with the nex
     # Add SummarizationMiddleware to maintain context across cycles
     # This compresses older messages while preserving recent context
     try:
-        # Determine summarization model based on provider
+        # Create summarization LLM based on provider
         provider = llm_config.get("provider", "gemini")
-        if provider == "gemini":
-            summary_model = "gemini-2.0-flash"  # Use Flash for summarization
-        elif provider == "openai":
-            summary_model = "gpt-4o-mini"
-        elif provider == "vllm":
-            # For vLLM, use the same model or skip summarization
-            summary_model = None
-        else:
-            summary_model = None
+        summary_llm = None
 
-        if summary_model:
+        if provider == "gemini":
+            from langchain_google_genai import ChatGoogleGenerativeAI
+
+            gemini_config = llm_config.get("gemini", {})
+            api_key = gemini_config.get("apiKey")
+            if api_key:
+                summary_llm = ChatGoogleGenerativeAI(
+                    model="gemini-2.0-flash",
+                    google_api_key=api_key,
+                    temperature=0.0,
+                )
+        elif provider == "openai":
+            from langchain_openai import ChatOpenAI
+
+            openai_config = llm_config.get("openai", {})
+            api_key = openai_config.get("apiKey")
+            if api_key:
+                summary_llm = ChatOpenAI(
+                    model="gpt-4o-mini",
+                    api_key=api_key,
+                    temperature=0.0,
+                )
+        elif provider == "vllm":
+            from langchain_openai import ChatOpenAI
+
+            vllm_config = llm_config.get("vllm", {})
+            endpoint = vllm_config.get("endpoint", "http://localhost:8000")
+            model = vllm_config.get("model", "default")
+            api_key = vllm_config.get("apiKey", "dummy")
+
+            summary_llm = ChatOpenAI(
+                model=model,
+                api_key=api_key,
+                base_url=f"{endpoint}/v1",
+                temperature=0.0,
+            )
+
+        if summary_llm:
             summarization_middleware = SummarizationMiddleware(
-                model=summary_model,
+                model=summary_llm,
                 trigger={
                     "tokens": 8000,
                     "messages": 30,
@@ -794,7 +1038,7 @@ NEVER end your response after calling write_todos - always continue with the nex
             middleware.append(summarization_middleware)
             logger.info(
                 "Added SummarizationMiddleware with model=%s, trigger=8000 tokens/30 msgs, keep=10 msgs",
-                summary_model,
+                getattr(summary_llm, "model", str(summary_llm)),
             )
     except Exception as e:
         logger.warning("Failed to add SummarizationMiddleware: %s", e)

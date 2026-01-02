@@ -6,14 +6,14 @@ StateVerifier Unit Tests
 """
 
 import pytest
+
 from agent_server.core.state_verifier import (
-    StateVerifier,
-    StateVerificationResult,
-    MismatchType,
-    Severity,
-    Recommendation,
-    get_state_verifier,
     CONFIDENCE_THRESHOLDS,
+    MismatchType,
+    Recommendation,
+    Severity,
+    StateVerifier,
+    get_state_verifier,
 )
 
 

@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SearchMatch:
     """Single search match result"""
+
     file_path: str
     cell_index: Optional[int] = None
     cell_type: Optional[str] = None
@@ -47,6 +48,7 @@ class SearchMatch:
 @dataclass
 class SearchResults:
     """Collection of search results"""
+
     query: str
     total_matches: int
     files_searched: int
@@ -66,14 +68,14 @@ class SearchResults:
 class NotebookSearcher:
     """
     Searches notebooks and workspace files for patterns.
-    
+
     Features:
     - Search across all files in workspace
     - Search within specific notebooks
     - Filter by cell type (code/markdown)
     - Regex or literal text matching
     - Context lines around matches
-    
+
     Usage:
         searcher = NotebookSearcher(workspace_root="/path/to/workspace")
         results = searcher.search_workspace("import pandas")
@@ -137,7 +139,7 @@ class NotebookSearcher:
         end = min(len(lines), line_idx + context_lines + 1)
 
         before = "\n".join(lines[start:line_idx])
-        after = "\n".join(lines[line_idx + 1:end])
+        after = "\n".join(lines[line_idx + 1 : end])
 
         return before, after
 
@@ -153,7 +155,7 @@ class NotebookSearcher:
     ) -> SearchResults:
         """
         Search within a specific notebook.
-        
+
         Args:
             notebook_path: Path to notebook (relative to workspace)
             pattern: Search pattern
@@ -162,7 +164,7 @@ class NotebookSearcher:
             is_regex: Treat pattern as regex
             max_results: Maximum matches to return
             context_lines: Context lines around matches
-            
+
         Returns:
             SearchResults with matches
         """
@@ -200,16 +202,18 @@ class NotebookSearcher:
                 if compiled.search(line):
                     before, after = self._get_context(lines, line_idx, context_lines)
 
-                    matches.append(SearchMatch(
-                        file_path=notebook_path,
-                        cell_index=idx,
-                        cell_type=current_type,
-                        line_number=line_idx + 1,
-                        content=line.strip()[:200],
-                        context_before=before[:100],
-                        context_after=after[:100],
-                        match_type="line",
-                    ))
+                    matches.append(
+                        SearchMatch(
+                            file_path=notebook_path,
+                            cell_index=idx,
+                            cell_type=current_type,
+                            line_number=line_idx + 1,
+                            content=line.strip()[:200],
+                            context_before=before[:100],
+                            context_after=after[:100],
+                            match_type="line",
+                        )
+                    )
 
                     if len(matches) >= max_results:
                         break
@@ -238,7 +242,7 @@ class NotebookSearcher:
     ) -> SearchResults:
         """
         Search across workspace files.
-        
+
         Args:
             pattern: Search pattern
             file_patterns: File glob patterns to include (e.g., ["*.py", "*.ipynb"])
@@ -248,7 +252,7 @@ class NotebookSearcher:
             max_results: Maximum matches to return
             include_notebooks: Search in .ipynb files
             include_python: Search in .py files
-            
+
         Returns:
             SearchResults with matches
         """
@@ -335,14 +339,16 @@ class NotebookSearcher:
                     if line_idx < len(lines) - 1:
                         after = lines[line_idx + 1].strip()[:100]
 
-                    matches.append(SearchMatch(
-                        file_path=rel_path,
-                        line_number=line_idx + 1,
-                        content=line.strip()[:200],
-                        context_before=before,
-                        context_after=after,
-                        match_type="line",
-                    ))
+                    matches.append(
+                        SearchMatch(
+                            file_path=rel_path,
+                            line_number=line_idx + 1,
+                            content=line.strip()[:200],
+                            context_before=before,
+                            context_after=after,
+                            match_type="line",
+                        )
+                    )
 
                     if len(matches) >= max_results:
                         break
@@ -360,14 +366,14 @@ class NotebookSearcher:
     ) -> List[Dict[str, Any]]:
         """
         Search cells in the current notebook.
-        
+
         Convenience method for quick cell search in active notebook.
-        
+
         Args:
             notebook_path: Current notebook path
             pattern: Search pattern
             cell_type: Optional cell type filter
-            
+
         Returns:
             List of matching cells with their indices and content
         """
@@ -390,22 +396,24 @@ class NotebookSearcher:
                     "matching_lines": [],
                 }
 
-            cells_by_index[idx]["matching_lines"].append({
-                "line_number": match.line_number,
-                "content": match.content,
-            })
+            cells_by_index[idx]["matching_lines"].append(
+                {
+                    "line_number": match.line_number,
+                    "content": match.content,
+                }
+            )
 
         return list(cells_by_index.values())
 
     def get_notebook_structure(self, notebook_path: str) -> Dict[str, Any]:
         """
         Get structural overview of a notebook.
-        
+
         Returns information about cells, imports, and defined symbols.
-        
+
         Args:
             notebook_path: Path to notebook
-            
+
         Returns:
             Dict with notebook structure information
         """
@@ -420,9 +428,9 @@ class NotebookSearcher:
         imports = set()
         definitions = set()
 
-        import_pattern = re.compile(r'^(?:import|from)\s+([\w.]+)', re.MULTILINE)
-        def_pattern = re.compile(r'^(?:def|class)\s+(\w+)', re.MULTILINE)
-        var_pattern = re.compile(r'^(\w+)\s*=', re.MULTILINE)
+        import_pattern = re.compile(r"^(?:import|from)\s+([\w.]+)", re.MULTILINE)
+        def_pattern = re.compile(r"^(?:def|class)\s+(\w+)", re.MULTILINE)
+        var_pattern = re.compile(r"^(\w+)\s*=", re.MULTILINE)
 
         for idx, cell in enumerate(cells):
             cell_type = cell.get("cell_type", "code")

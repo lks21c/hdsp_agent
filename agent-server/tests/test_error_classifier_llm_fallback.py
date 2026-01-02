@@ -7,12 +7,13 @@ LLM Fallback 조건 테스트:
 3. 복잡한 에러 (트레이스백에 2개 이상 Exception)
 """
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from agent_server.core.error_classifier import (
-    ErrorClassifier,
     ErrorAnalysis,
+    ErrorClassifier,
     ReplanDecision,
 )
 

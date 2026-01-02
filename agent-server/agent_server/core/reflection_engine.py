@@ -358,7 +358,6 @@ class ReflectionEngine:
             ReflectionRecommendations: 권장사항
         """
         adjustments = []
-        reasoning = ""
 
         # 성공적인 경우
         if evaluation.checkpoint_passed and evaluation.confidence_score >= 0.7:

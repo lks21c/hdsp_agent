@@ -16,13 +16,13 @@ logger = logging.getLogger(__name__)
 class ValidationMiddleware:
     """
     Middleware that validates code before tool execution.
-    
+
     This middleware:
     1. Intercepts jupyter_cell tool calls
     2. Validates the code using CodeValidator
     3. Blocks execution if critical errors found
     4. Provides fix suggestions when possible
-    
+
     Uses @before_tool_call hook pattern from LangChain middleware.
     """
 
@@ -35,7 +35,7 @@ class ValidationMiddleware:
     ):
         """
         Initialize validation middleware.
-        
+
         Args:
             code_validator: CodeValidator instance
             block_on_errors: Block execution if errors found
@@ -56,6 +56,7 @@ class ValidationMiddleware:
         if self._validator is None:
             try:
                 from agent_server.core.code_validator import CodeValidator
+
                 self._validator = CodeValidator()
             except ImportError:
                 logger.warning("CodeValidator not available")
@@ -108,7 +109,9 @@ class ValidationMiddleware:
                 "has_errors": result.has_errors,
                 "has_warnings": result.has_warnings,
                 "summary": result.summary,
-                "dependencies": result.dependencies.to_dict() if result.dependencies else None,
+                "dependencies": result.dependencies.to_dict()
+                if result.dependencies
+                else None,
             }
         except Exception as e:
             logger.error(f"Validation failed: {e}")
@@ -127,15 +130,15 @@ class ValidationMiddleware:
     ) -> Optional[Dict[str, Any]]:
         """
         Hook called before each tool execution.
-        
+
         Validates code for jupyter_cell tool calls.
-        
+
         Args:
             tool_name: Name of the tool being called
             tool_input: Tool input parameters
             state: Current agent state
             runtime: Agent runtime context
-            
+
         Returns:
             Modified tool input, or raises exception to block
         """
@@ -155,7 +158,8 @@ class ValidationMiddleware:
         if not validation_result.get("valid", True) and self._block_on_errors:
             # Get error details
             errors = [
-                issue for issue in validation_result.get("issues", [])
+                issue
+                for issue in validation_result.get("issues", [])
                 if issue.get("severity") == "error"
             ]
 
@@ -177,7 +181,8 @@ class ValidationMiddleware:
 
         # Log warnings but allow execution
         warnings = [
-            issue for issue in validation_result.get("issues", [])
+            issue
+            for issue in validation_result.get("issues", [])
             if issue.get("severity") == "warning"
         ]
         if warnings:
@@ -191,10 +196,10 @@ class ValidationMiddleware:
     ) -> str:
         """
         Format validation result for feedback to the model.
-        
+
         Args:
             validation_result: Validation result dict
-            
+
         Returns:
             Formatted feedback string
         """
@@ -224,12 +229,12 @@ def create_validation_middleware(
 ) -> ValidationMiddleware:
     """
     Factory function to create validation middleware.
-    
+
     Args:
         block_on_errors: Block execution on validation errors
         auto_fix: Attempt auto-fix for issues
         enabled: Whether to enable validation
-        
+
     Returns:
         Configured ValidationMiddleware instance
     """

@@ -36,7 +36,7 @@ async def health_check() -> HealthResponse:
 async def status_check() -> HealthResponse:
     """
     Status check endpoint (alias for health check).
-    
+
     Returns server status, timestamp, and version.
     """
     return HealthResponse(

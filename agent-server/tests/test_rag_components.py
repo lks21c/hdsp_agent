@@ -54,11 +54,12 @@ class TestEmbeddingService:
 
     def test_e5_prefix_handling(self):
         """E5 models should add proper prefixes."""
+        from hdsp_agent_core.models.rag import EmbeddingConfig
+
         from agent_server.core.embedding_service import (
             EmbeddingService,
             reset_embedding_service,
         )
-        from hdsp_agent_core.models.rag import EmbeddingConfig
 
         reset_embedding_service()
 
@@ -267,8 +268,9 @@ class TestRetriever:
 
     def test_dense_search(self, mock_qdrant_client, mock_embedding_service):
         """Test dense vector search."""
-        from agent_server.core.retriever import Retriever
         from hdsp_agent_core.models.rag import QdrantConfig, RAGConfig
+
+        from agent_server.core.retriever import Retriever
 
         config = RAGConfig(
             qdrant=QdrantConfig(collection_name="test"),
@@ -286,8 +288,9 @@ class TestRetriever:
 
     def test_result_format(self, mock_qdrant_client, mock_embedding_service):
         """Results should have correct format."""
-        from agent_server.core.retriever import Retriever
         from hdsp_agent_core.models.rag import QdrantConfig, RAGConfig
+
+        from agent_server.core.retriever import Retriever
 
         config = RAGConfig(
             qdrant=QdrantConfig(collection_name="test"),
@@ -309,8 +312,9 @@ class TestRetriever:
         self, mock_qdrant_client, mock_embedding_service
     ):
         """Results below threshold should be filtered."""
-        from agent_server.core.retriever import Retriever
         from hdsp_agent_core.models.rag import QdrantConfig, RAGConfig
+
+        from agent_server.core.retriever import Retriever
 
         # Create results with varying scores
         mock_result_high = MagicMock()
@@ -342,8 +346,9 @@ class TestRetriever:
 
     def test_build_filter(self, mock_qdrant_client, mock_embedding_service):
         """Filter building should handle various formats."""
-        from agent_server.core.retriever import Retriever
         from hdsp_agent_core.models.rag import QdrantConfig, RAGConfig
+
+        from agent_server.core.retriever import Retriever
 
         config = RAGConfig(qdrant=QdrantConfig(collection_name="test"))
         retriever = Retriever(mock_qdrant_client, mock_embedding_service, config)
@@ -454,8 +459,9 @@ class TestRAGManager:
 
     async def test_config_disabled_returns_empty(self):
         """When RAG is disabled, get_context should return empty."""
-        from agent_server.core.rag_manager import RAGManager, reset_rag_manager
         from hdsp_agent_core.models.rag import QdrantConfig, RAGConfig
+
+        from agent_server.core.rag_manager import RAGManager, reset_rag_manager
 
         reset_rag_manager()
 
@@ -517,8 +523,9 @@ class TestWatchdogService:
 
     def test_should_process_matching_patterns(self):
         """Files matching patterns should be processed."""
-        from agent_server.knowledge.watchdog_service import WatchdogService
         from hdsp_agent_core.models.rag import WatchdogConfig
+
+        from agent_server.knowledge.watchdog_service import WatchdogService
 
         config = WatchdogConfig(
             enabled=True,
@@ -538,8 +545,9 @@ class TestWatchdogService:
 
     def test_watchdog_disabled(self):
         """Watchdog should not start when disabled."""
-        from agent_server.knowledge.watchdog_service import WatchdogService
         from hdsp_agent_core.models.rag import WatchdogConfig
+
+        from agent_server.knowledge.watchdog_service import WatchdogService
 
         config = WatchdogConfig(enabled=False)
         service = WatchdogService(config)
@@ -647,8 +655,9 @@ class TestRAGDebug:
         """search_with_debug should return vector similarity scores."""
         import asyncio
 
-        from agent_server.core.retriever import Retriever
         from hdsp_agent_core.models.rag import QdrantConfig, RAGConfig
+
+        from agent_server.core.retriever import Retriever
 
         config = RAGConfig(
             score_threshold=0.3,
@@ -679,8 +688,9 @@ class TestRAGDebug:
         """Scores should be sorted in descending order."""
         import asyncio
 
-        from agent_server.core.retriever import Retriever
         from hdsp_agent_core.models.rag import QdrantConfig, RAGConfig
+
+        from agent_server.core.retriever import Retriever
 
         config = RAGConfig(
             score_threshold=0.3,
@@ -703,8 +713,9 @@ class TestRAGDebug:
         """passed_threshold should be correctly set based on score threshold."""
         import asyncio
 
-        from agent_server.core.retriever import Retriever
         from hdsp_agent_core.models.rag import QdrantConfig, RAGConfig
+
+        from agent_server.core.retriever import Retriever
 
         config = RAGConfig(
             score_threshold=0.5,  # Higher threshold
@@ -732,8 +743,9 @@ class TestRAGDebug:
         """Timing information should be included in results."""
         import asyncio
 
-        from agent_server.core.retriever import Retriever
         from hdsp_agent_core.models.rag import QdrantConfig, RAGConfig
+
+        from agent_server.core.retriever import Retriever
 
         config = RAGConfig(
             qdrant=QdrantConfig(collection_name="test"),
