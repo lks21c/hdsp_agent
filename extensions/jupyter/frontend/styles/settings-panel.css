@@ -126,6 +126,20 @@
   color: var(--jp-ui-font-color1);
 }
 
+.jp-agent-settings-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--jp-ui-font-color1);
+}
+
+.jp-agent-settings-checkbox input {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
 /* Test Result */
 .jp-agent-settings-test-result {
   margin: 16px 20px 0;

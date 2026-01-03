@@ -679,6 +679,105 @@ body[data-jp-theme-light="false"] .jp-RenderedHTMLCommon .jp-agent-message-conte
   color: #6366f1;
 }
 
+/* Next Items Material List */
+/* Next Items - Clean Design */
+.jp-RenderedHTMLCommon .jp-next-items {
+  margin: 0;
+  border-radius: 8px;
+  background: var(--jp-layout-color1);
+  border: 1px solid var(--jp-border-color2);
+  overflow: hidden;
+  white-space: normal;
+}
+
+/* Header */
+.jp-RenderedHTMLCommon .jp-next-items-header {
+  padding: 10px 16px;
+  background: var(--jp-layout-color2);
+  border-bottom: 1px solid var(--jp-border-color2);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--jp-ui-font-color1);
+}
+
+/* List */
+.jp-RenderedHTMLCommon .jp-next-items-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--jp-layout-color1);
+  padding-left: 0 !important;
+}
+
+/* List Item */
+.jp-RenderedHTMLCommon .jp-next-items-item {
+  margin: 0;
+  padding: 12px 16px;
+  text-indent: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  list-style: none;
+  border-bottom: 1px solid var(--jp-border-color2);
+  transition: background 0.15s ease;
+}
+
+.jp-RenderedHTMLCommon .jp-next-items-item:last-child {
+  border-bottom: none;
+}
+
+.jp-RenderedHTMLCommon .jp-next-items-item:hover {
+  background: var(--jp-layout-color2);
+}
+
+.jp-RenderedHTMLCommon .jp-next-items-item:active {
+  background: var(--jp-layout-color3);
+}
+
+.jp-RenderedHTMLCommon .jp-next-items-item:focus-visible {
+  outline: 2px solid var(--jp-brand-color1);
+  outline-offset: -2px;
+}
+
+/* Text Container */
+.jp-RenderedHTMLCommon .jp-next-items-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Subject */
+.jp-RenderedHTMLCommon .jp-next-items-subject {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--jp-ui-font-color1);
+  line-height: 1.4;
+}
+
+/* Description */
+.jp-RenderedHTMLCommon .jp-next-items-description {
+  font-size: 12px;
+  color: var(--jp-ui-font-color2);
+  line-height: 1.4;
+}
+
+/* Arrow Icon */
+.jp-RenderedHTMLCommon .jp-next-items-icon {
+  width: 18px;
+  height: 18px;
+  color: var(--jp-ui-font-color3);
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.jp-RenderedHTMLCommon .jp-next-items-item:hover .jp-next-items-icon {
+  color: var(--jp-brand-color1);
+  transform: translateX(2px);
+}
+
 /* Links */
 .jp-agent-message-content a {
   color: #2563eb;

@@ -92,6 +92,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [workspaceRoot, setWorkspaceRoot] = useState(
     initConfig.workspaceRoot || ''
   );
+  const [autoApprove, setAutoApprove] = useState(
+    Boolean(initConfig.autoApprove)
+  );
 
   // Update state when currentConfig changes
   useEffect(() => {
@@ -115,6 +118,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         currentConfig.systemPrompt || getDefaultLLMConfig().systemPrompt || ''
       );
       setWorkspaceRoot(currentConfig.workspaceRoot || '');
+      setAutoApprove(Boolean(currentConfig.autoApprove));
     }
   }, [currentConfig]);
 
@@ -136,7 +140,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
       model: openaiModel
     },
     workspaceRoot: workspaceRoot.trim() ? workspaceRoot.trim() : undefined,
-    systemPrompt: systemPrompt && systemPrompt.trim() ? systemPrompt : undefined
+    systemPrompt: systemPrompt && systemPrompt.trim() ? systemPrompt : undefined,
+    autoApprove
   });
 
   // Handlers for multiple API keys
@@ -446,6 +451,19 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               </div>
             </div>
           )}
+
+          <div className="jp-agent-settings-group">
+            <label className="jp-agent-settings-label">자동 실행 승인</label>
+            <label className="jp-agent-settings-checkbox">
+              <input
+                type="checkbox"
+                checked={autoApprove}
+                onChange={(e) => setAutoApprove(e.target.checked)}
+                data-testid="auto-approve-checkbox"
+              />
+              <span>승인 없이 바로 실행 (코드/파일/셸 포함)</span>
+            </label>
+          </div>
 
           <div className="jp-agent-settings-group">
             <label className="jp-agent-settings-label">

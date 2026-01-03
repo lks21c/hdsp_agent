@@ -448,6 +448,10 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
     return next as any;
   };
 
+  const getAutoApproveEnabled = (config?: LLMConfig | null): boolean => (
+    Boolean(config?.autoApprove)
+  );
+
   const queueApprovalCell = (code: string): void => {
     const notebook = getActiveNotebookPanel();
     if (!notebook) {
@@ -926,7 +930,8 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
   };
 
   // Python 에러 메시지 처리 및 파일 수정 요청
-  const handlePythonErrorFix = async (errorMessage: string): Promise<void> => {
+  // Returns true if handled, false if should fall back to regular chat
+  const handlePythonErrorFix = async (errorMessage: string): Promise<boolean> => {
     console.log('[AgentPanel] Handling Python error fix request');
 
     // 1. 에러가 발생한 파일 경로 추출
@@ -940,8 +945,8 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
 
     if (!errorFilePath && !mainFilePath) {
       // 파일 경로를 찾을 수 없으면 일반 채팅으로 처리
-      console.log('[AgentPanel] No file path found, using regular chat');
-      return;
+      console.log('[AgentPanel] No file path found, falling back to regular chat stream');
+      return false;
     }
 
     // 2. 주요 파일 내용 로드
@@ -964,7 +969,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
         console.error('[AgentPanel] File fix API error:', error);
         addErrorMessage('파일 수정 요청 실패: ' + (error as Error).message);
       }
-      return;
+      return true;  // Handled (even if failed)
     }
 
     // 3. 관련 파일들 (imports) 로드
@@ -1007,9 +1012,11 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
       setIsLoading(true);
       const result = await apiService.fileAction(request);
       handleFileFixResponse(result.response, result.fixedFiles);
+      return true;  // Successfully handled
     } catch (error) {
       console.error('[AgentPanel] File fix API error:', error);
       addErrorMessage('파일 수정 요청 실패: ' + (error as Error).message);
+      return true;  // Handled (even if failed)
     } finally {
       setIsLoading(false);
     }
@@ -1188,6 +1195,245 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
     }
   }, [messages, isStreaming]);
 
+  const handleNextItemSelection = async (nextText: string) => {
+    const trimmed = nextText.trim();
+    if (!trimmed) return;
+
+    // Check if there's a pending interrupt (HITL approval waiting)
+    const hasPendingInterrupt = interruptData !== null;
+    
+    // Check if all todos are completed
+    const allTodosCompleted = todos.length === 0 || todos.every(t => t.status === 'completed');
+    
+    // Block if there's a pending interrupt OR if agent is running with incomplete todos
+    // Allow if all todos are completed even if streaming is finishing up
+    if (hasPendingInterrupt || (isAgentRunning && !allTodosCompleted)) {
+      showNotification('다른 작업이 진행 중입니다. 완료 후 다시 시도해주세요.', 'warning');
+      return;
+    }
+
+    await sendChatMessage({
+      displayContent: trimmed,
+      clearInput: true
+    });
+  };
+
+  const sendChatMessage = async ({
+    displayContent,
+    llmPrompt,
+    textarea,
+    clearInput = true
+  }: {
+    displayContent: string;
+    llmPrompt?: string | null;
+    textarea?: HTMLTextAreaElement | null;
+    clearInput?: boolean;
+  }) => {
+    const displayContentText = displayContent || (llmPrompt ? '셀 분석 요청' : '');
+    if (!displayContentText && !llmPrompt) return;
+
+    // Check if API key is configured before sending
+    let currentConfig = llmConfig;
+    if (!currentConfig) {
+      // Config not loaded yet, try to load from localStorage
+      currentConfig = getLLMConfig() || getDefaultLLMConfig();
+      setLlmConfig(currentConfig);
+    }
+
+    // Check API key using ApiKeyManager
+    const hasApiKey = hasValidApiKey(currentConfig);
+    const autoApproveEnabled = getAutoApproveEnabled(currentConfig);
+
+    if (!hasApiKey) {
+      // Show error message and open settings
+      const providerName = currentConfig?.provider || 'LLM';
+      const errorMessage: IChatMessage = {
+        id: makeMessageId(),
+        role: 'assistant',
+        content: `API Key가 설정되지 않았습니다.\n\n${providerName === 'gemini' ? 'Gemini' : providerName === 'openai' ? 'OpenAI' : 'vLLM'} API Key를 먼저 설정해주세요.\n\n설정 버튼을 클릭하여 API Key를 입력하세요.`,
+        timestamp: Date.now()
+      };
+      setMessages(prev => [...prev, errorMessage]);
+      setShowSettings(true);
+      return;
+    }
+
+    const userMessage: IChatMessage = {
+      id: makeMessageId(),
+      role: 'user',
+      content: displayContentText,
+      timestamp: Date.now()
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    if (clearInput && displayContentText) {
+      setInput('');
+    }
+    setIsLoading(true);
+    setIsStreaming(true);
+    // Clear todos only when starting a new task (all completed or no todos)
+    // Keep todos if there are pending/in_progress items (continuation of current task)
+    const hasActiveTodos = todos.some(t => t.status === 'pending' || t.status === 'in_progress');
+    if (!hasActiveTodos) {
+      setTodos([]);
+    }
+    setDebugStatus(null);
+
+    // Clear the data attribute and ref after using it
+    if (textarea && llmPrompt) {
+      textarea.removeAttribute('data-llm-prompt');
+      pendingLlmPromptRef.current = null;
+    }
+
+    // Create assistant message ID for streaming updates
+    const assistantMessageId = makeMessageId('assistant');
+    let streamedContent = '';
+    setStreamingMessageId(assistantMessageId);
+
+    // Add empty assistant message that will be updated during streaming
+    const initialAssistantMessage: IChatMessage = {
+      id: assistantMessageId,
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now()
+    };
+    setMessages(prev => [...prev, initialAssistantMessage]);
+
+    try {
+      // Use LLM prompt if available, otherwise use the display content
+      const messageToSend = llmPrompt || displayContentText;
+
+      console.log('[AgentPanel] Sending message with agentThreadId:', agentThreadId);
+
+      await apiService.sendMessageStream(
+        {
+          message: messageToSend,
+          conversationId: conversationId || undefined,
+          llmConfig: currentConfig  // Include API keys with request
+        },
+        // onChunk callback - update message content incrementally
+        (chunk: string) => {
+          streamedContent += chunk;
+          setMessages(prev =>
+            prev.map(msg =>
+              msg.id === assistantMessageId && isChatMessage(msg)
+                ? { ...msg, content: streamedContent }
+                : msg
+            )
+          );
+        },
+        // onMetadata callback - update conversationId and metadata
+        (metadata) => {
+          if (metadata.conversationId && !conversationId) {
+            setConversationId(metadata.conversationId);
+          }
+          if (metadata.provider || metadata.model) {
+            setMessages(prev =>
+              prev.map(msg =>
+                msg.id === assistantMessageId && isChatMessage(msg)
+                  ? {
+                      ...msg,
+                      metadata: {
+                        ...msg.metadata,
+                        provider: metadata.provider,
+                        model: metadata.model
+                      }
+                    }
+                  : msg
+              )
+            );
+          }
+        },
+        // onDebug callback - show debug status in gray
+        (status: string) => {
+          setDebugStatus(status);
+        },
+        // onInterrupt callback - show approval dialog
+        (interrupt) => {
+          approvalPendingRef.current = true;
+
+          // Capture threadId from interrupt for context persistence
+          if (interrupt.threadId && !agentThreadId) {
+            setAgentThreadId(interrupt.threadId);
+            console.log('[AgentPanel] Captured agentThreadId from interrupt:', interrupt.threadId);
+          }
+
+          // Auto-approve search/file/resource tools - execute immediately without user interaction
+          if (
+            interrupt.action === 'search_workspace_tool'
+            || interrupt.action === 'search_notebook_cells_tool'
+            || interrupt.action === 'check_resource_tool'
+            || interrupt.action === 'list_files_tool'
+            || interrupt.action === 'read_file_tool'
+          ) {
+            void handleAutoToolInterrupt(interrupt);
+            return;
+          }
+
+          if (autoApproveEnabled) {
+            void resumeFromInterrupt(interrupt, 'approve');
+            return;
+          }
+          if (interrupt.action === 'jupyter_cell_tool' && interrupt.args?.code) {
+            const shouldQueue = shouldExecuteInNotebook(interrupt.args.code);
+            if (isAutoApprovedCode(interrupt.args.code)) {
+              if (shouldQueue) {
+                queueApprovalCell(interrupt.args.code);
+              }
+              void resumeFromInterrupt(interrupt, 'approve');
+              return;
+            }
+            if (shouldQueue) {
+              queueApprovalCell(interrupt.args.code);
+            }
+          }
+          setInterruptData(interrupt);
+          upsertInterruptMessage(interrupt);
+          setIsLoading(false);
+          setIsStreaming(false);
+        },
+        // onTodos callback - update todo list UI
+        (newTodos) => {
+          setTodos(newTodos);
+        },
+        // onDebugClear callback - clear debug status
+        () => {
+          setDebugStatus(null);
+        },
+        // onToolCall callback - add cells to notebook
+        handleToolCall,
+        // onComplete callback - capture thread_id for context persistence
+        (data) => {
+          if (data.threadId) {
+            setAgentThreadId(data.threadId);
+            console.log('[AgentPanel] Captured agentThreadId for context persistence:', data.threadId);
+          }
+        },
+        // threadId - pass existing thread_id to continue context
+        agentThreadId || undefined
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to send message';
+      setDebugStatus(`오류: ${message}`);
+      // Update the assistant message with error
+      setMessages(prev =>
+        prev.map(msg =>
+          msg.id === assistantMessageId && isChatMessage(msg)
+            ? {
+                ...msg,
+                content: streamedContent + `\n\nError: ${message}`
+              }
+            : msg
+        )
+      );
+    } finally {
+      setIsLoading(false);
+      setIsStreaming(false);
+      setStreamingMessageId(null);
+      // Keep completed todos visible after the run
+    }
+  };
+
   // Extract and store code blocks from messages, setup button listeners
   useEffect(() => {
     // Use a small delay to ensure DOM is updated after message rendering
@@ -1240,6 +1486,23 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
       // Use event delegation - attach single listener to container
       const handleContainerClick = async (e: Event) => {
         const target = e.target as HTMLElement;
+
+        const nextItem = target.closest('.jp-next-items-item') as HTMLElement | null;
+        if (nextItem) {
+          e.stopPropagation();
+          e.preventDefault();
+
+          const subject = nextItem.querySelector('.jp-next-items-subject')?.textContent?.trim() || '';
+          const description = nextItem.querySelector('.jp-next-items-description')?.textContent?.trim() || '';
+          const nextText = subject && description
+            ? `${subject}\n\n${description}`
+            : (subject || description);
+
+          if (nextText) {
+            void handleNextItemSelection(nextText);
+          }
+          return;
+        }
         
         // Handle expand/collapse button
         if (target.classList.contains('code-block-toggle') || target.closest('.code-block-toggle')) {
@@ -2032,10 +2295,11 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
   const executeSubprocessCommand = async (
     command: string,
     timeout?: number,
-    onOutput?: (chunk: { stream: 'stdout' | 'stderr'; text: string }) => void
+    onOutput?: (chunk: { stream: 'stdout' | 'stderr'; text: string }) => void,
+    stdin?: string
   ): Promise<{ success: boolean; output: string; error?: string; returncode?: number | null; command: string; truncated: boolean }> => {
     try {
-      const result = await apiService.executeCommandStream(command, { timeout, onOutput });
+      const result = await apiService.executeCommandStream(command, { timeout, onOutput, stdin });
       const stdout = typeof result.stdout === 'string' ? result.stdout : '';
       const stderr = typeof result.stderr === 'string' ? result.stderr : '';
       const combined = [stdout, stderr].filter(Boolean).join('\n');
@@ -2350,6 +2614,16 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
           case_sensitive: args?.case_sensitive || false
         });
         console.log('[AgentPanel] search_notebook_cells result:', executionResult);
+      } else if (action === 'check_resource_tool') {
+        const filesList = args?.files || [];
+        setDebugStatus(`📊 리소스 체크 중: ${filesList.join(', ') || 'system'}`);
+        executionResult = await apiService.checkResource({
+          files: filesList,
+          dataframes: args?.dataframes || [],
+          file_size_command: args?.file_size_command || '',
+          dataframe_check_code: args?.dataframe_check_code || ''
+        });
+        console.log('[AgentPanel] check_resource result:', executionResult);
       } else if (action === 'list_files_tool') {
         setDebugStatus('📂 파일 목록 조회 중...');
         const listParams: ListFilesParams = {
@@ -2422,15 +2696,23 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
         (nextInterrupt) => {
           interrupted = true;
           approvalPendingRef.current = true;
+          const autoApproveEnabled = getAutoApproveEnabled(
+            llmConfig || getLLMConfig() || getDefaultLLMConfig()
+          );
 
           // Handle next interrupt (could be another search or code execution)
           if (
             nextInterrupt.action === 'search_workspace_tool'
             || nextInterrupt.action === 'search_notebook_cells_tool'
+            || nextInterrupt.action === 'check_resource_tool'
             || nextInterrupt.action === 'list_files_tool'
             || nextInterrupt.action === 'read_file_tool'
           ) {
             void handleAutoToolInterrupt(nextInterrupt);
+            return;
+          }
+          if (autoApproveEnabled) {
+            void resumeFromInterrupt(nextInterrupt, 'approve');
             return;
           }
           if (nextInterrupt.action === 'jupyter_cell_tool' && nextInterrupt.args?.code) {
@@ -2517,6 +2799,8 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
         }
       } else if (interrupt.action === 'execute_command_tool') {
         const command = (interrupt.args?.command || '').trim();
+        // Default stdin to "y\n" for interactive prompts (yes/no)
+        const stdinInput = (interrupt.args?.stdin as string | undefined) ?? 'y\n';
         setDebugStatus('🐚 셸 명령 실행 중...');
         const outputMessageId = command ? createCommandOutputMessage(command) : null;
         const execResult = command
@@ -2525,7 +2809,8 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
               interrupt.args?.timeout,
               outputMessageId
                 ? (chunk) => appendCommandOutputMessage(outputMessageId, chunk.text, chunk.stream)
-                : undefined
+                : undefined,
+              stdinInput
             )
           : {
               success: false,
@@ -2666,14 +2951,22 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
         (nextInterrupt) => {
           interrupted = true;
           approvalPendingRef.current = true;
-          // Auto-approve search/file tools
+          const autoApproveEnabled = getAutoApproveEnabled(
+            llmConfig || getLLMConfig() || getDefaultLLMConfig()
+          );
+          // Auto-approve search/file/resource tools
           if (
             nextInterrupt.action === 'search_workspace_tool'
             || nextInterrupt.action === 'search_notebook_cells_tool'
+            || nextInterrupt.action === 'check_resource_tool'
             || nextInterrupt.action === 'list_files_tool'
             || nextInterrupt.action === 'read_file_tool'
           ) {
             void handleAutoToolInterrupt(nextInterrupt);
+            return;
+          }
+          if (autoApproveEnabled) {
+            void resumeFromInterrupt(nextInterrupt, 'approve');
             return;
           }
           if (nextInterrupt.action === 'jupyter_cell_tool' && nextInterrupt.args?.code) {
@@ -2778,21 +3071,24 @@ const ChatPanel = forwardRef<ChatPanelHandle, AgentPanelProps>(({ apiService, no
       if (!notebook) {
         // Python 에러가 감지되면 파일 수정 모드로 전환
         if (detectPythonError(currentInput)) {
-          console.log('[AgentPanel] Agent mode: No notebook, but Python error detected - switching to file fix mode');
+          console.log('[AgentPanel] Agent mode: No notebook, but Python error detected - attempting file fix');
 
-          // User 메시지 추가
-          const userMessage: IChatMessage = {
-            id: makeMessageId(),
-            role: 'user',
-            content: currentInput,
-            timestamp: Date.now(),
-          };
-          setMessages(prev => [...prev, userMessage]);
-          setInput('');
-
-          // Python 에러 수정 처리
-          await handlePythonErrorFix(currentInput);
-          return;
+          // Python 에러 수정 처리 시도
+          const handled = await handlePythonErrorFix(currentInput);
+          if (handled) {
+            // 파일 수정 모드로 처리됨
+            const userMessage: IChatMessage = {
+              id: makeMessageId(),
+              role: 'user',
+              content: currentInput,
+              timestamp: Date.now(),
+            };
+            setMessages(prev => [...prev, userMessage]);
+            setInput('');
+            return;
+          }
+          // 파일 경로를 찾지 못함 - 아래 로직으로 계속 진행
+          console.log('[AgentPanel] Agent mode: No file path found, continuing...');
         }
 
         // 파일 수정 관련 자연어 요청 감지 (에러, 고쳐, 수정, fix 등)
@@ -2896,223 +3192,38 @@ SyntaxError: '(' was never closed
     }
 
     // Python 에러 감지 및 파일 수정 모드 (Chat 모드에서만)
+    // 파일 경로를 추출할 수 있는 경우에만 파일 수정 모드 사용
+    // 그렇지 않으면 일반 LLM 스트림으로 처리
     if (inputMode === 'chat' && detectPythonError(currentInput)) {
-      console.log('[AgentPanel] Python error detected in message');
+      console.log('[AgentPanel] Python error detected in message, attempting file fix...');
 
-      // User 메시지 추가
-      const userMessage: IChatMessage = {
-        id: makeMessageId(),
-        role: 'user',
-        content: currentInput,
-        timestamp: Date.now(),
-      };
-      setMessages(prev => [...prev, userMessage]);
-      setInput('');
-
-      // Python 에러 수정 처리
-      await handlePythonErrorFix(currentInput);
-      return;
-    }
-
-    // Check if API key is configured before sending
-    let currentConfig = llmConfig;
-    if (!currentConfig) {
-      // Config not loaded yet, try to load from localStorage
-      currentConfig = getLLMConfig() || getDefaultLLMConfig();
-      setLlmConfig(currentConfig);
-    }
-
-    // Check API key using ApiKeyManager
-    const hasApiKey = hasValidApiKey(currentConfig);
-
-    if (!hasApiKey) {
-      // Show error message and open settings
-      const providerName = llmConfig?.provider || 'LLM';
-      const errorMessage: IChatMessage = {
-        id: makeMessageId(),
-        role: 'assistant',
-        content: `API Key가 설정되지 않았습니다.\n\n${providerName === 'gemini' ? 'Gemini' : providerName === 'openai' ? 'OpenAI' : 'vLLM'} API Key를 먼저 설정해주세요.\n\n설정 버튼을 클릭하여 API Key를 입력하세요.`,
-        timestamp: Date.now()
-      };
-      setMessages(prev => [...prev, errorMessage]);
-      setShowSettings(true);
-      return;
+      // Python 에러 수정 처리 시도 (파일 경로를 찾을 수 있는 경우에만 처리됨)
+      const handled = await handlePythonErrorFix(currentInput);
+      if (handled) {
+        // 파일 수정 모드로 처리됨 - 사용자 메시지 추가 후 종료
+        const userMessage: IChatMessage = {
+          id: makeMessageId(),
+          role: 'user',
+          content: currentInput,
+          timestamp: Date.now(),
+        };
+        setMessages(prev => [...prev, userMessage]);
+        setInput('');
+        return;
+      }
+      // 파일 경로를 찾지 못해 handled=false 반환됨
+      // 일반 스트림으로 폴백 (아래 로직에서 사용자 메시지 추가됨)
+      console.log('[AgentPanel] No file path found in error, using regular LLM stream');
     }
 
     // Use the display prompt (input) for the user message, or use a fallback if input is empty
     const displayContent = currentInput || (llmPrompt ? '셀 분석 요청' : '');
-    const userMessage: IChatMessage = {
-      id: makeMessageId(),
-      role: 'user',
-      content: displayContent,
-      timestamp: Date.now()
-    };
-
-    setMessages(prev => [...prev, userMessage]);
-    // Only clear input if it was manually entered, keep it for auto-execution display
-    if (currentInput) {
-      setInput('');
-    }
-    setIsLoading(true);
-    setIsStreaming(true);
-    // Clear todos only when starting a new task (all completed or no todos)
-    // Keep todos if there are pending/in_progress items (continuation of current task)
-    const hasActiveTodos = todos.some(t => t.status === 'pending' || t.status === 'in_progress');
-    if (!hasActiveTodos) {
-      setTodos([]);
-    }
-    setDebugStatus(null);
-
-    // Clear the data attribute and ref after using it
-    if (textarea && llmPrompt) {
-      textarea.removeAttribute('data-llm-prompt');
-      pendingLlmPromptRef.current = null;
-    }
-
-    // Create assistant message ID for streaming updates
-    const assistantMessageId = makeMessageId('assistant');
-    let streamedContent = '';
-    setStreamingMessageId(assistantMessageId);
-
-    // Add empty assistant message that will be updated during streaming
-    const initialAssistantMessage: IChatMessage = {
-      id: assistantMessageId,
-      role: 'assistant',
-      content: '',
-      timestamp: Date.now()
-    };
-    setMessages(prev => [...prev, initialAssistantMessage]);
-
-    let interrupted = false;
-    try {
-      // Use LLM prompt if available, otherwise use the display content
-      const messageToSend = llmPrompt || displayContent;
-
-      console.log('[AgentPanel] Sending message with agentThreadId:', agentThreadId);
-
-      await apiService.sendMessageStream(
-        {
-          message: messageToSend,
-          conversationId: conversationId || undefined,
-          llmConfig: currentConfig  // Include API keys with request
-        },
-        // onChunk callback - update message content incrementally
-        (chunk: string) => {
-          streamedContent += chunk;
-          setMessages(prev =>
-            prev.map(msg =>
-              msg.id === assistantMessageId && isChatMessage(msg)
-                ? { ...msg, content: streamedContent }
-                : msg
-            )
-          );
-        },
-        // onMetadata callback - update conversationId and metadata
-        (metadata) => {
-          if (metadata.conversationId && !conversationId) {
-            setConversationId(metadata.conversationId);
-          }
-          if (metadata.provider || metadata.model) {
-            setMessages(prev =>
-              prev.map(msg =>
-                msg.id === assistantMessageId && isChatMessage(msg)
-                  ? {
-                      ...msg,
-                      metadata: {
-                        ...msg.metadata,
-                        provider: metadata.provider,
-                        model: metadata.model
-                      }
-                    }
-                  : msg
-              )
-            );
-          }
-        },
-        // onDebug callback - show debug status in gray
-        (status: string) => {
-          setDebugStatus(status);
-        },
-        // onInterrupt callback - show approval dialog
-        (interrupt) => {
-          interrupted = true;
-          approvalPendingRef.current = true;
-
-          // Capture threadId from interrupt for context persistence
-          if (interrupt.threadId && !agentThreadId) {
-            setAgentThreadId(interrupt.threadId);
-            console.log('[AgentPanel] Captured agentThreadId from interrupt:', interrupt.threadId);
-          }
-
-          // Auto-approve search/file tools - execute immediately without user interaction
-          if (
-            interrupt.action === 'search_workspace_tool'
-            || interrupt.action === 'search_notebook_cells_tool'
-            || interrupt.action === 'list_files_tool'
-            || interrupt.action === 'read_file_tool'
-          ) {
-            void handleAutoToolInterrupt(interrupt);
-            return;
-          }
-
-          if (interrupt.action === 'jupyter_cell_tool' && interrupt.args?.code) {
-            const shouldQueue = shouldExecuteInNotebook(interrupt.args.code);
-            if (isAutoApprovedCode(interrupt.args.code)) {
-              if (shouldQueue) {
-                queueApprovalCell(interrupt.args.code);
-              }
-              void resumeFromInterrupt(interrupt, 'approve');
-              return;
-            }
-            if (shouldQueue) {
-              queueApprovalCell(interrupt.args.code);
-            }
-          }
-          setInterruptData(interrupt);
-          upsertInterruptMessage(interrupt);
-          setIsLoading(false);
-          setIsStreaming(false);
-        },
-        // onTodos callback - update todo list UI
-        (newTodos) => {
-          setTodos(newTodos);
-        },
-        // onDebugClear callback - clear debug status
-        () => {
-          setDebugStatus(null);
-        },
-        // onToolCall callback - add cells to notebook
-        handleToolCall,
-        // onComplete callback - capture thread_id for context persistence
-        (data) => {
-          if (data.threadId) {
-            setAgentThreadId(data.threadId);
-            console.log('[AgentPanel] Captured agentThreadId for context persistence:', data.threadId);
-          }
-        },
-        // threadId - pass existing thread_id to continue context
-        agentThreadId || undefined
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to send message';
-      setDebugStatus(`오류: ${message}`);
-      // Update the assistant message with error
-      setMessages(prev =>
-        prev.map(msg =>
-          msg.id === assistantMessageId && isChatMessage(msg)
-            ? {
-                ...msg,
-                content: streamedContent + `\n\nError: ${message}`
-              }
-            : msg
-        )
-      );
-    } finally {
-      setIsLoading(false);
-      setIsStreaming(false);
-      setStreamingMessageId(null);
-      // Keep completed todos visible after the run
-    }
+    await sendChatMessage({
+      displayContent,
+      llmPrompt,
+      textarea,
+      clearInput: Boolean(currentInput)
+    });
   };
 
   // Handle resume after user approval/rejection
@@ -3632,14 +3743,27 @@ SyntaxError: '(' was never closed
               </svg>
               {(() => {
                 const currentTodo = todos.find(t => t.status === 'in_progress') || todos.find(t => t.status === 'pending');
-                return currentTodo ? (
-                  <>
-                    <div className="jp-agent-todo-compact-spinner" />
-                    <span className="jp-agent-todo-compact-current">{currentTodo.content}</span>
-                  </>
-                ) : (
-                  <span className="jp-agent-todo-compact-current">✓ 모든 작업 완료</span>
-                );
+                const isStillWorking = isStreaming || isLoading || isAgentRunning;
+                
+                if (currentTodo) {
+                  return (
+                    <>
+                      <div className="jp-agent-todo-compact-spinner" />
+                      <span className="jp-agent-todo-compact-current">{currentTodo.content}</span>
+                    </>
+                  );
+                } else if (isStillWorking) {
+                  return (
+                    <>
+                      <div className="jp-agent-todo-compact-spinner" />
+                      <span className="jp-agent-todo-compact-current">작업 마무리 중...</span>
+                    </>
+                  );
+                } else {
+                  return (
+                    <span className="jp-agent-todo-compact-current">✓ 모든 작업 완료</span>
+                  );
+                }
               })()}
             </div>
             <span className="jp-agent-todo-compact-progress">

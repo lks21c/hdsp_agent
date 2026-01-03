@@ -12,7 +12,8 @@ import {
   IModelInfo,
   IFileFixRequest,
   IFileFixResponse,
-  ILLMConfig
+  ILLMConfig,
+  IResourceUsageSnapshot
 } from '../types';
 
 import {
@@ -49,6 +50,8 @@ import { URLExt, PageConfig } from '@jupyterlab/coreutils';
 
 export class ApiService {
   private baseUrl: string;
+  private resourceUsageCache: { resource: IResourceUsageSnapshot; timestamp: number } | null = null;
+  private readonly resourceUsageCacheMs = 15000;
 
   // 생성자에서 baseUrl을 선택적으로 받도록 하되, 없으면 자동으로 계산
   constructor(baseUrl?: string) {
@@ -94,6 +97,38 @@ export class ApiService {
       'Content-Type': 'application/json',
       'X-XSRFToken': this.getCsrfToken()
     };
+  }
+
+  private async getResourceUsageSnapshot(): Promise<IResourceUsageSnapshot | null> {
+    const now = Date.now();
+    if (
+      this.resourceUsageCache
+      && now - this.resourceUsageCache.timestamp < this.resourceUsageCacheMs
+    ) {
+      return this.resourceUsageCache.resource;
+    }
+
+    try {
+      const response = await fetch(`${this.baseUrl}/resource-usage`, {
+        method: 'GET',
+        credentials: 'include'
+      });
+      if (!response.ok) {
+        return null;
+      }
+      const payload = await response.json().catch(() => ({}));
+      const candidate = payload?.resource ?? payload;
+      const snapshot = candidate && typeof candidate === 'object' && !Array.isArray(candidate)
+        ? candidate as IResourceUsageSnapshot
+        : null;
+      if (snapshot) {
+        this.resourceUsageCache = { resource: snapshot, timestamp: now };
+      }
+      return snapshot;
+    } catch (error) {
+      console.warn('[ApiService] Resource usage fetch failed:', error);
+      return null;
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -328,6 +363,10 @@ export class ApiService {
   ): Promise<void> {
     // Convert IChatRequest to LangChain AgentRequest format
     // Frontend's context has limited fields, map what's available
+    const resourceContext = await this.getResourceUsageSnapshot();
+    const requestConfig = resourceContext && request.llmConfig
+      ? { ...request.llmConfig, resourceContext }
+      : request.llmConfig;
     const langchainRequest = {
       request: request.message,
       threadId: threadId,  // Include threadId for context persistence across cycles
@@ -338,16 +377,24 @@ export class ApiService {
         defined_variables: [],
         recent_cells: request.context.selectedCells?.map(cell => ({ source: cell })) || []
       } : undefined,
-      llmConfig: request.llmConfig,
+      llmConfig: requestConfig,
       workspaceRoot: '.'
     };
+
+    // Debug: log request size
+    const requestBody = JSON.stringify(langchainRequest);
+    console.log('[ApiService] Sending langchain request:', {
+      messageLength: request.message.length,
+      bodyLength: requestBody.length,
+      threadId: threadId,
+    });
 
     // Use LangChain streaming endpoint
     const response = await fetch(`${this.baseUrl}/agent/langchain/stream`, {
       method: 'POST',
       headers: this.getHeaders(),
       credentials: 'include',
-      body: JSON.stringify(langchainRequest)
+      body: requestBody
     });
 
     if (!response.ok) {
@@ -517,6 +564,10 @@ export class ApiService {
     onDebugClear?: () => void,
     onToolCall?: (toolCall: { tool: string; code?: string; content?: string; command?: string; timeout?: number }) => void
   ): Promise<void> {
+    const resourceContext = await this.getResourceUsageSnapshot();
+    const requestConfig = resourceContext && llmConfig
+      ? { ...llmConfig, resourceContext }
+      : llmConfig;
     const resumeRequest = {
       threadId,
       decisions: [{
@@ -524,7 +575,7 @@ export class ApiService {
         args,
         feedback
       }],
-      llmConfig,
+      llmConfig: requestConfig,
       workspaceRoot: '.'
     };
 
@@ -646,7 +697,12 @@ export class ApiService {
     }
   }
 
-  async executeCommand(command: string, timeout?: number, cwd?: string): Promise<{
+  async executeCommand(
+    command: string,
+    timeout?: number,
+    cwd?: string,
+    stdin?: string
+  ): Promise<{
     success: boolean;
     stdout?: string;
     stderr?: string;
@@ -658,7 +714,7 @@ export class ApiService {
       method: 'POST',
       headers: this.getHeaders(),
       credentials: 'include',
-      body: JSON.stringify({ command, timeout, cwd })
+      body: JSON.stringify({ command, timeout, cwd, stdin })
     });
 
     const payload = await response.json().catch(() => ({}));
@@ -674,6 +730,7 @@ export class ApiService {
     options?: {
       timeout?: number;
       cwd?: string;
+      stdin?: string;
       onOutput?: (chunk: { stream: 'stdout' | 'stderr'; text: string }) => void;
     }
   ): Promise<{
@@ -693,7 +750,8 @@ export class ApiService {
       body: JSON.stringify({
         command,
         timeout: options?.timeout,
-        cwd: options?.cwd
+        cwd: options?.cwd,
+        stdin: options?.stdin
       })
     });
 
@@ -894,6 +952,62 @@ export class ApiService {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       const errorMessage = (payload as any).error || 'Failed to search notebook cells';
+      throw new Error(errorMessage);
+    }
+    return payload;
+  }
+
+  /**
+   * Check system resources and file sizes before data processing
+   * Executed on Jupyter server
+   */
+  async checkResource(options: {
+    files?: string[];
+    dataframes?: string[];
+    file_size_command?: string;
+    dataframe_check_code?: string;
+  }): Promise<{
+    success: boolean;
+    system?: {
+      ram_available_mb: number;
+      ram_total_mb: number;
+      cpu_cores: number;
+      environment: string;
+    };
+    files?: Array<{
+      name: string;
+      path: string;
+      size_bytes?: number;
+      size_mb?: number;
+      exists: boolean;
+      error?: string;
+    }>;
+    dataframes?: Array<{
+      name: string;
+      exists: boolean;
+      rows?: number;
+      cols?: number;
+      memory_mb?: number;
+      type?: string;
+      error?: string;
+    }>;
+    error?: string;
+  }> {
+    const response = await fetch(`${this.baseUrl}/check-resource`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      credentials: 'include',
+      body: JSON.stringify({
+        files: options.files || [],
+        dataframes: options.dataframes || [],
+        file_size_command: options.file_size_command || '',
+        dataframe_check_code: options.dataframe_check_code || ''
+      })
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const errorMessage = (payload as any).error || 'Failed to check resources';
       throw new Error(errorMessage);
     }
     return payload;

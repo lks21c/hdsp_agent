@@ -73,6 +73,32 @@ export interface IVLLMConfig {
   model: string;
 }
 
+export interface IResourceUsageSnapshot {
+  environment?: string;
+  cpu?: {
+    cores?: number;
+    usage_percent?: number | null;
+  };
+  memory?: {
+    total_gb?: number | null;
+    available_gb?: number | null;
+    used_gb?: number | null;
+  };
+  disk?: {
+    path?: string;
+    total_gb?: number | null;
+    free_gb?: number | null;
+    used_gb?: number | null;
+  };
+  gpus?: Array<{
+    name?: string;
+    utilization_percent?: number | null;
+    memory_used_mb?: number | null;
+    memory_total_mb?: number | null;
+  }>;
+  gpu_status?: string;
+}
+
 export interface ILLMConfig {
   provider: 'gemini' | 'openai' | 'vllm';
   gemini?: IGeminiConfig;
@@ -80,6 +106,8 @@ export interface ILLMConfig {
   vllm?: IVLLMConfig;
   workspaceRoot?: string;
   systemPrompt?: string;
+  autoApprove?: boolean;
+  resourceContext?: IResourceUsageSnapshot | string;
 }
 
 export interface IChatRequest {

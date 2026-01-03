@@ -82,6 +82,35 @@ test.describe('HDSP Agent Extension', () => {
   });
 
   test.describe('Chat Interrupts (Mocked)', () => {
+    test('should persist auto-approve setting', async ({ page }) => {
+      await page.evaluate(() => {
+        localStorage.setItem('hdsp-agent-llm-config', JSON.stringify({
+          provider: 'gemini',
+          gemini: { apiKey: 'test-key', apiKeys: ['test-key'], model: 'gemini-2.5-pro' },
+          autoApprove: false
+        }));
+        const app = (window as any).jupyterapp;
+        if (app?.shell?.activateById) {
+          app.shell.activateById('hdsp-agent-panel');
+        }
+      });
+
+      await page.waitForSelector('.jp-agent-panel', { timeout: 10000 });
+      await page.click('.jp-agent-settings-button-icon');
+      await page.waitForSelector('.jp-agent-settings-dialog', { timeout: 10000 });
+
+      const checkbox = page.locator('[data-testid="auto-approve-checkbox"]');
+      await expect(checkbox).toBeVisible();
+      await checkbox.check();
+      await page.click('.jp-agent-settings-button-primary');
+
+      const stored = await page.evaluate(() => {
+        const raw = localStorage.getItem('hdsp-agent-llm-config');
+        return raw ? JSON.parse(raw) : null;
+      });
+      expect(stored?.autoApprove).toBe(true);
+    });
+
     test('should show write_file_tool path in code block header', async ({ page }) => {
       await page.evaluate(() => {
         localStorage.setItem('hdsp-agent-llm-config', JSON.stringify({
@@ -324,6 +353,117 @@ test.describe('HDSP Agent Extension', () => {
       const output = resumeBody?.decisions?.[0]?.args?.execution_result?.output;
       expect(output).toBe('line-1\nline-2');
       expect(output).not.toContain('line-3');
+    });
+
+    test('should auto-resume interrupt during resume when auto-approve is enabled', async ({ page }) => {
+      await page.evaluate(() => {
+        localStorage.setItem('hdsp-agent-llm-config', JSON.stringify({
+          provider: 'gemini',
+          gemini: { apiKey: 'test-key', apiKeys: ['test-key'], model: 'gemini-2.5-pro' },
+          autoApprove: true
+        }));
+        const app = (window as any).jupyterapp;
+        if (app?.shell?.activateById) {
+          app.shell.activateById('hdsp-agent-panel');
+        }
+      });
+
+      await page.waitForSelector('.jp-agent-panel', { timeout: 10000 });
+
+      const initialInterrupt = {
+        thread_id: 'test-thread-auto-approve',
+        action: 'jupyter_cell_tool',
+        args: { code: 'print("first")' },
+        description: 'Run code'
+      };
+
+      await page.route('**/hdsp-agent/agent/langchain/stream', async (route) => {
+        const body = [
+          'event: interrupt',
+          `data: ${JSON.stringify(initialInterrupt)}`,
+          '',
+          '',
+        ].join('\n');
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/event-stream',
+          body
+        });
+      });
+
+      await page.route('**/hdsp-agent/execute-command/stream', async (route) => {
+        const body = [
+          'event: result',
+          `data: ${JSON.stringify({
+            success: true,
+            stdout: 'ok\n',
+            stderr: '',
+            returncode: 0
+          })}`,
+          '',
+          '',
+        ].join('\n');
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/event-stream',
+          body
+        });
+      });
+
+      const resumePayloads: any[] = [];
+      let resumeCount = 0;
+      await page.route('**/hdsp-agent/agent/langchain/resume', async (route) => {
+        const payload = route.request().postData() || '{}';
+        resumePayloads.push(JSON.parse(payload));
+        resumeCount += 1;
+
+        if (resumeCount === 1) {
+          const nextInterrupt = {
+            thread_id: 'test-thread-auto-approve',
+            action: 'jupyter_cell_tool',
+            args: { code: 'print("second")' },
+            description: 'Run code again'
+          };
+          const body = [
+            'event: interrupt',
+            `data: ${JSON.stringify(nextInterrupt)}`,
+            '',
+            '',
+          ].join('\n');
+          await route.fulfill({
+            status: 200,
+            contentType: 'text/event-stream',
+            body
+          });
+          return;
+        }
+
+        const body = [
+          'event: complete',
+          `data: ${JSON.stringify({ success: true, thread_id: 'test-thread-auto-approve' })}`,
+          '',
+          '',
+        ].join('\n');
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/event-stream',
+          body
+        });
+      });
+
+      const firstResume = page.waitForRequest('**/hdsp-agent/agent/langchain/resume');
+      const secondResume = page.waitForRequest('**/hdsp-agent/agent/langchain/resume');
+
+      await page.fill('.jp-agent-input', 'run code');
+      await page.click('.jp-agent-send-button');
+
+      await firstResume;
+      await secondResume;
+
+      await expect(page.locator('.jp-agent-interrupt-approve-btn')).toHaveCount(0);
+      expect(resumePayloads.length).toBe(2);
+      expect(resumePayloads[0]?.decisions?.[0]?.type).toBe('edit');
+      expect(resumePayloads[1]?.decisions?.[0]?.type).toBe('edit');
     });
   });
 

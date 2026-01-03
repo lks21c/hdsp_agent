@@ -28,3 +28,41 @@ test.describe('Code block toggle', () => {
     expect(snippet).toContain('overflow-x: auto');
   });
 });
+
+test.describe('Next items rendering', () => {
+  test('renders next items JSON as material list', async () => {
+    const payload = JSON.stringify({
+      next_items: [
+        { subject: 'Load data', description: 'Read the CSV into a dataframe.' },
+        { subject: 'Train model', description: 'Fit a baseline classifier.' }
+      ]
+    });
+
+    const html = formatMarkdownToHtml(payload);
+    expect(html).toContain('jp-next-items-list');
+    expect(html).toContain('jp-next-items-item');
+    expect(html).toContain('Load data');
+    expect(html).toContain('Train model');
+  });
+
+  test('renders next items from fenced json block', async () => {
+    const payload = `\`\`\`json\n${JSON.stringify({
+      next_items: [{ subject: 'Evaluate', description: 'Check accuracy metrics.' }]
+    })}\n\`\`\``;
+
+    const html = formatMarkdownToHtml(payload);
+    expect(html).toContain('jp-next-items-list');
+    expect(html).toContain('Evaluate');
+  });
+
+  test('renders next items embedded in text', async () => {
+    const payload = `Next steps:\n\njson\n${JSON.stringify({
+      next_items: [{ subject: 'Scale features', description: 'Normalize numeric columns.' }]
+    }, null, 2)}`;
+
+    const html = formatMarkdownToHtml(payload);
+    expect(html).toContain('Next steps');
+    expect(html).toContain('jp-next-items-list');
+    expect(html).toContain('Scale features');
+  });
+});

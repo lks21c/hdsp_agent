@@ -18,6 +18,8 @@ import httpx
 from jupyter_server.base.handlers import APIHandler
 from jupyter_server.utils import url_path_join
 
+from .resource_usage import get_integrated_resources
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_EXECUTE_COMMAND_TIMEOUT_MS = 600_000
@@ -80,8 +82,17 @@ def _is_embedded_mode() -> bool:
         return False
 
 
-def _run_shell_command(command: str, timeout_ms: int, cwd: str) -> Dict[str, Any]:
-    """Run a shell command with timeout and capture output."""
+def _run_shell_command(
+    command: str, timeout_ms: int, cwd: str, stdin_input: Optional[str] = None
+) -> Dict[str, Any]:
+    """Run a shell command with timeout and capture output.
+
+    Args:
+        command: Shell command to execute
+        timeout_ms: Timeout in milliseconds
+        cwd: Working directory
+        stdin_input: Optional input to provide to the command (for interactive prompts)
+    """
     timeout_sec = max(0.1, timeout_ms / 1000)
     try:
         result = subprocess.run(
@@ -91,6 +102,7 @@ def _run_shell_command(command: str, timeout_ms: int, cwd: str) -> Dict[str, Any
             text=True,
             timeout=timeout_sec,
             cwd=cwd,
+            input=stdin_input,  # Provide stdin if specified
         )
         return {
             "success": result.returncode == 0,
@@ -102,7 +114,7 @@ def _run_shell_command(command: str, timeout_ms: int, cwd: str) -> Dict[str, Any
     except subprocess.TimeoutExpired:
         return {
             "success": False,
-            "error": f"Command timed out after {timeout_sec}s",
+            "error": f"Command timed out after {timeout_sec}s. If the command requires user input, use stdin parameter or non-interactive flags.",
             "cwd": cwd,
         }
     except Exception as exc:
@@ -736,6 +748,7 @@ class ExecuteCommandHandler(APIHandler):
             command = (body.get("command") or "").strip()
             timeout_ms = _resolve_timeout_ms(body.get("timeout"))
             requested_cwd = (body.get("cwd") or "").strip()
+            stdin_input = body.get("stdin")  # Optional stdin for interactive commands
 
             if not command:
                 self.set_status(400)
@@ -755,7 +768,8 @@ class ExecuteCommandHandler(APIHandler):
 
             loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(
-                None, _run_shell_command, command, timeout_ms, cwd
+                None,
+                lambda: _run_shell_command(command, timeout_ms, cwd, stdin_input),
             )
 
             self.set_header("Content-Type", "application/json")
@@ -781,6 +795,7 @@ class ExecuteCommandStreamHandler(APIHandler):
             command = (body.get("command") or "").strip()
             timeout_ms = _resolve_stream_timeout_ms(body.get("timeout"))
             requested_cwd = (body.get("cwd") or "").strip()
+            stdin_input = body.get("stdin")  # Optional stdin for interactive commands
 
             if not command:
                 self.set_status(400)
@@ -811,12 +826,22 @@ class ExecuteCommandStreamHandler(APIHandler):
             start_time = time.monotonic()
             await emit("start", {"command": command, "cwd": cwd})
 
+            # Use PIPE for stdin if input is provided
+            stdin_pipe = asyncio.subprocess.PIPE if stdin_input else None
             process = await asyncio.create_subprocess_shell(
                 command,
+                stdin=stdin_pipe,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=cwd,
             )
+
+            # Write stdin if provided
+            if stdin_input and process.stdin:
+                process.stdin.write(stdin_input.encode())
+                await process.stdin.drain()
+                process.stdin.close()
+                await process.stdin.wait_closed()
 
             stdout_text = ""
             stderr_text = ""
@@ -894,6 +919,153 @@ class ExecuteCommandStreamHandler(APIHandler):
             self.set_header("Content-Type", "text/event-stream")
             self.write(f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n")
             self.finish()
+
+
+class ResourceUsageHandler(APIHandler):
+    """Handler for /resource-usage endpoint (runs on Jupyter server)."""
+
+    async def get(self):
+        """Return resource usage summary for the client host."""
+        try:
+            server_root = self.settings.get("server_root_dir", os.getcwd())
+            server_root = os.path.expanduser(server_root)
+            workspace_root = _resolve_workspace_root(server_root)
+
+            resource = get_integrated_resources(workspace_root=workspace_root)
+
+            self.set_header("Content-Type", "application/json")
+            self.write({"resource": resource})
+
+        except Exception as e:
+            logger.error(f"Resource usage collection failed: {e}", exc_info=True)
+            self.set_status(500)
+            self.write({"error": str(e)})
+
+
+class CheckResourceHandler(APIHandler):
+    """Handler for /check-resource endpoint (runs on Jupyter server).
+    
+    Checks system resources, file sizes, and DataFrame shapes for resource-aware
+    code generation.
+    """
+
+    async def post(self):
+        """Check resources for the requested files and dataframes."""
+        try:
+            body = (
+                json.loads(self.request.body.decode("utf-8"))
+                if self.request.body
+                else {}
+            )
+            files = body.get("files", [])
+            dataframes = body.get("dataframes", [])
+            file_size_command = body.get("file_size_command", "")
+            dataframe_check_code = body.get("dataframe_check_code", "")
+
+            server_root = self.settings.get("server_root_dir", os.getcwd())
+            server_root = os.path.expanduser(server_root)
+            workspace_root = _resolve_workspace_root(server_root)
+
+            result: Dict[str, Any] = {"success": True}
+
+            # 1. Get system resources
+            resource = get_integrated_resources(workspace_root=workspace_root)
+            memory = resource.get("memory", {})
+            result["system"] = {
+                "ram_available_mb": round(
+                    (memory.get("available_gb") or 0) * 1024, 2
+                ),
+                "ram_total_mb": round((memory.get("total_gb") or 0) * 1024, 2),
+                "cpu_cores": resource.get("cpu", {}).get("cores"),
+                "environment": resource.get("environment"),
+            }
+
+            # 2. Get file sizes
+            file_info = []
+            for file_path in files:
+                # Resolve path relative to server_root (Jupyter's working directory)
+                # NOT workspace_root (project root) to match list_files_tool behavior
+                if os.path.isabs(file_path):
+                    abs_path = file_path
+                else:
+                    abs_path = os.path.join(server_root, file_path)
+                
+                try:
+                    stat = os.stat(abs_path)
+                    file_info.append({
+                        "name": os.path.basename(file_path),
+                        "path": file_path,
+                        "size_bytes": stat.st_size,
+                        "size_mb": round(stat.st_size / (1024 * 1024), 2),
+                        "exists": True,
+                    })
+                except (OSError, IOError) as e:
+                    file_info.append({
+                        "name": os.path.basename(file_path),
+                        "path": file_path,
+                        "exists": False,
+                        "error": str(e),
+                    })
+            result["files"] = file_info
+
+            # 3. Get DataFrame info (if dataframe_check_code provided)
+            df_info = []
+            if dataframe_check_code and dataframes:
+                try:
+                    # Execute the code in the active kernel
+                    kernel_manager = self.settings.get("kernel_manager")
+                    if kernel_manager:
+                        # Try to get the active kernel
+                        kernel_ids = list(kernel_manager.list_kernel_ids())
+                        if kernel_ids:
+                            kernel_id = kernel_ids[0]
+                            kernel = kernel_manager.get_kernel(kernel_id)
+                            if kernel and hasattr(kernel, "client"):
+                                client = kernel.client()
+                                # Execute code and get result
+                                msg_id = client.execute(dataframe_check_code, silent=True)
+                                # Wait for result (with timeout)
+                                import asyncio
+                                try:
+                                    reply = await asyncio.wait_for(
+                                        asyncio.to_thread(
+                                            client.get_shell_msg, msg_id, timeout=5
+                                        ),
+                                        timeout=10,
+                                    )
+                                    # Parse output
+                                    if reply.get("content", {}).get("status") == "ok":
+                                        # Get stdout from iopub
+                                        while True:
+                                            try:
+                                                iopub_msg = client.get_iopub_msg(timeout=1)
+                                                if iopub_msg.get("msg_type") == "stream":
+                                                    text = iopub_msg.get("content", {}).get("text", "")
+                                                    if text:
+                                                        df_info = json.loads(text)
+                                                        break
+                                            except Exception:
+                                                break
+                                except asyncio.TimeoutError:
+                                    logger.warning("DataFrame check timed out")
+                except Exception as e:
+                    logger.warning(f"DataFrame check failed: {e}")
+                    # Return placeholder for requested dataframes
+                    for df_name in dataframes:
+                        df_info.append({
+                            "name": df_name,
+                            "exists": False,
+                            "error": "Kernel execution failed",
+                        })
+            result["dataframes"] = df_info
+
+            self.set_header("Content-Type", "application/json")
+            self.write(result)
+
+        except Exception as e:
+            logger.error(f"Resource check failed: {e}", exc_info=True)
+            self.set_status(500)
+            self.write({"success": False, "error": str(e)})
 
 
 class WriteFileHandler(APIHandler):
@@ -1335,10 +1507,24 @@ class LangChainStreamProxyHandler(StreamProxyHandler):
     async def post(self, *args, **kwargs):
         """Inject workspaceRoot based on Jupyter server root."""
         try:
+            # Log request info for debugging
+            body_len = len(self.request.body) if self.request.body else 0
+            logger.info(
+                "LangChainStreamProxy: Received request, body size=%d bytes",
+                body_len,
+            )
+
             body = (
                 json.loads(self.request.body.decode("utf-8"))
                 if self.request.body
                 else {}
+            )
+            
+            # Log parsed request info
+            request_text = body.get("request", "")
+            logger.info(
+                "LangChainStreamProxy: Parsed request, message length=%d chars",
+                len(request_text),
             )
             server_root = self.settings.get("server_root_dir", os.getcwd())
             server_root = os.path.expanduser(server_root)
@@ -1616,6 +1802,15 @@ def setup_handlers(web_app):
         (
             url_path_join(base_url, "hdsp-agent", "execute-command", "stream"),
             ExecuteCommandStreamHandler,
+        ),
+        (
+            url_path_join(base_url, "hdsp-agent", "resource-usage"),
+            ResourceUsageHandler,
+        ),
+        # Resource check for data processing (server-side, auto-approved)
+        (
+            url_path_join(base_url, "hdsp-agent", "check-resource"),
+            CheckResourceHandler,
         ),
         # File write execution (server-side, approval required)
         (url_path_join(base_url, "hdsp-agent", "write-file"), WriteFileHandler),

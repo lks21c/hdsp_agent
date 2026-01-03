@@ -62,6 +62,180 @@ export function normalizeIndentation(code: string): string {
   return normalized.join('\n');
 }
 
+type NextItem = {
+  subject: string;
+  description: string;
+};
+
+type NextItemsBlock = {
+  items: NextItem[];
+  placeholder: string;
+  text: string;
+};
+
+function extractNextItemsBlock(text: string): NextItemsBlock | null {
+  if (!text.trim()) return null;
+
+  const fencedRegex = /```(\w+)?\n([\s\S]*?)```/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = fencedRegex.exec(text)) !== null) {
+    const lang = (match[1] || '').toLowerCase();
+    const content = match[2].trim();
+    if (!content) continue;
+    if (lang && lang !== 'json' && !content.includes('"next_items"')) {
+      continue;
+    }
+    const items = parseNextItemsPayload(content);
+    if (items) {
+      const placeholder = `__NEXT_ITEMS_${Math.random().toString(36).slice(2, 11)}__`;
+      const updated = text.slice(0, match.index) + placeholder + text.slice(match.index + match[0].length);
+      return { items, placeholder, text: updated };
+    }
+  }
+
+  const range = findNextItemsJsonRange(text);
+  if (!range) return null;
+
+  const candidate = text.slice(range.start, range.end + 1);
+  const items = parseNextItemsPayload(candidate);
+  if (!items) return null;
+
+  let replacementStart = range.start;
+  const lineStart = text.lastIndexOf('\n', range.start - 1) + 1;
+  const linePrefix = text.slice(lineStart, range.start).trim();
+  const normalizedPrefix = linePrefix.replace(/[：:]$/, '').toLowerCase();
+  if (normalizedPrefix === 'json') {
+    replacementStart = lineStart;
+  }
+
+  const placeholder = `__NEXT_ITEMS_${Math.random().toString(36).slice(2, 11)}__`;
+  const updated = text.slice(0, replacementStart) + placeholder + text.slice(range.end + 1);
+  return { items, placeholder, text: updated };
+}
+
+function findNextItemsJsonRange(text: string): { start: number; end: number } | null {
+  const key = '"next_items"';
+  let searchIndex = text.indexOf(key);
+
+  while (searchIndex !== -1) {
+    const start = text.lastIndexOf('{', searchIndex);
+    if (start === -1) return null;
+
+    const end = findMatchingBrace(text, start);
+    if (end !== -1) {
+      return { start, end };
+    }
+
+    searchIndex = text.indexOf(key, searchIndex + key.length);
+  }
+
+  return null;
+}
+
+function findMatchingBrace(text: string, start: number): number {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < text.length; i++) {
+    const char = text[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (char === '{') {
+      depth += 1;
+    } else if (char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return i;
+      }
+    }
+  }
+
+  return -1;
+}
+
+function parseNextItemsPayload(payload: string): NextItem[] | null {
+  if (!payload.startsWith('{') || !payload.endsWith('}')) return null;
+
+  try {
+    const parsed = JSON.parse(payload);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+
+    const nextItemsRaw = (parsed as { next_items?: unknown }).next_items;
+    if (!Array.isArray(nextItemsRaw)) return null;
+
+    const items = nextItemsRaw
+      .map((item) => {
+        if (!item || typeof item !== 'object') return null;
+        const subject = typeof (item as { subject?: unknown }).subject === 'string'
+          ? (item as { subject: string }).subject.trim()
+          : '';
+        const description = typeof (item as { description?: unknown }).description === 'string'
+          ? (item as { description: string }).description.trim()
+          : '';
+        if (!subject && !description) return null;
+        return { subject, description };
+      })
+      .filter((item): item is NextItem => Boolean(item));
+
+    return items.length > 0 ? items : null;
+  } catch {
+    return null;
+  }
+}
+
+function renderNextItemsList(items: NextItem[]): string {
+  // Simple arrow icon
+  const arrowSvg = `
+<svg class="jp-next-items-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+  <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"/>
+</svg>`;
+
+  const listItems = items.map((item) => {
+    const subject = escapeHtml(item.subject);
+    const description = escapeHtml(item.description);
+    const subjectHtml = subject ? `<div class="jp-next-items-subject">${subject}</div>` : '';
+    const descriptionHtml = description ? `<div class="jp-next-items-description">${description}</div>` : '';
+
+    return `
+<li class="jp-next-items-item" data-next-item="true" role="button" tabindex="0">
+  <div class="jp-next-items-text">
+    ${subjectHtml}
+    ${descriptionHtml}
+  </div>
+  ${arrowSvg}
+</li>`;
+  }).join('');
+
+  return `
+<div class="jp-next-items" data-next-items="true">
+  <div class="jp-next-items-header">다음 단계 제안</div>
+  <ul class="jp-next-items-list" role="list">
+    ${listItems}
+  </ul>
+</div>`;
+}
+
 /**
  * Highlight Python code with inline styles
  */
@@ -496,9 +670,11 @@ export function parseMarkdownTable(tableText: string): string {
  * Format markdown text to HTML with syntax highlighting
  */
 export function formatMarkdownToHtml(text: string): string {
+  const nextItemsBlock = extractNextItemsBlock(text);
+
   // Decode HTML entities if present
   const textarea = document.createElement('textarea');
-  textarea.innerHTML = text;
+  textarea.innerHTML = nextItemsBlock ? nextItemsBlock.text : text;
   let html = textarea.value;
 
   // Step 0.5: Protect DataFrame HTML tables (must be before code blocks)
@@ -616,7 +792,7 @@ export function formatMarkdownToHtml(text: string): string {
   });
 
   // Step 4: Escape HTML for non-placeholder text
-  html = html.split(/(__(?:DATAFRAME_HTML|CODE_BLOCK|INLINE_CODE|TABLE)_[a-z0-9-]+__)/gi)
+  html = html.split(/(__(?:DATAFRAME_HTML|CODE_BLOCK|INLINE_CODE|TABLE|NEXT_ITEMS)_[a-z0-9-]+__)/gi)
     .map((part, index) => {
       // Odd indices are placeholders - keep as is
       if (index % 2 === 1) return part;
@@ -675,6 +851,11 @@ export function formatMarkdownToHtml(text: string): string {
   codeBlockPlaceholders.forEach(item => {
     html = html.replace(item.placeholder, item.html);
   });
+
+  // Step 8.5: Restore next items list placeholders
+  if (nextItemsBlock) {
+    html = html.split(nextItemsBlock.placeholder).join(renderNextItemsList(nextItemsBlock.items));
+  }
 
   return html;
 }

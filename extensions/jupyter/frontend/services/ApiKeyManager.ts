@@ -34,6 +34,7 @@ export interface LLMConfig {
   vllm?: VLLMConfig;
   workspaceRoot?: string;
   systemPrompt?: string;
+  autoApprove?: boolean;
 }
 
 const STORAGE_KEY = 'hdsp-agent-llm-config';
@@ -166,7 +167,8 @@ export function getDefaultLLMConfig(): LLMConfig {
       endpoint: 'http://localhost:8000',
       model: 'default'
     },
-    systemPrompt: DEFAULT_LANGCHAIN_SYSTEM_PROMPT
+    systemPrompt: DEFAULT_LANGCHAIN_SYSTEM_PROMPT,
+    autoApprove: false
   };
 }
 
