@@ -1,8 +1,8 @@
-from agent_server.langchain import agent as langchain_agent
+from agent_server.langchain.hitl_config import get_hitl_interrupt_config
 
 
 def test_hitl_interrupt_config_includes_file_tools():
-    config = langchain_agent._get_hitl_interrupt_config()
+    config = get_hitl_interrupt_config()
 
     assert "execute_command_tool" in config
     assert "list_files_tool" in config

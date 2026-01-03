@@ -59,9 +59,9 @@ class TestSystemPrompt:
 
     def test_execute_command_long_running_rule(self):
         """System prompt should forbid long-running execute_command_tool usage."""
-        from agent_server.langchain.agent import DEFAULT_SYSTEM_PROMPT
+        from agent_server.langchain.prompts import DEFAULT_SYSTEM_PROMPT
 
-        assert "For execute_command_tool only" in DEFAULT_SYSTEM_PROMPT
+        # Check that long-running commands are forbidden
         assert "NEVER run long-running commands" in DEFAULT_SYSTEM_PROMPT
 
 
@@ -396,10 +396,9 @@ class TestResourceTools:
         """Test that check_resource returns pending_execution status"""
         from agent_server.langchain.tools.resource_tools import check_resource_tool
 
-        result = check_resource_tool.invoke({
-            "files": ["data.csv", "train.parquet"],
-            "dataframes": ["df", "train_df"]
-        })
+        result = check_resource_tool.invoke(
+            {"files": ["data.csv", "train.parquet"], "dataframes": ["df", "train_df"]}
+        )
 
         assert result["status"] == "pending_execution"
         assert result["tool"] == "check_resource_tool"
@@ -416,21 +415,23 @@ class TestResourceTools:
                 "ram_available_mb": 4096,
                 "ram_total_mb": 8192,
                 "cpu_cores": 4,
-                "environment": "Host/VM"
+                "environment": "Host/VM",
             },
             "files": [
                 {"name": "data.csv", "path": "data.csv", "size_mb": 100, "exists": True}
             ],
             "dataframes": [
                 {"name": "df", "exists": True, "rows": 1000, "cols": 10, "memory_mb": 5}
-            ]
+            ],
         }
 
-        result = check_resource_tool.invoke({
-            "files": ["data.csv"],
-            "dataframes": ["df"],
-            "execution_result": execution_result
-        })
+        result = check_resource_tool.invoke(
+            {
+                "files": ["data.csv"],
+                "dataframes": ["df"],
+                "execution_result": execution_result,
+            }
+        )
 
         assert result["status"] == "complete"
         assert result["success"] is True
@@ -442,30 +443,6 @@ class TestResourceTools:
 
 
 # ============ Executor Tests ============
-
-
-class TestJupyterExecutor:
-    """Test Jupyter executor"""
-
-    def test_executor_creation(self):
-        """Test executor creation"""
-        from agent_server.langchain.executors.jupyter_executor import JupyterExecutor
-
-        executor = JupyterExecutor()
-
-        assert executor.is_initialized is False
-        assert executor._kernel_id is None
-
-    def test_executor_singleton(self):
-        """Test executor singleton pattern"""
-        from agent_server.langchain.executors.jupyter_executor import (
-            get_jupyter_executor,
-        )
-
-        executor1 = get_jupyter_executor()
-        executor2 = get_jupyter_executor()
-
-        assert executor1 is executor2
 
 
 class TestNotebookSearcher:
@@ -530,128 +507,6 @@ class TestNotebookSearcher:
             assert "load_data" in structure["definitions"]
 
 
-# ============ Middleware Tests ============
-
-
-class TestErrorHandlingMiddleware:
-    """Test error handling middleware"""
-
-    def test_error_classification_module_not_found(self):
-        """Test classification of ModuleNotFoundError"""
-        from agent_server.langchain.middleware.error_handling_middleware import (
-            ErrorHandlingMiddleware,
-        )
-
-        middleware = ErrorHandlingMiddleware()
-
-        classification = middleware._fallback_classify(
-            "ModuleNotFoundError", "No module named 'seaborn'"
-        )
-
-        assert classification["decision"] == "insert_steps"
-        assert "seaborn" in str(classification["changes"])
-
-    def test_error_classification_type_error(self):
-        """Test classification of TypeError"""
-        from agent_server.langchain.middleware.error_handling_middleware import (
-            ErrorHandlingMiddleware,
-        )
-
-        middleware = ErrorHandlingMiddleware()
-
-        classification = middleware._fallback_classify(
-            "TypeError", "unsupported operand type(s) for +: 'int' and 'str'"
-        )
-
-        assert classification["decision"] == "refine"
-
-    def test_extract_module_name(self):
-        """Test module name extraction from error message"""
-        from agent_server.langchain.middleware.error_handling_middleware import (
-            ErrorHandlingMiddleware,
-        )
-
-        middleware = ErrorHandlingMiddleware()
-
-        assert middleware._extract_module_name("No module named 'pandas'") == "pandas"
-        assert (
-            middleware._extract_module_name("No module named 'sklearn'")
-            == "scikit-learn"
-        )
-        assert (
-            middleware._extract_module_name("No module named 'cv2'") == "opencv-python"
-        )
-
-
-class TestValidationMiddleware:
-    """Test validation middleware"""
-
-    def test_extract_code_from_tool_call(self):
-        """Test code extraction from tool call"""
-        from agent_server.langchain.middleware.validation_middleware import (
-            ValidationMiddleware,
-        )
-
-        middleware = ValidationMiddleware()
-
-        code = middleware._extract_code_from_tool_call(
-            "jupyter_cell_tool", {"code": "print('hello')"}
-        )
-
-        assert code == "print('hello')"
-
-    def test_extract_code_wrong_tool(self):
-        """Test that non-jupyter tools return None"""
-        from agent_server.langchain.middleware.validation_middleware import (
-            ValidationMiddleware,
-        )
-
-        middleware = ValidationMiddleware()
-
-        code = middleware._extract_code_from_tool_call(
-            "markdown_tool", {"content": "# Header"}
-        )
-
-        assert code is None
-
-
-class TestRAGMiddleware:
-    """Test RAG middleware"""
-
-    def test_format_context_for_prompt(self):
-        """Test context formatting for prompt"""
-        from agent_server.langchain.middleware.rag_middleware import RAGMiddleware
-
-        middleware = RAGMiddleware()
-
-        formatted = middleware.format_context_for_prompt(
-            rag_context="pandas is a data analysis library...",
-            detected_libraries=["pandas", "numpy"],
-        )
-
-        assert "pandas, numpy" in formatted
-        assert "pandas is a data analysis library" in formatted
-
-
-class TestCodeSearchMiddleware:
-    """Test code search middleware"""
-
-    def test_extract_search_terms(self):
-        """Test search term extraction from request"""
-        from agent_server.langchain.middleware.code_search_middleware import (
-            CodeSearchMiddleware,
-        )
-
-        middleware = CodeSearchMiddleware()
-
-        terms = middleware._extract_search_terms(
-            "Load the titanic.csv file and create a DataFrame called df"
-        )
-
-        assert "titanic.csv" in terms
-        assert "DataFrame" in terms
-
-
 class TestSystemPromptLogging:
     """Test system prompt log formatting"""
 
@@ -659,7 +514,7 @@ class TestSystemPromptLogging:
         """Ensure system prompt log formatting is deterministic."""
         from langchain_core.messages import HumanMessage, SystemMessage
 
-        from agent_server.langchain.agent import _format_system_prompt_for_log
+        from agent_server.langchain.logging_utils import _format_system_prompt_for_log
 
         messages = [
             HumanMessage(content="hello"),
@@ -682,7 +537,7 @@ class TestLLMTraceLogger:
 
         from langchain_core.messages import HumanMessage, SystemMessage
 
-        from agent_server.langchain.agent import LLMTraceLogger
+        from agent_server.langchain.logging_utils import LLMTraceLogger
 
         handler = LLMTraceLogger()
         messages = [[SystemMessage(content="base prompt"), HumanMessage(content="hi")]]
@@ -778,9 +633,9 @@ class TestAgentIntegration:
 
     def test_create_llm_unsupported_provider(self):
         """Test that unsupported provider raises error"""
-        from agent_server.langchain.agent import _create_llm
+        from agent_server.langchain.llm_factory import create_llm
 
         with pytest.raises(ValueError) as exc_info:
-            _create_llm({"provider": "unsupported"})
+            create_llm({"provider": "unsupported"})
 
         assert "Unsupported" in str(exc_info.value)

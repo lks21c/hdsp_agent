@@ -38,10 +38,8 @@ def execute_command_tool(
     The agent server only coordinates the request. The client performs the
     actual execution after user approval and returns execution_result.
 
-    For commands that require user input (yes/no prompts, etc.):
-    1. PREFERRED: Use non-interactive flags (--yes, -y, --force, --non-interactive)
-    2. ALTERNATIVE: Provide stdin parameter with the expected input (e.g., stdin="y\\n")
-    3. LAST RESORT: Ask user to run the command manually in terminal
+    - Interactive prompts are auto-answered with "y" by default
+    - NEVER run long-running commands (servers, watch, dev) or endless processes
     """
     response: Dict[str, Any] = {
         "tool": "execute_command_tool",

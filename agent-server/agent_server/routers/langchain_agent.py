@@ -19,10 +19,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from sse_starlette.sse import EventSourceResponse
 
 from agent_server.langchain.agent import (
-    _create_llm,
     _get_all_tools,
     create_simple_chat_agent,
 )
+from agent_server.langchain.llm_factory import create_llm
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/langchain", tags=["langchain-agent"])
@@ -1028,7 +1028,7 @@ async def stream_agent(request: AgentRequest):
                             "SimpleAgent fallback: switching model to gemini-2.5-pro"
                         )
 
-                    llm = _create_llm(fallback_config)
+                    llm = create_llm(fallback_config)
                     tools = _get_all_tools()
                     # Force tool calling - use tool_config for Gemini, tool_choice for others
                     provider = config_dict.get("provider", "gemini")
